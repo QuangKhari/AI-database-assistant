@@ -1,0 +1,31 @@
+package com.example.aidatabaseassistant.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Getter
+@AllArgsConstructor
+public class SchemaResponse {
+    private String databaseName;
+    private LocalDateTime lastSyncedAt;
+    private List<TableInfo> tables;
+
+    @Getter
+    @AllArgsConstructor
+    public static class TableInfo {
+        private String name;
+        private List<ColumnInfo> columns;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class ColumnInfo {
+        private String name;
+        private String dataType;
+        private boolean primaryKey;
+        private boolean foreignKey;
+    }
+}

@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.example.aidatabaseassistant.dto.SchemaResponse;
+import com.example.aidatabaseassistant.service.SchemaDiscoveryService;
 
 import java.util.List;
 
@@ -17,6 +19,24 @@ import java.util.List;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
+    private final SchemaDiscoveryService schemaDiscoveryService;
+
+    @PostMapping("/{id}/schema")
+    public ResponseEntity<SchemaResponse> discoverSchema(@PathVariable Long id) {
+        var schema = schemaDiscoveryService.discoverSchema(id);
+
+        var tables = schema.getTables().stream()
+                .map(t -> new SchemaResponse.TableInfo(
+                        t.getName(),
+                        t.getColumns().stream()
+                                .map(c -> new SchemaResponse.ColumnInfo(
+                                        c.getName(), c.getDataType(), c.getPrimaryKey(), c.getForeignKey()))
+                                .toList()
+                ))
+                .toList();
+
+        return ResponseEntity.ok(new SchemaResponse(schema.getDatabaseName(), schema.getLastSyncedAt(), tables));
+    }
 
     @PostMapping("/test")
     public ResponseEntity<Boolean> testConnection(@Valid @RequestBody ConnectionRequest request) {
