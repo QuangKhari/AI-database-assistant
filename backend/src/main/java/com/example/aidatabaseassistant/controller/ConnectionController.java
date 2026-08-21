@@ -20,6 +20,12 @@ public class ConnectionController {
 
     private final ConnectionService connectionService;
     private final SchemaDiscoveryService schemaDiscoveryService;
+//    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
+//
+//    @GetMapping("/test-ai")
+//    public ResponseEntity<String> testAi() {
+//        return ResponseEntity.ok(llmClient.generateResponse("Xin chào, bạn là ai?"));
+//    }
 
     @PostMapping("/{id}/schema")
     public ResponseEntity<SchemaResponse> discoverSchema(@PathVariable Long id) {
