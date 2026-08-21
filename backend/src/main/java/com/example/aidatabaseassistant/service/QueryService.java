@@ -21,6 +21,7 @@ public class QueryService {
 
     private static final int MAX_RETRIES = 3;
 
+    private final RateLimitService rateLimitService;
     private final UserRepository userRepository;
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
@@ -34,6 +35,10 @@ public class QueryService {
     private final LLMClient llmClient;
 
     public QueryResponse processQuery(String username, QueryRequest request) {
+        if (!rateLimitService.tryConsume(username)) {
+            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+        }
+
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
 
