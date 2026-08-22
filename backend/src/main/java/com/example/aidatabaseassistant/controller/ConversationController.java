@@ -28,8 +28,8 @@ public class ConversationController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteConversation(@PathVariable Long id) {
-        conversationService.deleteConversation(id);
+    public ResponseEntity<Void> deleteConversation(Authentication authentication, @PathVariable Long id) {
+        conversationService.deleteConversation(authentication.getName(), id);
         return ResponseEntity.noContent().build();
     }
 }
