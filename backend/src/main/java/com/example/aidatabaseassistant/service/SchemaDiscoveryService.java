@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -57,6 +59,7 @@ public class SchemaDiscoveryService {
                     TableMetadata table = TableMetadata.builder()
                             .schema(schema)
                             .name(tableName)
+                            .description(tableRs.getString("REMARKS"))
                             .build();
 
                     table.setColumns(discoverColumns(metaData, connection.getDatabaseName(), tableName, table));
@@ -84,16 +87,20 @@ public class SchemaDiscoveryService {
             }
         }
 
-        Set<String> foreignKeys = new HashSet<>();
+        Map<String, String[]> foreignKeys = new HashMap<>();
         try (ResultSet fkRs = metaData.getImportedKeys(dbName, null, tableName)) {
             while (fkRs.next()) {
-                foreignKeys.add(fkRs.getString("FKCOLUMN_NAME"));
+                String fkColumn = fkRs.getString("FKCOLUMN_NAME");
+                String refTable = fkRs.getString("PKTABLE_NAME");
+                String refColumn = fkRs.getString("PKCOLUMN_NAME");
+                foreignKeys.put(fkColumn, new String[]{refTable, refColumn});
             }
         }
 
         try (ResultSet colRs = metaData.getColumns(dbName, null, tableName, "%")) {
             while (colRs.next()) {
                 String columnName = colRs.getString("COLUMN_NAME");
+                String[] fkTarget = foreignKeys.get(columnName);
 
                 ColumnMetadata column = ColumnMetadata.builder()
                         .table(table)
@@ -101,7 +108,10 @@ public class SchemaDiscoveryService {
                         .dataType(colRs.getString("TYPE_NAME"))
                         .nullable(colRs.getInt("NULLABLE") == DatabaseMetaData.columnNullable)
                         .primaryKey(primaryKeys.contains(columnName))
-                        .foreignKey(foreignKeys.contains(columnName))
+                        .foreignKey(fkTarget != null)
+                        .referencedTable(fkTarget != null ? fkTarget[0] : null)
+                        .referencedColumn(fkTarget != null ? fkTarget[1] : null)
+                        .description(colRs.getString("REMARKS"))
                         .build();
 
                 columns.add(column);
