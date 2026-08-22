@@ -2,6 +2,7 @@ package com.example.aidatabaseassistant.controller;
 
 import com.example.aidatabaseassistant.dto.ConnectionRequest;
 import com.example.aidatabaseassistant.dto.ConnectionResponse;
+import com.example.aidatabaseassistant.dto.ConnectionUpdateRequest;
 import com.example.aidatabaseassistant.service.ConnectionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -62,9 +63,26 @@ public class ConnectionController {
         return ResponseEntity.ok(connectionService.getConnectionsByUser(authentication.getName()));
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<ConnectionResponse> getConnection(Authentication authentication, @PathVariable Long id) {
+        return ResponseEntity.ok(connectionService.getConnection(authentication.getName(), id));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ConnectionResponse> updateConnection(Authentication authentication,
+                                                               @PathVariable Long id,
+                                                               @Valid @RequestBody ConnectionUpdateRequest request) {
+        return ResponseEntity.ok(connectionService.updateConnection(authentication.getName(), id, request));
+    }
+
+    @PostMapping("/{id}/reconnect")
+    public ResponseEntity<Boolean> reconnect(Authentication authentication, @PathVariable Long id) {
+        return ResponseEntity.ok(connectionService.reconnect(authentication.getName(), id));
+    }
+
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> disconnect(@PathVariable Long id) {
-        connectionService.disconnect(id);
+    public ResponseEntity<Void> disconnect(Authentication authentication, @PathVariable Long id) {
+        connectionService.disconnect(authentication.getName(), id);
         return ResponseEntity.noContent().build();
     }
 }
