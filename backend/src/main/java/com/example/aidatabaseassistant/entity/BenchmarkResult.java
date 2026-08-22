@@ -42,4 +42,10 @@ public class BenchmarkResult {
     protected void onCreate() {
         this.runAt = LocalDateTime.now();
     }
+
+    @Column(name = "latency_ms")
+    private Long latencyMs;
+
+    @Column(name = "model_used", length = 100)
+    private String modelUsed;
 }
