@@ -34,9 +34,11 @@ public class ConnectionController {
         var tables = schema.getTables().stream()
                 .map(t -> new SchemaResponse.TableInfo(
                         t.getName(),
+                        t.getDescription(),
                         t.getColumns().stream()
                                 .map(c -> new SchemaResponse.ColumnInfo(
-                                        c.getName(), c.getDataType(), c.getPrimaryKey(), c.getForeignKey()))
+                                        c.getName(), c.getDataType(), c.getPrimaryKey(), c.getForeignKey(),
+                                        c.getReferencedTable(), c.getReferencedColumn(), c.getDescription()))
                                 .toList()
                 ))
                 .toList();
