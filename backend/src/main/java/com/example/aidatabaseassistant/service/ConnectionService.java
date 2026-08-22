@@ -3,6 +3,7 @@ package com.example.aidatabaseassistant.service;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.ConnectionRequest;
 import com.example.aidatabaseassistant.dto.ConnectionResponse;
+import com.example.aidatabaseassistant.dto.ConnectionUpdateRequest;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
@@ -63,9 +64,7 @@ public class ConnectionService {
                 .collect(Collectors.toList());
     }
 
-    public void disconnect(Long connectionId) {
-        connectionRepository.deleteById(connectionId);
-    }
+
 
     private String buildJdbcUrl(String dbType, String host, Integer port, String databaseName) {
         if ("mysql".equalsIgnoreCase(dbType)) {
@@ -84,5 +83,60 @@ public class ConnectionService {
                 connection.getDatabaseName(),
                 connection.getUsername()
         );
+    }
+
+    public ConnectionResponse getConnection(String username, Long connectionId) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+        return toResponse(connection);
+    }
+
+    public ConnectionResponse updateConnection(String username, Long connectionId, ConnectionUpdateRequest request) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+
+        connection.setName(request.getName());
+        connection.setHost(request.getHost());
+        connection.setPort(request.getPort());
+        connection.setDatabaseName(request.getDatabaseName());
+        connection.setUsername(request.getUsername());
+
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            connection.setEncryptedPassword(encryptionUtil.encrypt(request.getPassword()));
+        }
+
+        connectionRepository.save(connection);
+        return toResponse(connection);
+    }
+
+    public boolean reconnect(String username, Long connectionId) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+        String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
+
+        String url = buildJdbcUrl(connection.getDbType(), connection.getHost(),
+                connection.getPort(), connection.getDatabaseName());
+
+        try (Connection conn = DriverManager.getConnection(url, connection.getUsername(), rawPassword)) {
+            return conn.isValid(3);
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    public void disconnect(String username, Long connectionId) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+        connectionRepository.delete(connection);
+    }
+
+    private DatabaseConnection getOwnedConnection(String username, Long connectionId) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        DatabaseConnection connection = connectionRepository.findById(connectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
+
+        return connection;
     }
 }
