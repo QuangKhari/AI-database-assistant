@@ -39,10 +39,6 @@ public class ConversationService {
                 .collect(Collectors.toList());
     }
 
-    public void deleteConversation(Long conversationId) {
-        conversationRepository.deleteById(conversationId);
-    }
-
     private ConversationResponse toConversationResponse(Conversation c) {
         return new ConversationResponse(
                 c.getId(), c.getTitle(), c.getConnection().getId(),
@@ -62,5 +58,27 @@ public class ConversationService {
                 m.getId(), m.getRole(), m.getContent(), m.getGeneratedSql(),
                 m.getCreatedAt(), logs
         );
+    }
+
+    public void deleteAllConversations(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        List<Conversation> conversations = conversationRepository.findByUserId(user.getId());
+        conversationRepository.deleteAll(conversations);
+    }
+
+    public void deleteConversation(String username, Long conversationId) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy conversation"));
+
+        if (!conversation.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền xóa conversation này");
+        }
+
+        conversationRepository.delete(conversation);
     }
 }
