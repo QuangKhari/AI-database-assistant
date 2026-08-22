@@ -17,6 +17,7 @@ public class SchemaResponse {
     @AllArgsConstructor
     public static class TableInfo {
         private String name;
+        private String description;
         private List<ColumnInfo> columns;
     }
 
@@ -27,5 +28,8 @@ public class SchemaResponse {
         private String dataType;
         private boolean primaryKey;
         private boolean foreignKey;
+        private String referencedTable;
+        private String referencedColumn;
+        private String description;
     }
 }

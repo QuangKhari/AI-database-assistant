@@ -1,5 +1,6 @@
 package com.example.aidatabaseassistant.controller;
 
+import com.example.aidatabaseassistant.dto.PreviewResponse;
 import com.example.aidatabaseassistant.dto.QueryRequest;
 import com.example.aidatabaseassistant.dto.QueryResponse;
 import com.example.aidatabaseassistant.service.QueryService;
@@ -19,9 +20,15 @@ public class QueryController {
 
     private final QueryService queryService;
 
-    @PostMapping
-    public ResponseEntity<QueryResponse> query(Authentication authentication,
-                                               @Valid @RequestBody QueryRequest request) {
+    @PostMapping("/preview")
+    public ResponseEntity<PreviewResponse> preview(Authentication authentication,
+                                                   @Valid @RequestBody QueryRequest request) {
+        return ResponseEntity.ok(queryService.previewQuery(authentication.getName(), request));
+    }
+
+    @PostMapping("/execute")
+    public ResponseEntity<QueryResponse> execute(Authentication authentication,
+                                                 @Valid @RequestBody QueryRequest request) {
         return ResponseEntity.ok(queryService.processQuery(authentication.getName(), request));
     }
 }

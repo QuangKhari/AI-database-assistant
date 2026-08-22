@@ -44,4 +44,10 @@ public class ColumnMetadata {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "referenced_table", length = 100)
+    private String referencedTable;
+
+    @Column(name = "referenced_column", length = 100)
+    private String referencedColumn;
 }
