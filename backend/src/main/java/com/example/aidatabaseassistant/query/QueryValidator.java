@@ -30,7 +30,10 @@ public class QueryValidator {
 
     public void checkReadOnly(Statement statement) {
         if (!(statement instanceof Select)) {
-            throw new IllegalArgumentException("Chỉ cho phép câu lệnh SELECT");
+            throw new IllegalArgumentException(
+                    "Chỉ cho phép câu lệnh SELECT. Các câu lệnh INSERT, UPDATE, DELETE, " +
+                            "DROP, ALTER, TRUNCATE, CREATE, RENAME, USE đều bị chặn."
+            );
         }
     }
 
