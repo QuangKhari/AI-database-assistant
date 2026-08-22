@@ -1,27 +1,20 @@
 package com.example.aidatabaseassistant.service;
 
-import com.example.aidatabaseassistant.ai.NL2SQLEngine;
 import com.example.aidatabaseassistant.ai.LLMClient;
+import com.example.aidatabaseassistant.ai.NL2SQLEngine;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
-import com.example.aidatabaseassistant.dto.QueryRequest;
-import com.example.aidatabaseassistant.dto.QueryResponse;
-import com.example.aidatabaseassistant.dto.QueryResultDto;
+import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
-import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.query.QueryValidator;
+import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
 public class QueryService {
 
-    private static final int MAX_RETRIES = 3;
-
-    private final RateLimitService rateLimitService;
     private final UserRepository userRepository;
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
@@ -31,8 +24,26 @@ public class QueryService {
     private final EncryptionUtil encryptionUtil;
     private final NL2SQLEngine nl2SQLEngine;
     private final QueryValidator queryValidator;
-    private final QueryExecutor queryExecutor;
+    private final SQLCorrectionService sqlCorrectionService;
     private final LLMClient llmClient;
+    private final RateLimitService rateLimitService;
+
+    public PreviewResponse previewQuery(String username, QueryRequest request) {
+        DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        DatabaseSchema schema = schemaRepository.findByConnectionId(connection.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
+
+        String generatedSql = nl2SQLEngine.generateSQL(request.getQuestion(), schema);
+
+        try {
+            queryValidator.validate(generatedSql, schema);
+            return new PreviewResponse(generatedSql, true, null);
+        } catch (IllegalArgumentException e) {
+            return new PreviewResponse(generatedSql, false, e.getMessage());
+        }
+    }
 
     public QueryResponse processQuery(String username, QueryRequest request) {
         if (!rateLimitService.tryConsume(username)) {
@@ -44,6 +55,10 @@ public class QueryService {
 
         DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connection.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
@@ -59,99 +74,48 @@ public class QueryService {
 
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
-        AttemptResult result = validateAndExecute(request.getQuestion(), schema, connection, rawPassword);
+        SQLCorrectionService.AttemptResult result = sqlCorrectionService.run(
+                request.getQuestion(), schema, connection, rawPassword);
 
         Message assistantMessage = Message.builder()
                 .conversation(conversation)
                 .role("assistant")
-                .content(buildAssistantContent(result))
-                .generatedSql(result.sql)
+                .content(result.isSuccess() ? "Đã trả lời thành công" : "Không thể sinh SQL hợp lệ sau nhiều lần thử")
+                .generatedSql(result.getSql())
                 .build();
         messageRepository.save(assistantMessage);
 
-        for (int i = 0; i < result.attemptLogs.size(); i++) {
-            AttemptLog log = result.attemptLogs.get(i);
+        var logs = result.getAttemptLogs();
+        for (int i = 0; i < logs.size(); i++) {
+            var log = logs.get(i);
             QueryLog queryLog = QueryLog.builder()
                     .message(assistantMessage)
                     .attemptNumber(i + 1)
-                    .sqlText(log.sql)
-                    .status(log.success ? "SUCCESS" : "FAILED")
-                    .rowCount(log.result != null ? log.result.getRowCount() : null)
-                    .executionTimeMs(log.result != null ? (int) log.result.getExecutionTimeMs() : null)
-                    .errorMessage(log.result != null ? log.result.getError() : null)
+                    .sqlText(log.getSql())
+                    .status(log.isSuccess() ? "SUCCESS" : "FAILED")
+                    .rowCount(log.getResult() != null ? log.getResult().getRowCount() : null)
+                    .executionTimeMs(log.getResult() != null ? (int) log.getResult().getExecutionTimeMs() : null)
+                    .errorMessage(log.getResult() != null ? log.getResult().getError() : null)
                     .build();
             queryLogRepository.save(queryLog);
         }
 
-        String summary = result.success ? summarizeResult(request.getQuestion(), result.finalResult) : null;
+        String summary = result.isSuccess() ? summarizeResult(request.getQuestion(), result.getFinalResult()) : null;
 
         return new QueryResponse(
                 conversation.getId(),
                 assistantMessage.getId(),
-                result.sql,
-                result.finalResult,
+                result.getSql(),
+                result.getFinalResult(),
                 summary,
-                result.attemptLogs.size()
+                logs.size()
         );
-    }
-
-    private AttemptResult validateAndExecute(String question, DatabaseSchema schema,
-                                             DatabaseConnection connection, String rawPassword) {
-        AttemptResult attemptResult = new AttemptResult();
-        String currentSql = nl2SQLEngine.generateSQL(question, schema);
-        String lastError = null;
-
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            AttemptLog log = new AttemptLog();
-            log.sql = currentSql;
-
-            try {
-                queryValidator.validate(currentSql, schema);
-
-                QueryResultDto queryResult = queryExecutor.executeQuery(
-                        connection.getHost(), connection.getPort(), connection.getDatabaseName(),
-                        connection.getUsername(), rawPassword, currentSql);
-
-                log.result = queryResult;
-
-                if (queryResult.getError() == null) {
-                    log.success = true;
-                    attemptResult.attemptLogs.add(log);
-                    attemptResult.success = true;
-                    attemptResult.sql = currentSql;
-                    attemptResult.finalResult = queryResult;
-                    return attemptResult;
-                }
-
-                lastError = queryResult.getError();
-
-            } catch (IllegalArgumentException e) {
-                lastError = e.getMessage();
-                log.result = new QueryResultDto(java.util.List.of(), java.util.List.of(), 0, 0, lastError);
-            }
-
-            log.success = false;
-            attemptResult.attemptLogs.add(log);
-
-            if (attempt < MAX_RETRIES) {
-                currentSql = nl2SQLEngine.selfCorrect(currentSql, lastError, schema);
-            }
-        }
-
-        attemptResult.success = false;
-        attemptResult.sql = currentSql;
-        attemptResult.finalResult = new QueryResultDto(java.util.List.of(), java.util.List.of(), 0, 0, lastError);
-        return attemptResult;
     }
 
     private String summarizeResult(String question, QueryResultDto result) {
         String prompt = "Câu hỏi: " + question + "\nKết quả (dạng bảng, " + result.getRowCount()
                 + " dòng): " + result.getRows() + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
         return llmClient.generateResponse(prompt);
-    }
-
-    private String buildAssistantContent(AttemptResult result) {
-        return result.success ? "Đã trả lời thành công" : "Không thể sinh SQL hợp lệ sau " + MAX_RETRIES + " lần thử";
     }
 
     private Conversation getOrCreateConversation(User user, DatabaseConnection connection, QueryRequest request) {
@@ -168,18 +132,5 @@ public class QueryService {
                         : request.getQuestion())
                 .build();
         return conversationRepository.save(conversation);
-    }
-
-    private static class AttemptResult {
-        boolean success;
-        String sql;
-        QueryResultDto finalResult;
-        java.util.List<AttemptLog> attemptLogs = new java.util.ArrayList<>();
-    }
-
-    private static class AttemptLog {
-        String sql;
-        boolean success;
-        QueryResultDto result;
     }
 }
