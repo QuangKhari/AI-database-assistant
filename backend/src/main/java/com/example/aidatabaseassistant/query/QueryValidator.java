@@ -22,7 +22,15 @@ public class QueryValidator {
 
     private Statement parse(String sql) {
         try {
-            return CCJSqlParserUtil.parse(sql);
+            net.sf.jsqlparser.statement.Statements statements = CCJSqlParserUtil.parseStatements(sql);
+
+            if (statements.getStatements().size() != 1) {
+                throw new IllegalArgumentException("Chỉ cho phép đúng 1 câu lệnh SQL, không được nối nhiều câu lệnh bằng dấu ';'");
+            }
+
+            return statements.getStatements().get(0);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("SQL không hợp lệ về cú pháp: " + e.getMessage());
         }
