@@ -10,5 +10,6 @@ public class BenchmarkResultDetail {
     private String generatedSql;
     private String expectedSql;
     private boolean correct;
+    private long latencyMs;
     private String errorMessage;
 }

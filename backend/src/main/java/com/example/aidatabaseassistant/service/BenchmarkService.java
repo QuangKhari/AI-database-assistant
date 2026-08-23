@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BenchmarkService {
 
+    @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
+    private String modelUrl;
     private final BenchmarkQuestionRepository benchmarkQuestionRepository;
     private final BenchmarkResultRepository benchmarkResultRepository;
     private final DatabaseConnectionRepository connectionRepository;
@@ -54,7 +56,9 @@ public class BenchmarkService {
         int correctCount = 0;
 
         for (BenchmarkQuestion question : questions) {
+            long startTime = System.currentTimeMillis();
             String generatedSql = nl2SQLEngine.generateSQL(question.getQuestionText(), schema);
+            long latencyMs = System.currentTimeMillis() - startTime;
 
             QueryResultDto generatedResult = queryExecutor.executeQuery(
                     connection.getHost(), connection.getPort(), connection.getDatabaseName(),
@@ -74,12 +78,14 @@ public class BenchmarkService {
                     .generatedSql(generatedSql)
                     .expectedSql(question.getExpectedSql())
                     .isCorrect(isCorrect)
+                    .latencyMs(latencyMs)
+                    .modelUsed(extractModelName(modelUrl))
                     .build();
             benchmarkResultRepository.save(result);
 
             details.add(new BenchmarkResultDetail(
                     question.getQuestionText(), generatedSql, question.getExpectedSql(),
-                    isCorrect, generatedResult.getError()));
+                    isCorrect, latencyMs, generatedResult.getError()));
         }
 
         double accuracy = questions.isEmpty() ? 0 : (double) correctCount / questions.size() * 100;
@@ -111,5 +117,11 @@ public class BenchmarkService {
                         .sorted()
                         .collect(Collectors.joining("|")))
                 .collect(Collectors.toList());
+    }
+
+    private String extractModelName(String url) {
+        int start = url.indexOf("/models/") + 8;
+        int end = url.indexOf(":", start);
+        return url.substring(start, end);
     }
 }

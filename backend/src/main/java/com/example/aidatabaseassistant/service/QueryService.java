@@ -29,8 +29,15 @@ public class QueryService {
     private final RateLimitService rateLimitService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
         DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connection.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
