@@ -8,6 +8,7 @@ import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class BenchmarkService {
 
     @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
@@ -93,21 +95,45 @@ public class BenchmarkService {
         return new BenchmarkRunResponse(questions.size(), correctCount, accuracy, details);
     }
 
-    private boolean compareResults(QueryResultDto generated, QueryResultDto expected) {
+    private boolean compareResults(QueryResultDto generated,
+                                   QueryResultDto expected) {
+
+        // Có lỗi SQL thì thất bại
         if (generated.getError() != null || expected.getError() != null) {
             return false;
         }
+
+        // Khác số dòng => sai
         if (generated.getRowCount() != expected.getRowCount()) {
             return false;
         }
 
-        List<String> generatedRows = normalizeRows(generated.getRows());
-        List<String> expectedRows = normalizeRows(expected.getRows());
+        List<Map<String, Object>> generatedRows = generated.getRows();
+        List<Map<String, Object>> expectedRows = expected.getRows();
 
-        Collections.sort(generatedRows);
-        Collections.sort(expectedRows);
+        if (generatedRows.isEmpty() && expectedRows.isEmpty()) {
+            return true;
+        }
 
-        return generatedRows.equals(expectedRows);
+        // Lấy danh sách cột của SQL chuẩn
+        List<String> expectedColumns =
+                new ArrayList<>(expectedRows.get(0).keySet());
+
+        List<String> generatedNormalized = generatedRows.stream()
+                .map(row -> expectedColumns.stream()
+                        .map(col -> String.valueOf(row.get(col)))
+                        .collect(Collectors.joining("|")))
+                .sorted()
+                .toList();
+
+        List<String> expectedNormalized = expectedRows.stream()
+                .map(row -> expectedColumns.stream()
+                        .map(col -> String.valueOf(row.get(col)))
+                        .collect(Collectors.joining("|")))
+                .sorted()
+                .toList();
+
+        return generatedNormalized.equals(expectedNormalized);
     }
 
     private List<String> normalizeRows(List<Map<String, Object>> rows) {

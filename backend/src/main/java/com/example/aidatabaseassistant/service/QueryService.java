@@ -10,6 +10,7 @@ import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -125,8 +126,13 @@ public class QueryService {
     }
 
     private String summarizeResult(String question, QueryResultDto result) {
-        String prompt = "Câu hỏi: " + question + "\nKết quả (dạng bảng, " + result.getRowCount()
-                + " dòng): " + result.getRows() + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
+        List<java.util.Map<String, Object>> limitedRows = result.getRows().size() > 20
+                ? result.getRows().subList(0, 20)
+                : result.getRows();
+
+        String prompt = "Câu hỏi: " + question + "\nKết quả (hiển thị " + limitedRows.size()
+                + "/" + result.getRowCount() + " dòng): " + limitedRows
+                + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
         return llmClient.generateResponse(prompt);
     }
 
