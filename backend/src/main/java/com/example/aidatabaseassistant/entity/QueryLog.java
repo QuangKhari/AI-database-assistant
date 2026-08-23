@@ -51,4 +51,13 @@ public class QueryLog {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
     }
+
+    @Column(columnDefinition = "TEXT")
+    private String question;
+
+    @Column(name = "model_used", length = 100)
+    private String modelUsed;
+
+    @Column(name = "retry_count")
+    private Integer retryCount;
 }

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class QueryService {
 
+    @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
+    private String modelUrl;
     private final UserRepository userRepository;
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
@@ -103,6 +105,9 @@ public class QueryService {
                     .rowCount(log.getResult() != null ? log.getResult().getRowCount() : null)
                     .executionTimeMs(log.getResult() != null ? (int) log.getResult().getExecutionTimeMs() : null)
                     .errorMessage(log.getResult() != null ? log.getResult().getError() : null)
+                    .question(request.getQuestion())
+                    .modelUsed(extractModelName(modelUrl))
+                    .retryCount(logs.size())
                     .build();
             queryLogRepository.save(queryLog);
         }
@@ -139,5 +144,11 @@ public class QueryService {
                         : request.getQuestion())
                 .build();
         return conversationRepository.save(conversation);
+    }
+
+    private String extractModelName(String url) {
+        int start = url.indexOf("/models/") + 8;
+        int end = url.indexOf(":", start);
+        return url.substring(start, end);
     }
 }
