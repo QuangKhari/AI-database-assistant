@@ -12,6 +12,8 @@ public class PromptBuilder {
         StringBuilder sb = new StringBuilder();
         sb.append("Bạn là chuyên gia SQL. Dựa vào schema MySQL dưới đây, viết CHÍNH XÁC một câu lệnh SELECT để trả lời câu hỏi. ");
         sb.append("Chỉ được dùng SELECT, tuyệt đối không dùng INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/CREATE/RENAME/USE. ");
+        sb.append("Chỉ chọn đúng những cột mà câu hỏi cần, KHÔNG dùng SELECT * trừ khi câu hỏi yêu cầu toàn bộ thông tin. ");
+        sb.append("KHÔNG dùng DISTINCT trừ khi cần loại bỏ trùng lặp rõ ràng theo yêu cầu câu hỏi. ");
         sb.append("Chỉ trả về câu SQL, không giải thích, không dùng markdown code block.\n\n");
         sb.append("Schema:\n");
         appendSchema(sb, schema);
