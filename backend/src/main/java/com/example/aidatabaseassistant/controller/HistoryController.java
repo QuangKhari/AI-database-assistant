@@ -23,8 +23,8 @@ public class HistoryController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<List<MessageResponse>> getHistoryDetail(@PathVariable Long id) {
-        return ResponseEntity.ok(conversationService.getMessages(id));
+    public ResponseEntity<List<MessageResponse>> getHistoryDetail(Authentication authentication, @PathVariable Long id) {
+        return ResponseEntity.ok(conversationService.getMessages(authentication.getName(), id));
     }
 
     @DeleteMapping("/{id}")

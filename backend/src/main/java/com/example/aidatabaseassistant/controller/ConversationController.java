@@ -23,8 +23,8 @@ public class ConversationController {
     }
 
     @GetMapping("/{id}/messages")
-    public ResponseEntity<List<MessageResponse>> getMessages(@PathVariable Long id) {
-        return ResponseEntity.ok(conversationService.getMessages(id));
+    public ResponseEntity<List<MessageResponse>> getMessages(Authentication authentication, @PathVariable Long id) {
+        return ResponseEntity.ok(conversationService.getMessages(authentication.getName(), id));
     }
 
     @DeleteMapping("/{id}")
