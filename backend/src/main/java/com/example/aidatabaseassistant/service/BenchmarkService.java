@@ -33,7 +33,7 @@ public class BenchmarkService {
     private final QueryExecutor queryExecutor;
     private final UserRepository userRepository;
 
-    public BenchmarkQuestion addQuestion(String username, Long connectionId, BenchmarkQuestionRequest request) {
+    public BenchmarkQuestionResponse addQuestion(String username, Long connectionId, BenchmarkQuestionRequest request) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
         BenchmarkQuestion question = BenchmarkQuestion.builder()
@@ -42,7 +42,14 @@ public class BenchmarkService {
                 .expectedSql(request.getExpectedSql())
                 .build();
 
-        return benchmarkQuestionRepository.save(question);
+        BenchmarkQuestion saved = benchmarkQuestionRepository.save(question);
+
+        return new BenchmarkQuestionResponse(
+                saved.getId(),
+                saved.getQuestionText(),
+                saved.getExpectedSql(),
+                connectionId
+        );
     }
 
     public BenchmarkRunResponse runBenchmark(String username, Long connectionId) {
