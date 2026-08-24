@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static java.lang.Thread.sleep;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -58,26 +60,74 @@ public class BenchmarkService {
         DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
 
-        List<BenchmarkQuestion> questions = benchmarkQuestionRepository.findByConnectionId(connectionId);
+        List<BenchmarkQuestion> questions =
+                benchmarkQuestionRepository.findByConnectionId(connectionId);
+
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
         List<BenchmarkResultDetail> details = new ArrayList<>();
         int correctCount = 0;
 
         for (BenchmarkQuestion question : questions) {
+
             long startTime = System.currentTimeMillis();
-            String generatedSql = nl2SQLEngine.generateSQL(question.getQuestionText(), schema);
+
+            String generatedSql = null;
+            String errorMessage = null;
+
+            try {
+                // Gọi Gemini có retry khi gặp 429
+                generatedSql = generateSqlWithRetry(
+                        question.getQuestionText(),
+                        schema
+                );
+
+            } catch (Exception e) {
+                errorMessage = e.getMessage();
+            }
+
             long latencyMs = System.currentTimeMillis() - startTime;
 
-            QueryResultDto generatedResult = queryExecutor.executeQuery(
-                    connection.getHost(), connection.getPort(), connection.getDatabaseName(),
-                    connection.getUsername(), rawPassword, generatedSql);
+            boolean isCorrect = false;
 
-            QueryResultDto expectedResult = queryExecutor.executeQuery(
-                    connection.getHost(), connection.getPort(), connection.getDatabaseName(),
-                    connection.getUsername(), rawPassword, question.getExpectedSql());
+            QueryResultDto generatedResult = null;
 
-            boolean isCorrect = compareResults(generatedResult, expectedResult);
+            // Chỉ execute SQL nếu AI sinh SQL thành công
+            if (generatedSql != null && !generatedSql.isBlank()) {
+
+                try {
+                    generatedResult = queryExecutor.executeQuery(
+                            connection.getHost(),
+                            connection.getPort(),
+                            connection.getDatabaseName(),
+                            connection.getUsername(),
+                            rawPassword,
+                            generatedSql
+                    );
+
+                    QueryResultDto expectedResult = queryExecutor.executeQuery(
+                            connection.getHost(),
+                            connection.getPort(),
+                            connection.getDatabaseName(),
+                            connection.getUsername(),
+                            rawPassword,
+                            question.getExpectedSql()
+                    );
+
+                    isCorrect = compareResults(
+                            generatedResult,
+                            expectedResult
+                    );
+
+                    if (generatedResult.getError() != null) {
+                        errorMessage = generatedResult.getError();
+                    }
+
+                } catch (Exception e) {
+                    errorMessage = e.getMessage();
+                }
+            }
+
             if (isCorrect) {
                 correctCount++;
             }
@@ -90,27 +140,94 @@ public class BenchmarkService {
                     .latencyMs(latencyMs)
                     .modelUsed(extractModelName(modelUrl))
                     .build();
+
             benchmarkResultRepository.save(result);
 
-            details.add(new BenchmarkResultDetail(
-                    question.getQuestionText(), generatedSql, question.getExpectedSql(),
-                    isCorrect, latencyMs, generatedResult.getError()));
+            details.add(
+                    new BenchmarkResultDetail(
+                            question.getQuestionText(),
+                            generatedSql,
+                            question.getExpectedSql(),
+                            isCorrect,
+                            latencyMs,
+                            errorMessage
+                    )
+            );
+
+            /*
+             * Gemini Free Tier:
+             * 15 requests/phút
+             *
+             * Chờ 5 giây giữa các câu để giảm nguy cơ 429.
+             */
+            sleep(5000);
         }
 
-        double accuracy = questions.isEmpty() ? 0 : (double) correctCount / questions.size() * 100;
+        double accuracy = questions.isEmpty()
+                ? 0
+                : (double) correctCount / questions.size() * 100;
 
-        return new BenchmarkRunResponse(questions.size(), correctCount, accuracy, details);
+        return new BenchmarkRunResponse(
+                questions.size(),
+                correctCount,
+                accuracy,
+                details
+        );
+    }
+
+    private String generateSqlWithRetry(
+            String question,
+            DatabaseSchema schema) {
+
+        int maxRetries = 3;
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+
+            try {
+                return nl2SQLEngine.generateSQL(question, schema);
+
+            } catch (RuntimeException e) {
+
+                String message = e.getMessage();
+
+                boolean isRateLimit =
+                        message != null &&
+                                (
+                                        message.contains("429") ||
+                                                message.contains("Too Many Requests") ||
+                                                message.contains("RESOURCE_EXHAUSTED")
+                                );
+
+                if (!isRateLimit) {
+                    throw e;
+                }
+
+                System.out.println(
+                        "Gemini rate limit (429). " +
+                                "Attempt " + attempt + "/" + maxRetries
+                );
+
+                if (attempt == maxRetries) {
+                    throw e;
+                }
+
+                // Chờ 40 giây trước khi retry
+                sleep(40000);
+            }
+        }
+
+        throw new RuntimeException("Không thể generate SQL");
     }
 
     private boolean compareResults(QueryResultDto generated,
                                    QueryResultDto expected) {
 
-        // Có lỗi SQL thì thất bại
+        // 1. Nếu một trong hai câu SQL bị lỗi -> sai
         if (generated.getError() != null || expected.getError() != null) {
             return false;
         }
 
-        // Khác số dòng => sai
+        // 2. Khác số dòng -> sai
         if (generated.getRowCount() != expected.getRowCount()) {
             return false;
         }
@@ -118,38 +235,57 @@ public class BenchmarkService {
         List<Map<String, Object>> generatedRows = generated.getRows();
         List<Map<String, Object>> expectedRows = expected.getRows();
 
+        // 3. Cả hai đều không có dữ liệu -> đúng
         if (generatedRows.isEmpty() && expectedRows.isEmpty()) {
             return true;
         }
 
-        // Lấy danh sách cột của SQL chuẩn
-        List<String> expectedColumns =
-                new ArrayList<>(expectedRows.get(0).keySet());
+        // 4. Nếu số cột khác nhau -> sai
+        if (generatedRows.get(0).size() != expectedRows.get(0).size()) {
+            return false;
+        }
 
-        List<String> generatedNormalized = generatedRows.stream()
-                .map(row -> expectedColumns.stream()
-                        .map(col -> String.valueOf(row.get(col)))
-                        .collect(Collectors.joining("|")))
-                .sorted()
-                .toList();
+        /*
+         * Không so sánh tên column/alias.
+         *
+         * Ví dụ:
+         *
+         * SELECT AVG(price) AS total
+         *
+         * và
+         *
+         * SELECT AVG(price) AS average
+         *
+         * đều trả về cùng một giá trị.
+         *
+         * Vì vậy benchmark chỉ tập trung vào dữ liệu.
+         */
 
-        List<String> expectedNormalized = expectedRows.stream()
-                .map(row -> expectedColumns.stream()
-                        .map(col -> String.valueOf(row.get(col)))
-                        .collect(Collectors.joining("|")))
-                .sorted()
-                .toList();
+        List<String> generatedNormalized = normalizeRows(generatedRows);
+        List<String> expectedNormalized = normalizeRows(expectedRows);
+
+        // 5. Không phụ thuộc thứ tự dòng
+        Collections.sort(generatedNormalized);
+        Collections.sort(expectedNormalized);
 
         return generatedNormalized.equals(expectedNormalized);
     }
 
     private List<String> normalizeRows(List<Map<String, Object>> rows) {
+
         return rows.stream()
                 .map(row -> row.values().stream()
-                        .map(v -> v == null ? "null" : v.toString())
-                        .sorted()
+                        .map(value -> {
+
+                            if (value == null) {
+                                return "null";
+                            }
+
+                            return value.toString().trim();
+                        })
                         .collect(Collectors.joining("|")))
-                .collect(Collectors.toList());
+                .sorted()
+                .toList();
     }
 
     private String extractModelName(String url) {
@@ -170,5 +306,18 @@ public class BenchmarkService {
         }
 
         return connection;
+    }
+
+    private void sleep(long milliseconds) {
+        try {
+            Thread.sleep(milliseconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+
+            throw new RuntimeException(
+                    "Benchmark bị gián đoạn",
+                    e
+            );
+        }
     }
 }
