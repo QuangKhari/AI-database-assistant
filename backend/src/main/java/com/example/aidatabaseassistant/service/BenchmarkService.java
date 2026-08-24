@@ -9,6 +9,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.aidatabaseassistant.entity.User;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,10 +31,10 @@ public class BenchmarkService {
     private final EncryptionUtil encryptionUtil;
     private final NL2SQLEngine nl2SQLEngine;
     private final QueryExecutor queryExecutor;
+    private final UserRepository userRepository;
 
-    public BenchmarkQuestion addQuestion(Long connectionId, BenchmarkQuestionRequest request) {
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+    public BenchmarkQuestion addQuestion(String username, Long connectionId, BenchmarkQuestionRequest request) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
         BenchmarkQuestion question = BenchmarkQuestion.builder()
                 .connection(connection)
@@ -44,9 +45,8 @@ public class BenchmarkService {
         return benchmarkQuestionRepository.save(question);
     }
 
-    public BenchmarkRunResponse runBenchmark(Long connectionId) {
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+    public BenchmarkRunResponse runBenchmark(String username, Long connectionId) {
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
@@ -149,5 +149,19 @@ public class BenchmarkService {
         int start = url.indexOf("/models/") + 8;
         int end = url.indexOf(":", start);
         return url.substring(start, end);
+    }
+
+    private DatabaseConnection getOwnedConnection(String username, Long connectionId) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        DatabaseConnection connection = connectionRepository.findById(connectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
+
+        return connection;
     }
 }

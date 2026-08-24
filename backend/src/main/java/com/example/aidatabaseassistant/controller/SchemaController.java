@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 @RestController
 @RequestMapping("/api/schema")
@@ -15,16 +16,18 @@ public class SchemaController {
     private final SchemaMetadataService schemaMetadataService;
 
     @PutMapping("/tables/{tableId}")
-    public ResponseEntity<Void> updateTableDescription(@PathVariable Long tableId,
+    public ResponseEntity<Void> updateTableDescription(Authentication authentication,
+                                                       @PathVariable Long tableId,
                                                        @Valid @RequestBody DescriptionRequest request) {
-        schemaMetadataService.updateTableDescription(tableId, request.getDescription());
+        schemaMetadataService.updateTableDescription(authentication.getName(), tableId, request.getDescription());
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/columns/{columnId}")
-    public ResponseEntity<Void> updateColumnDescription(@PathVariable Long columnId,
+    public ResponseEntity<Void> updateColumnDescription(Authentication authentication,
+                                                        @PathVariable Long columnId,
                                                         @Valid @RequestBody DescriptionRequest request) {
-        schemaMetadataService.updateColumnDescription(columnId, request.getDescription());
+        schemaMetadataService.updateColumnDescription(authentication.getName(), columnId, request.getDescription());
         return ResponseEntity.noContent().build();
     }
 }

@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 @RestController
 @RequestMapping("/api/benchmark")
@@ -17,13 +18,15 @@ public class BenchmarkController {
     private final BenchmarkService benchmarkService;
 
     @PostMapping("/questions/{connectionId}")
-    public ResponseEntity<BenchmarkQuestion> addQuestion(@PathVariable Long connectionId,
+    public ResponseEntity<BenchmarkQuestion> addQuestion(Authentication authentication,
+                                                         @PathVariable Long connectionId,
                                                          @Valid @RequestBody BenchmarkQuestionRequest request) {
-        return ResponseEntity.ok(benchmarkService.addQuestion(connectionId, request));
+        return ResponseEntity.ok(benchmarkService.addQuestion(authentication.getName(), connectionId, request));
     }
 
     @PostMapping("/run/{connectionId}")
-    public ResponseEntity<BenchmarkRunResponse> runBenchmark(@PathVariable Long connectionId) {
-        return ResponseEntity.ok(benchmarkService.runBenchmark(connectionId));
+    public ResponseEntity<BenchmarkRunResponse> runBenchmark(Authentication authentication,
+                                                             @PathVariable Long connectionId) {
+        return ResponseEntity.ok(benchmarkService.runBenchmark(authentication.getName(), connectionId));
     }
 }
