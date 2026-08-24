@@ -7,8 +7,10 @@ import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
+import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.example.aidatabaseassistant.entity.User;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -30,10 +32,18 @@ public class SchemaDiscoveryService {
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
+    private final UserRepository userRepository;
 
-    public DatabaseSchema discoverSchema(Long connectionId) {
+    public DatabaseSchema discoverSchema(String username, Long connectionId) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
         DatabaseConnection connection = connectionRepository.findById(connectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
 
         String url = "jdbc:mysql://" + connection.getHost() + ":" + connection.getPort()
                 + "/" + connection.getDatabaseName();
