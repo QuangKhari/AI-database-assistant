@@ -222,12 +222,12 @@ public class BenchmarkService {
     private boolean compareResults(QueryResultDto generated,
                                    QueryResultDto expected) {
 
-        // 1. Nếu một trong hai câu SQL bị lỗi -> sai
+        // Có lỗi SQL thì thất bại
         if (generated.getError() != null || expected.getError() != null) {
             return false;
         }
 
-        // 2. Khác số dòng -> sai
+        // Khác số dòng => sai
         if (generated.getRowCount() != expected.getRowCount()) {
             return false;
         }
@@ -235,57 +235,38 @@ public class BenchmarkService {
         List<Map<String, Object>> generatedRows = generated.getRows();
         List<Map<String, Object>> expectedRows = expected.getRows();
 
-        // 3. Cả hai đều không có dữ liệu -> đúng
         if (generatedRows.isEmpty() && expectedRows.isEmpty()) {
             return true;
         }
 
-        // 4. Nếu số cột khác nhau -> sai
-        if (generatedRows.get(0).size() != expectedRows.get(0).size()) {
-            return false;
-        }
+        // Lấy danh sách cột của SQL chuẩn
+        List<String> expectedColumns =
+                new ArrayList<>(expectedRows.get(0).keySet());
 
-        /*
-         * Không so sánh tên column/alias.
-         *
-         * Ví dụ:
-         *
-         * SELECT AVG(price) AS total
-         *
-         * và
-         *
-         * SELECT AVG(price) AS average
-         *
-         * đều trả về cùng một giá trị.
-         *
-         * Vì vậy benchmark chỉ tập trung vào dữ liệu.
-         */
+        List<String> generatedNormalized = generatedRows.stream()
+                .map(row -> expectedColumns.stream()
+                        .map(col -> String.valueOf(row.get(col)))
+                        .collect(Collectors.joining("|")))
+                .sorted()
+                .toList();
 
-        List<String> generatedNormalized = normalizeRows(generatedRows);
-        List<String> expectedNormalized = normalizeRows(expectedRows);
-
-        // 5. Không phụ thuộc thứ tự dòng
-        Collections.sort(generatedNormalized);
-        Collections.sort(expectedNormalized);
+        List<String> expectedNormalized = expectedRows.stream()
+                .map(row -> expectedColumns.stream()
+                        .map(col -> String.valueOf(row.get(col)))
+                        .collect(Collectors.joining("|")))
+                .sorted()
+                .toList();
 
         return generatedNormalized.equals(expectedNormalized);
     }
 
     private List<String> normalizeRows(List<Map<String, Object>> rows) {
-
         return rows.stream()
                 .map(row -> row.values().stream()
-                        .map(value -> {
-
-                            if (value == null) {
-                                return "null";
-                            }
-
-                            return value.toString().trim();
-                        })
+                        .map(v -> v == null ? "null" : v.toString())
+                        .sorted()
                         .collect(Collectors.joining("|")))
-                .sorted()
-                .toList();
+                .collect(Collectors.toList());
     }
 
     private String extractModelName(String url) {
