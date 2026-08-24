@@ -10,11 +10,14 @@ import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class QueryService {
 
+    @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
+    private String modelUrl;
     private final UserRepository userRepository;
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
@@ -103,6 +106,9 @@ public class QueryService {
                     .rowCount(log.getResult() != null ? log.getResult().getRowCount() : null)
                     .executionTimeMs(log.getResult() != null ? (int) log.getResult().getExecutionTimeMs() : null)
                     .errorMessage(log.getResult() != null ? log.getResult().getError() : null)
+                    .question(request.getQuestion())
+                    .modelUsed(extractModelName(modelUrl))
+                    .retryCount(logs.size())
                     .build();
             queryLogRepository.save(queryLog);
         }
@@ -120,8 +126,13 @@ public class QueryService {
     }
 
     private String summarizeResult(String question, QueryResultDto result) {
-        String prompt = "Câu hỏi: " + question + "\nKết quả (dạng bảng, " + result.getRowCount()
-                + " dòng): " + result.getRows() + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
+        List<java.util.Map<String, Object>> limitedRows = result.getRows().size() > 20
+                ? result.getRows().subList(0, 20)
+                : result.getRows();
+
+        String prompt = "Câu hỏi: " + question + "\nKết quả (hiển thị " + limitedRows.size()
+                + "/" + result.getRowCount() + " dòng): " + limitedRows
+                + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
         return llmClient.generateResponse(prompt);
     }
 
@@ -139,5 +150,11 @@ public class QueryService {
                         : request.getQuestion())
                 .build();
         return conversationRepository.save(conversation);
+    }
+
+    private String extractModelName(String url) {
+        int start = url.indexOf("/models/") + 8;
+        int end = url.indexOf(":", start);
+        return url.substring(start, end);
     }
 }

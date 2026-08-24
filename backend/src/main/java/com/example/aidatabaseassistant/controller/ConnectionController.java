@@ -29,8 +29,8 @@ public class ConnectionController {
 //    }
 
     @PostMapping("/{id}/schema")
-    public ResponseEntity<SchemaResponse> discoverSchema(@PathVariable Long id) {
-        var schema = schemaDiscoveryService.discoverSchema(id);
+    public ResponseEntity<SchemaResponse> discoverSchema(Authentication authentication, @PathVariable Long id) {
+        var schema = schemaDiscoveryService.discoverSchema(authentication.getName(), id);
 
         var tables = schema.getTables().stream()
                 .map(t -> new SchemaResponse.TableInfo(
