@@ -1,0 +1,23 @@
+.page { display: grid; gap: 28px; }
+.heading { display: flex; justify-content: space-between; align-items: flex-end; }
+.heading p { margin: 0 0 6px; color: #0b7a75; font-size: 12px; text-transform: uppercase; font-weight: 750; letter-spacing: 1px; }
+.heading h1 { margin: 0 0 8px; color: #1e393c; font-size: 30px; letter-spacing: -.7px; }
+.heading span { color: #718083; }
+.member { padding: 10px 14px; border-left: 2px solid #88cec2; color: #7c898b; font-size: 11px; line-height: 1.55; }
+.member strong { color: #334b4e; font-size: 13px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.panel { padding: 28px; border: 1px solid #dfe8e5; border-radius: 16px; background: white; }
+.panelTitle { display: flex; gap: 13px; padding-bottom: 20px; margin-bottom: 22px; border-bottom: 1px solid #e5ecea; }
+.panelTitle > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #08756f; background: #e6f6f3; font-size: 11px; font-weight: 800; }
+.panelTitle h2 { margin: 0 0 4px; color: #294245; font-size: 17px; }
+.panelTitle p { margin: 0; color: #849193; font-size: 12px; }
+.panel form { display: grid; gap: 17px; }
+.panel label { display: grid; gap: 7px; color: #42575a; font-size: 12px; font-weight: 700; }
+.panel input { width: 100%; padding: 11px 12px; border: 1px solid #cfdbd8; border-radius: 9px; outline: none; color: #233b3e; background: white; }
+.panel input:focus { border-color: #0b8c83; box-shadow: 0 0 0 3px rgb(11 140 131 / 10%); }
+.panel input:disabled { color: #849092; background: #f3f6f5; }
+.panel button { justify-self: start; border: 0; border-radius: 9px; padding: 11px 16px; color: white; background: #0b7a75; font-weight: 700; cursor: pointer; }
+.panel button:disabled { opacity: .6; cursor: wait; }
+.error { margin: 0; padding: 9px 11px; border-radius: 8px; color: #aa2940; background: #fff0f2; font-size: 12px; line-height: 1.45; }
+.loading { color: #728184; }
+@media (max-width: 800px) { .columns { grid-template-columns: 1fr; } .heading { display: block; } .member { margin-top: 20px; } }

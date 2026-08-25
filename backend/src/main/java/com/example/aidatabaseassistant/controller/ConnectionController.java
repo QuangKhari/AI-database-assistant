@@ -2,6 +2,7 @@ package com.example.aidatabaseassistant.controller;
 
 import com.example.aidatabaseassistant.dto.ConnectionRequest;
 import com.example.aidatabaseassistant.dto.ConnectionResponse;
+import com.example.aidatabaseassistant.dto.ConnectionTestResponse;
 import com.example.aidatabaseassistant.dto.ConnectionUpdateRequest;
 import com.example.aidatabaseassistant.service.ConnectionService;
 import jakarta.validation.Valid;
@@ -9,8 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.example.aidatabaseassistant.dto.SchemaResponse;
-import com.example.aidatabaseassistant.service.SchemaDiscoveryService;
 
 import java.util.List;
 
@@ -20,42 +19,18 @@ import java.util.List;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
-    private final SchemaDiscoveryService schemaDiscoveryService;
-//    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
-//
-//    @GetMapping("/test-ai")
-//    public ResponseEntity<String> testAi() {
-//        return ResponseEntity.ok(llmClient.generateResponse("Xin chào, bạn là ai?"));
-//    }
-
-    @PostMapping("/{id}/schema")
-    public ResponseEntity<SchemaResponse> discoverSchema(@PathVariable Long id) {
-        var schema = schemaDiscoveryService.discoverSchema(id);
-
-        var tables = schema.getTables().stream()
-                .map(t -> new SchemaResponse.TableInfo(
-                        t.getName(),
-                        t.getDescription(),
-                        t.getColumns().stream()
-                                .map(c -> new SchemaResponse.ColumnInfo(
-                                        c.getName(), c.getDataType(), c.getPrimaryKey(), c.getForeignKey(),
-                                        c.getReferencedTable(), c.getReferencedColumn(), c.getDescription()))
-                                .toList()
-                ))
-                .toList();
-
-        return ResponseEntity.ok(new SchemaResponse(schema.getDatabaseName(), schema.getLastSyncedAt(), tables));
-    }
 
     @PostMapping("/test")
-    public ResponseEntity<Boolean> testConnection(@Valid @RequestBody ConnectionRequest request) {
-        return ResponseEntity.ok(connectionService.testConnection(request));
+    public ResponseEntity<ConnectionTestResponse> testConnection(
+            Authentication authentication, @Valid @RequestBody ConnectionRequest request) {
+        return ResponseEntity.ok(connectionService.testConnection(authentication.getName(), request));
     }
 
     @PostMapping
     public ResponseEntity<ConnectionResponse> saveConnection(Authentication authentication,
                                                              @Valid @RequestBody ConnectionRequest request) {
-        return ResponseEntity.ok(connectionService.saveConnection(authentication.getName(), request));
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(connectionService.saveConnection(authentication.getName(), request));
     }
 
     @GetMapping
@@ -76,7 +51,8 @@ public class ConnectionController {
     }
 
     @PostMapping("/{id}/reconnect")
-    public ResponseEntity<Boolean> reconnect(Authentication authentication, @PathVariable Long id) {
+    public ResponseEntity<ConnectionTestResponse> reconnect(
+            Authentication authentication, @PathVariable Long id) {
         return ResponseEntity.ok(connectionService.reconnect(authentication.getName(), id));
     }
 

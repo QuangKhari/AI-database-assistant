@@ -1,0 +1,19 @@
+.page { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, .9fr) minmax(430px, 1.1fr); }
+.brandPanel { position: relative; overflow: hidden; padding: 44px clamp(32px, 5vw, 80px); display: flex; flex-direction: column; justify-content: space-between; color: white; background: linear-gradient(145deg, #063d42 0%, #0b7a75 58%, #18a999 100%); }
+.brandPanel::after { content: ''; position: absolute; width: 420px; height: 420px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 50%; right: -190px; bottom: -140px; box-shadow: 0 0 0 70px rgb(255 255 255 / 4%), 0 0 0 140px rgb(255 255 255 / 3%); }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 750; font-size: 20px; position: relative; z-index: 1; }
+.logo, .mobileBrand span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #fff; color: #08756f; font-size: 15px; letter-spacing: -.5px; }
+.pitch { max-width: 540px; position: relative; z-index: 1; }
+.pitch h1 { margin: 12px 0 18px; font-size: clamp(34px, 4vw, 56px); line-height: 1.08; letter-spacing: -2px; }
+.pitch > p:last-child { max-width: 500px; color: rgb(255 255 255 / 78%); font-size: 17px; line-height: 1.65; }
+.eyebrow { margin: 0; color: #b5fff4; font-size: 13px; text-transform: uppercase; letter-spacing: 1.8px; font-weight: 700; }
+.note { margin: 0; position: relative; z-index: 1; color: rgb(255 255 255 / 65%); font-size: 13px; }
+.formPanel { display: grid; place-items: center; padding: 40px 24px; background: #f7faf9; }
+.mobileBrand { display: none; }
+@media (max-width: 820px) {
+  .page { display: block; background: #f7faf9; }
+  .brandPanel { display: none; }
+  .formPanel { min-height: 100vh; display: block; padding-top: 28px; }
+  .mobileBrand { display: flex; align-items: center; gap: 10px; margin: 0 auto 44px; width: min(430px, 100%); font-weight: 750; color: #123438; }
+  .mobileBrand span { background: #0b7a75; color: #fff; }
+}

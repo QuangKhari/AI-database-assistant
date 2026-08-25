@@ -1,0 +1,189 @@
+# API Contract — phần 1, 2, 3 và 10
+
+Base URL local: `http://localhost:8080/api`. Dữ liệu gửi/nhận ở dạng JSON. Endpoint có biểu tượng 🔒 yêu cầu header `Authorization: Bearer <accessToken>`.
+
+## Quy ước lỗi
+
+```json
+{
+  "status": 400,
+  "code": "VALIDATION_ERROR",
+  "message": "Dữ liệu không hợp lệ",
+  "fieldErrors": { "email": "must be a well-formed email address" }
+}
+```
+
+Các mã chính: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `ACCOUNT_LOCKED` (403), `ACCESS_DENIED` (403), `RATE_LIMIT_EXCEEDED` (429), `INTERNAL_ERROR` (500).
+
+## Authentication
+
+### `POST /auth/register`
+
+```json
+{
+  "username": "student_01",
+  "displayName": "Nguyễn Văn A",
+  "email": "student@example.com",
+  "password": "Secure123"
+}
+```
+
+`username`: 3–30 ký tự chữ/số/`.`/`_`/`-`. `password`: 8–72 ký tự, có chữ hoa, chữ thường và số. Thành công trả `201`:
+
+```json
+{
+  "accessToken": "eyJ...",
+  "tokenType": "Bearer",
+  "expiresInSeconds": 86400,
+  "user": {
+    "id": 1,
+    "username": "student_01",
+    "displayName": "Nguyễn Văn A",
+    "email": "student@example.com",
+    "role": "USER",
+    "createdAt": "2026-08-25T00:00:00"
+  }
+}
+```
+
+### `POST /auth/login`
+
+`identifier` có thể là email hoặc username.
+
+```json
+{ "identifier": "student@example.com", "password": "Secure123" }
+```
+
+Thành công trả `200` với cấu trúc giống đăng ký. Sai thông tin trả `401` và không cho biết email/username nào sai.
+
+### `POST /auth/forgot-password`
+
+```json
+{ "email": "student@example.com" }
+```
+
+Luôn trả cùng thông báo `200` dù email có tồn tại hay không để tránh dò tài khoản. Giới hạn 3 lần/giờ theo cả email và IP. Email local xuất hiện tại Mailpit.
+
+### `POST /auth/reset-password`
+
+```json
+{
+  "token": "token-lay-tu-email",
+  "newPassword": "NewSecure123",
+  "confirmPassword": "NewSecure123"
+}
+```
+
+Token tồn tại 30 phút và chỉ dùng một lần. Thành công trả `200` cùng `message`.
+
+### 🔒 `POST /auth/logout`
+
+Trả `204`. Vì JWT stateless, frontend chịu trách nhiệm xóa token local; token cũng tự hết hạn theo cấu hình.
+
+## User account
+
+### 🔒 `GET /users/me`
+
+Trả `200`:
+
+```json
+{
+  "id": 1,
+  "username": "student_01",
+  "displayName": "Nguyễn Văn A",
+  "email": "student@example.com",
+  "role": "USER",
+  "enabled": true,
+  "locked": false,
+  "createdAt": "2026-08-25T00:00:00",
+  "updatedAt": "2026-08-25T00:00:00"
+}
+```
+
+### 🔒 `PUT /users/me`
+
+```json
+{ "displayName": "Tên mới", "email": "new@example.com" }
+```
+
+Username không được phép đổi. Email phải duy nhất. Thành công trả hồ sơ đã cập nhật.
+
+### 🔒 `PUT /users/me/password`
+
+```json
+{
+  "currentPassword": "Secure123",
+  "newPassword": "NewSecure123",
+  "confirmPassword": "NewSecure123"
+}
+```
+
+Mật khẩu hiện tại phải đúng; mật khẩu mới phải khác mật khẩu hiện tại. Thành công trả `message`.
+
+## System
+
+### `GET /health`
+
+Endpoint public dùng để kiểm tra backend đã chạy. Trả `200` cùng trạng thái hệ thống.
+
+## Target MySQL connections
+
+Mọi endpoint trong nhóm này yêu cầu JWT. MVP chỉ nhận `dbType: "mysql"`; không nhận raw JDBC URL.
+
+### `POST /connections/test`
+
+Kiểm tra tạm thời, không lưu và luôn đóng JDBC connection sau khi xong. Giới hạn 10 lần/phút/user.
+
+```json
+{
+  "name": "Database bán hàng",
+  "dbType": "mysql",
+  "host": "127.0.0.1",
+  "port": 3309,
+  "databaseName": "sample_store",
+  "username": "aidb_reader",
+  "password": "..."
+}
+```
+
+Response cho biết `successful`, `readOnlyVerified`, `code`, `message`, `durationMs` và `serverVersion`. Tài khoản có quyền ghi trả `successful: false` và không được lưu.
+
+### `POST /connections`
+
+Test và xác minh read-only trước khi tạo. Mỗi user tối đa 5 connection đang hoạt động. Mật khẩu được mã hóa AES-GCM và không có trong response. Thành công trả `201`.
+
+### `GET /connections` và `GET /connections/{id}`
+
+Chỉ trả connection thuộc JWT hiện tại. User không thể đọc connection của user khác.
+
+### `PUT /connections/{id}`
+
+Test lại trước khi lưu. Khi `password` rỗng, giữ mật khẩu cũ; nếu connection đang ngắt thì cập nhật thành công sẽ kích hoạt lại.
+
+### `POST /connections/{id}/reconnect`
+
+Kiểm tra lại cấu hình đã lưu. Nếu thành công và read-only, đặt connection về hoạt động.
+
+### `DELETE /connections/{id}`
+
+Ngắt mềm (`active=false`), không xóa cấu hình hoặc lịch sử. Trả `204`.
+
+## Admin
+
+Yêu cầu JWT có role `ADMIN`. Admin đầu tiên được tạo một lần từ biến môi trường khi hệ thống chưa có Admin.
+
+### `GET /admin/stats`
+
+Trả tổng USER, USER hoạt động, USER đã khóa và tổng connection hoạt động.
+
+### `GET /admin/users?search=&page=0&size=20`
+
+Tìm theo username/email/tên hiển thị và phân trang. Chỉ liệt kê role USER; không trả mật khẩu tài khoản, Target DB credentials hay dữ liệu truy vấn.
+
+### `PATCH /admin/users/{id}/lock`
+
+Khóa USER. JWT đã cấp cho user đó bị từ chối ở request tiếp theo. Admin không thể tự khóa hoặc khóa Admin khác.
+
+### `PATCH /admin/users/{id}/unlock`
+
+Mở khóa USER; user có thể đăng nhập lại.

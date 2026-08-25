@@ -30,6 +30,9 @@ public class User {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
+    @Column(name = "display_name", length = 100)
+    private String displayName;
+
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
@@ -38,12 +41,29 @@ public class User {
     @Builder.Default
     private Role role = Role.USER;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean enabled = true;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean locked = false;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = this.createdAt;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)

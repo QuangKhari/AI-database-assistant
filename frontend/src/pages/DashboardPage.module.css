@@ -1,0 +1,25 @@
+.page { display: grid; gap: 28px; }
+.hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding: 32px 35px; border-radius: 18px; color: white; background: linear-gradient(120deg, #0a5f5c, #0e8d83); box-shadow: 0 12px 36px rgb(9 92 88 / 15%); }
+.hero p { margin: 0 0 8px; color: #bff5ed; font-size: 12px; font-weight: 750; letter-spacing: 1.2px; text-transform: uppercase; }
+.hero h1 { margin: 0 0 10px; font-size: 29px; letter-spacing: -.7px; }
+.hero div > span { color: rgb(255 255 255 / 75%); line-height: 1.55; }
+.status { white-space: nowrap; padding: 8px 12px; border-radius: 999px; background: rgb(255 255 255 / 12%); font-size: 12px; }
+.status span { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #8df2c7; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.card { padding: 25px; border: 1px solid #dfe8e5; border-radius: 16px; background: white; }
+.icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #08756f; background: #e4f7f3; font-size: 11px; font-weight: 800; letter-spacing: .5px; }
+.card h2 { margin: 19px 0 8px; color: #203b3e; font-size: 17px; }
+.card p { min-height: 48px; margin: 0 0 20px; color: #758487; font-size: 13px; line-height: 1.55; }
+.card button { border: 0; padding: 0; color: #9ba8aa; background: none; font-weight: 650; }
+.card a { color: #08756f; text-decoration: none; font-size: 13px; font-weight: 750; }
+.accountCard { border-color: #a7dcd4; }
+.progress { display: flex; align-items: center; padding: 24px 28px; border: 1px solid #dfe8e5; border-radius: 16px; background: white; }
+.progress div { display: grid; grid-template-columns: 34px auto; column-gap: 11px; align-items: center; min-width: 160px; }
+.progress span { grid-row: 1 / 3; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: white; background: #0b7a75; font-size: 12px; font-weight: 800; }
+.progress strong { color: #294245; font-size: 12px; }
+.progress small { color: #2a9a70; font-size: 11px; }
+.progress i { flex: 1; height: 2px; margin: 0 12px; background: #71c7b8; }
+.progress .upcoming span { color: #7d8a8c; background: #edf1f0; }
+.progress .upcoming small { color: #8b989a; }
+.progress i.muted { background: #e1e7e6; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } .hero { display: block; } .status { display: inline-block; margin-top: 18px; } .progress { align-items: flex-start; flex-direction: column; gap: 12px; } .progress i { width: 2px; height: 18px; margin: 0 0 0 16px; flex: none; } }

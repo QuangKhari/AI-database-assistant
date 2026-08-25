@@ -16,7 +16,13 @@ dist/
 # Environment
 .env
 .env.*
+!.env.example
+!**/.env.example
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Codex artifacts
+/.codex-tmp/
+/Bao_cao_so_sanh_backend.docx

@@ -19,13 +19,15 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy user: " + username));
+        User user = userRepository.findByUsernameIgnoreCaseOrEmailIgnoreCase(username, username)
+                .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy tài khoản"));
 
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPasswordHash())
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())))
+                .disabled(!Boolean.TRUE.equals(user.getEnabled()))
+                .accountLocked(Boolean.TRUE.equals(user.getLocked()))
                 .build();
     }
 }

@@ -1,0 +1,81 @@
+@baseUrl = http://localhost:8080/api
+@token = PASTE_ACCESS_TOKEN_HERE
+
+### Health
+GET {{baseUrl}}/health
+
+### Register — copy accessToken from response
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "student_01",
+  "displayName": "Nguyễn Văn A",
+  "email": "student01@example.com",
+  "password": "Secure123"
+}
+
+### Login by username
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "identifier": "student_01",
+  "password": "Secure123"
+}
+
+### Login by email
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "identifier": "student01@example.com",
+  "password": "Secure123"
+}
+
+### Get current profile
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{token}}
+
+### Update profile
+PUT {{baseUrl}}/users/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "displayName": "Tên hiển thị mới",
+  "email": "student01@example.com"
+}
+
+### Change password
+PUT {{baseUrl}}/users/me/password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "Secure123",
+  "newPassword": "NewSecure123",
+  "confirmPassword": "NewSecure123"
+}
+
+### Request password reset — inspect email at http://localhost:8025
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "student01@example.com"
+}
+
+### Reset password — paste raw token from email
+POST {{baseUrl}}/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "PASTE_TOKEN_FROM_EMAIL",
+  "newPassword": "ResetSecure123",
+  "confirmPassword": "ResetSecure123"
+}
+
+### Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{token}}

@@ -10,6 +10,40 @@ services:
       - "3308:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ai-db-assistant-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  target-mysql:
+    image: mysql:8.0
+    container_name: ai-db-assistant-target-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${TARGET_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: sample_store
+      TARGET_READONLY_USER: ${TARGET_MYSQL_READONLY_USER}
+      TARGET_READONLY_PASSWORD: ${TARGET_MYSQL_READONLY_PASSWORD}
+    ports:
+      - "3309:3306"
+    volumes:
+      - target_mysql_data:/var/lib/mysql
+      - ./docker/target-db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${TARGET_MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   mysql_data:
+  target_mysql_data:

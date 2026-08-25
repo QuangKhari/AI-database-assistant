@@ -1,0 +1,63 @@
+@baseUrl = http://localhost:8080/api
+@userToken = PASTE_USER_TOKEN
+@adminToken = PASTE_ADMIN_TOKEN
+@connectionId = 1
+@userId = 1
+
+### Test read-only Target MySQL
+POST {{baseUrl}}/connections/test
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "name": "Local Sample Store",
+  "dbType": "mysql",
+  "host": "127.0.0.1",
+  "port": 3309,
+  "databaseName": "sample_store",
+  "username": "aidb_reader",
+  "password": "PASTE_TARGET_READONLY_PASSWORD"
+}
+
+### Save Target MySQL after verification
+POST {{baseUrl}}/connections
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "name": "Local Sample Store",
+  "dbType": "mysql",
+  "host": "127.0.0.1",
+  "port": 3309,
+  "databaseName": "sample_store",
+  "username": "aidb_reader",
+  "password": "PASTE_TARGET_READONLY_PASSWORD"
+}
+
+### List own connections
+GET {{baseUrl}}/connections
+Authorization: Bearer {{userToken}}
+
+### Reconnect
+POST {{baseUrl}}/connections/{{connectionId}}/reconnect
+Authorization: Bearer {{userToken}}
+
+### Soft disconnect
+DELETE {{baseUrl}}/connections/{{connectionId}}
+Authorization: Bearer {{userToken}}
+
+### Admin stats
+GET {{baseUrl}}/admin/stats
+Authorization: Bearer {{adminToken}}
+
+### Admin user search
+GET {{baseUrl}}/admin/users?search=student&page=0&size=20
+Authorization: Bearer {{adminToken}}
+
+### Admin lock / unlock user
+PATCH {{baseUrl}}/admin/users/{{userId}}/lock
+Authorization: Bearer {{adminToken}}
+
+###
+PATCH {{baseUrl}}/admin/users/{{userId}}/unlock
+Authorization: Bearer {{adminToken}}

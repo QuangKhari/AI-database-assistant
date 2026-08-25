@@ -50,8 +50,27 @@ public class DatabaseConnection {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean active = true;
+
+    @Column(name = "last_tested_at")
+    private LocalDateTime lastTestedAt;
+
+    @Column(name = "last_test_successful")
+    private Boolean lastTestSuccessful;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = this.createdAt;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

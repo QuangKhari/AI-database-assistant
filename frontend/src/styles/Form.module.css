@@ -1,0 +1,23 @@
+.card { width: min(430px, 100%); }
+.heading { margin-bottom: 30px; }
+.heading h1 { margin: 0 0 9px; color: #163639; font-size: 30px; letter-spacing: -.8px; }
+.heading p { margin: 0; color: #718083; line-height: 1.55; }
+.form { display: grid; gap: 18px; }
+.field { display: grid; gap: 7px; }
+.field label { color: #344a4d; font-size: 13px; font-weight: 700; }
+.field input { width: 100%; border: 1px solid #cfdbd8; border-radius: 11px; padding: 12px 13px; background: #fff; color: #1d3336; outline: none; transition: border-color 120ms, box-shadow 120ms; }
+.field input::placeholder { color: #a0acad; }
+.field input:focus { border-color: #0b8c83; box-shadow: 0 0 0 3px rgb(11 140 131 / 12%); }
+.field input[aria-invalid='true'] { border-color: #d9485f; }
+.labelRow { display: flex; justify-content: space-between; align-items: center; }
+.labelRow a { color: #08756f; font-size: 12px; text-decoration: none; font-weight: 700; }
+.error { margin: 0; color: #c3314c; font-size: 12px; line-height: 1.4; }
+.serverError { padding: 11px 13px; border: 1px solid #f5c2c9; border-radius: 10px; color: #a51d34; background: #fff0f2; font-size: 13px; line-height: 1.45; }
+.success { padding: 13px 14px; border: 1px solid #b8e3d6; border-radius: 10px; color: #096547; background: #edfaf5; font-size: 13px; line-height: 1.5; }
+.primary { width: 100%; border: 0; border-radius: 11px; padding: 13px 18px; color: white; background: #0b7a75; cursor: pointer; font-weight: 750; box-shadow: 0 7px 18px rgb(11 122 117 / 17%); }
+.primary:hover:not(:disabled) { background: #086c67; transform: translateY(-1px); }
+.primary:disabled { opacity: .62; cursor: wait; }
+.footer { margin: 24px 0 0; color: #738184; text-align: center; font-size: 13px; }
+.footer a, .back { color: #08756f; font-weight: 750; text-decoration: none; }
+.helper { color: #819092; font-size: 11px; line-height: 1.5; }
+.passwordRules { margin: -5px 0 0; padding-left: 18px; color: #788789; font-size: 11px; line-height: 1.65; }

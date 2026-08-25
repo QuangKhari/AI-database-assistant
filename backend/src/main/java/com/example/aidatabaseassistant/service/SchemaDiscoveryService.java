@@ -5,7 +5,6 @@ import com.example.aidatabaseassistant.entity.ColumnMetadata;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
-import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,13 +26,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SchemaDiscoveryService {
 
-    private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
+    private final ConnectionService connectionService;
 
-    public DatabaseSchema discoverSchema(Long connectionId) {
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+    public DatabaseSchema discoverSchema(String username, Long connectionId) {
+        DatabaseConnection connection = connectionService.getOwnedActiveConnection(username, connectionId);
 
         String url = "jdbc:mysql://" + connection.getHost() + ":" + connection.getPort()
                 + "/" + connection.getDatabaseName();
