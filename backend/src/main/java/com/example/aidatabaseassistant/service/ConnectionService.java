@@ -24,6 +24,8 @@ public class ConnectionService {
     private final DatabaseConnectionRepository connectionRepository;
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int SOCKET_TIMEOUT_MS = 10000;
 
     public boolean testConnection(ConnectionRequest request) {
         String url = buildJdbcUrl(request.getDbType(), request.getHost(), request.getPort(), request.getDatabaseName());
@@ -68,7 +70,9 @@ public class ConnectionService {
 
     private String buildJdbcUrl(String dbType, String host, Integer port, String databaseName) {
         if ("mysql".equalsIgnoreCase(dbType)) {
-            return "jdbc:mysql://" + host + ":" + port + "/" + databaseName;
+            return "jdbc:mysql://" + host + ":" + port + "/" + databaseName
+                    + "?connectTimeout=" + CONNECT_TIMEOUT_MS
+                    + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
         }
         throw new IllegalArgumentException("Loại database chưa được hỗ trợ: " + dbType);
     }

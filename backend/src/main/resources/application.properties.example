@@ -1,15 +1,33 @@
 spring.application.name=aidatabaseassistant
 spring.datasource.url=jdbc:mysql://127.0.0.1:3308/ai_db_assistant_system
-spring.datasource.username=root
-spring.datasource.password=123456
+spring.datasource.username=${DB_USERNAME:root}
+spring.datasource.password=${DB_PASSWORD}
 spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
 spring.jpa.open-in-view=false
 spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-jwt.secret=ThisIsASecretKeyForJWTSigningPleaseChangeInProduction123456
+# Mac dinh tat show-sql (an toan cho production). Khi debug local, chay voi
+# SHOW_SQL=true (vi du them vao file .env) de bat lai.
+spring.jpa.show-sql=${SHOW_SQL:false}
+jwt.secret=${JWT_SECRET}
 jwt.expiration=86400000
-app.encryption.secret=MyAppSecretKey16
+app.encryption.secret=${ENCRYPTION_SECRET}
 
 gemini.api.key=${GEMINI_API_KEY}
 gemini.api.url=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent
+
+# Muc log mac dinh la INFO nen LLMClient.log.debug(prompt/response) se KHONG
+# xuat hien trong log production (tranh lo schema/metadata nhay cam qua log).
+# Khi can debug prompt gui Gemini o local, doi dong duoi thanh DEBUG.
+logging.level.com.example.aidatabaseassistant=INFO
+
+# Cach chay local (khong can export bien moi truong thu cong moi lan):
+# 1) Tao file .env (da co trong .gitignore, KHONG bao gio commit file nay):
+#      DB_USERNAME=root
+#      DB_PASSWORD=<mat khau MySQL local cua ban>
+#      JWT_SECRET=<chuoi ngau nhien it nhat 32 ky tu>
+#      ENCRYPTION_SECRET=<chuoi bi mat rieng, khac voi JWT_SECRET>
+#      GEMINI_API_KEY=<api key that tu Google AI Studio>
+# 2) Trong IntelliJ: Run/Debug Configurations > Environment variables > nap tung dong tren,
+#    hoac dung plugin "EnvFile" de tu dong doc file .env.
+# 3) Doi ten file nay thanh application.properties (file that, da co trong .gitignore).
