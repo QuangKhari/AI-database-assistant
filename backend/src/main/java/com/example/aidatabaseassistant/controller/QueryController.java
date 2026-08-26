@@ -1,9 +1,12 @@
 package com.example.aidatabaseassistant.controller;
 
+import com.example.aidatabaseassistant.dto.ExplainSqlRequest;
+import com.example.aidatabaseassistant.dto.ExplainSqlResponse;
 import com.example.aidatabaseassistant.dto.PreviewResponse;
 import com.example.aidatabaseassistant.dto.QueryRequest;
 import com.example.aidatabaseassistant.dto.QueryResponse;
 import com.example.aidatabaseassistant.service.QueryService;
+import com.example.aidatabaseassistant.service.SqlExplanationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class QueryController {
 
     private final QueryService queryService;
+    private final SqlExplanationService sqlExplanationService;
+
+    @PostMapping("/explain")
+    public ResponseEntity<ExplainSqlResponse> explain(Authentication authentication,
+                                                      @Valid @RequestBody ExplainSqlRequest request) {
+        return ResponseEntity.ok(sqlExplanationService.explain(authentication.getName(), request));
+    }
 
     @PostMapping("/preview")
     public ResponseEntity<PreviewResponse> preview(Authentication authentication,

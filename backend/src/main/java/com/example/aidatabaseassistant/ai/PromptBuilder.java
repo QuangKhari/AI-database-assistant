@@ -105,6 +105,42 @@ public class PromptBuilder {
         return sb.toString();
     }
 
+    public String buildExplanationPrompt(String sql, DatabaseSchema schema) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("""
+        Bạn là chuyên gia MySQL. Nhiệm vụ của bạn là giải thích câu SQL dưới
+        đây bằng tiếng Việt, đơn giản để người không rành kỹ thuật cũng hiểu.
+
+        CHIA GIẢI THÍCH THEO TỪNG MỆNH ĐỀ xuất hiện trong câu SQL (ví dụ:
+        SELECT, FROM, JOIN, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT). CHỈ
+        liệt kê mệnh đề nào THỰC SỰ có mặt trong câu SQL, không bịa thêm.
+
+        """);
+
+        if (schema != null) {
+            sb.append("SCHEMA (dùng để giải thích đúng ý nghĩa tên bảng/cột):\n");
+            appendSchema(sb, schema);
+            sb.append("\n");
+        }
+
+        sb.append("""
+        CHỈ trả về JSON hợp lệ đúng định dạng sau, KHÔNG thêm bất kỳ ký tự
+        nào khác, KHÔNG dùng markdown code block (không dùng dấu ```):
+        {
+          "summary": "1 câu tóm tắt tổng quan câu SQL này làm gì",
+          "steps": [
+            {"clause": "phần SQL của mệnh đề này", "explanation": "giải thích ngắn gọn, dễ hiểu"}
+          ]
+        }
+
+        """);
+
+        sb.append("Câu SQL cần giải thích:\n").append(sql);
+
+        return sb.toString();
+    }
+
     private void appendSchema(StringBuilder sb, DatabaseSchema schema) {
         for (TableMetadata table : schema.getTables()) {
 

@@ -45,8 +45,11 @@ public class SchemaDiscoveryService {
             throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
         }
 
+        // connectTimeout/socketTimeout: tranh treo vo thoi han neu host connection
+        // khong con phan hoi (vi du DB da bi tat) trong luc quet schema.
         String url = "jdbc:mysql://" + connection.getHost() + ":" + connection.getPort()
-                + "/" + connection.getDatabaseName();
+                + "/" + connection.getDatabaseName()
+                + "?connectTimeout=5000&socketTimeout=15000";
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)

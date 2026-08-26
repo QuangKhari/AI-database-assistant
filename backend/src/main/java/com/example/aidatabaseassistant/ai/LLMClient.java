@@ -1,5 +1,7 @@
 package com.example.aidatabaseassistant.ai;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +15,8 @@ import java.util.Map;
 
 @Component
 public class LLMClient {
+
+    private static final Logger log = LoggerFactory.getLogger(LLMClient.class);
 
     private final RestTemplate restTemplate;
 
@@ -54,9 +58,13 @@ public class LLMClient {
 
         String url = apiUrl + "?key=" + apiKey;
 
-        // ===== Debug Prompt =====
-        System.out.println("\n========== PROMPT ==========");
-        System.out.println(prompt);
+        // Prompt co the chua schema/metadata nhay cam nen chi log full noi dung
+        // o muc DEBUG (tat mac dinh o production). O muc INFO chi log do dai,
+        // du de debug performance ma khong lo lo du lieu ra log file/console.
+        log.info("Goi Gemini API, do dai prompt: {} ky tu", prompt.length());
+        log.debug("Prompt gui Gemini:\n{}", prompt);
+
+        long start = System.currentTimeMillis();
 
         HttpEntity<Map<String, Object>> entity =
                 new HttpEntity<>(body, headers);
@@ -85,10 +93,9 @@ public class LLMClient {
 
         String answer = (String) parts.get(0).get("text");
 
-        // ===== Debug Response =====
-        System.out.println("\n========== GEMINI RESPONSE ==========");
-        System.out.println(answer);
-        System.out.println("====================================\n");
+        long elapsedMs = System.currentTimeMillis() - start;
+        log.info("Gemini API tra loi trong {} ms, do dai response: {} ky tu", elapsedMs, answer.length());
+        log.debug("Response tu Gemini:\n{}", answer);
 
         return answer;
     }
