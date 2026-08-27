@@ -11,7 +11,6 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +31,7 @@ public class QueryService {
     private final LLMClient llmClient;
     private final RateLimitService rateLimitService;
     private final ChartSuggestionService chartSuggestionService;
+    private final SchemaLoaderService schemaLoaderService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
         User user = userRepository.findByUsername(username)
@@ -44,8 +44,7 @@ public class QueryService {
             throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
         }
 
-        DatabaseSchema schema = schemaRepository.findByConnectionId(connection.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
+        DatabaseSchema schema = schemaLoaderService.loadCompleteSchema(connection.getId());
 
         String generatedSql = nl2SQLEngine.generateSQL(request.getQuestion(), schema);
 
@@ -57,7 +56,6 @@ public class QueryService {
         }
     }
 
-    @Transactional
     public QueryResponse processQuery(String username, QueryRequest request) {
         if (!rateLimitService.tryConsume(username)) {
             throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
@@ -73,8 +71,7 @@ public class QueryService {
             throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
         }
 
-        DatabaseSchema schema = schemaRepository.findByConnectionId(connection.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
+        DatabaseSchema schema = schemaLoaderService.loadCompleteSchema(connection.getId());
 
         Conversation conversation = getOrCreateConversation(user, connection, request);
 
