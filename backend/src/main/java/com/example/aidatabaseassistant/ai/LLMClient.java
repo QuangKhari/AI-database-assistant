@@ -92,6 +92,7 @@ public class LLMClient {
                 (List<Map<String, Object>>) content.get("parts");
 
         String answer = (String) parts.get(0).get("text");
+        log.info("Gemini answer: {}", answer);
 
         long elapsedMs = System.currentTimeMillis() - start;
         log.info("Gemini API tra loi trong {} ms, do dai response: {} ky tu", elapsedMs, answer.length());

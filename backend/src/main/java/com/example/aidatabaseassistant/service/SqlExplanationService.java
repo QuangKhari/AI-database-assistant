@@ -11,7 +11,7 @@ import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
