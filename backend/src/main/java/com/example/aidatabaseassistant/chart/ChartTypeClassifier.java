@@ -36,12 +36,38 @@ public class ChartTypeClassifier {
 
         List<String> numericColumns = new ArrayList<>();
         String dimensionColumn = null;
+        String numericTimeLikeColumn = null; // cot vua la SO vua co TEN goi y thoi gian (vi du "thang" = 1,2,3)
 
         for (String column : columns) {
             if (isNumericColumn(column, rows)) {
-                numericColumns.add(column);
+                if (numericTimeLikeColumn == null && matchesTimeKeyword(column)) {
+                    // Khong add vao numericColumns ngay - de quyet dinh o duoi,
+                    // vi day co the la MOC THOI GIAN (dimension) chu khong
+                    // phai SO LIEU (measure), du kieu du lieu la so nguyen.
+                    numericTimeLikeColumn = column;
+                } else {
+                    numericColumns.add(column);
+                }
             } else if (dimensionColumn == null) {
+                // Chi lay cot KHONG PHAI so DAU TIEN lam truc X - giu bieu do
+                // don gian, dung tinh than "depth over breadth" thay vi co
+                // gang ho tro nhieu chieu du lieu (multi-dimension) cung luc.
                 dimensionColumn = column;
+            }
+        }
+
+        if (numericTimeLikeColumn != null) {
+            if (dimensionColumn == null) {
+                // Chua co dimension "tu nhien" nao (dang text/date) - uu tien
+                // dung cot SO mang ten thoi gian nay lam truc X, vi ve ngu
+                // nghia day la moc thoi gian chu khong phai so lieu can cong/
+                // trung binh (vi du "thang" khong the SUM lai duoc).
+                dimensionColumn = numericTimeLikeColumn;
+            } else {
+                // Da co dimension khac (vi du cot text) dung truoc trong ket
+                // qua - luc nay coi no la so lieu binh thuong, khong hy sinh
+                // dimension da co.
+                numericColumns.add(numericTimeLikeColumn);
             }
         }
 
