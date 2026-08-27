@@ -30,6 +30,7 @@ public class QueryService {
     private final SQLCorrectionService sqlCorrectionService;
     private final LLMClient llmClient;
     private final RateLimitService rateLimitService;
+    private final ChartSuggestionService chartSuggestionService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
         User user = userRepository.findByUsername(username)
@@ -114,6 +115,9 @@ public class QueryService {
         }
 
         String summary = result.isSuccess() ? summarizeResult(request.getQuestion(), result.getFinalResult()) : null;
+        ChartSuggestionResponse chartSuggestion = result.isSuccess()
+                ? buildChartSuggestion(result.getFinalResult())
+                : null;
 
         return new QueryResponse(
                 conversation.getId(),
@@ -121,8 +125,17 @@ public class QueryService {
                 result.getSql(),
                 result.getFinalResult(),
                 summary,
-                logs.size()
+                logs.size(),
+                chartSuggestion
         );
+    }
+
+    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
+        try {
+            return chartSuggestionService.suggest(finalResult.getColumns(), finalResult.getRows());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String summarizeResult(String question, QueryResultDto result) {

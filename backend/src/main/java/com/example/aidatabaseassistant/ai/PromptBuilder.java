@@ -141,6 +141,23 @@ public class PromptBuilder {
         return sb.toString();
     }
 
+    public String buildChartReasonPrompt(String chartType, String dimensionColumn, java.util.List<String> numericColumns,
+                                         int rowCount, String detectedPattern) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("Hệ thống đã dùng thuật toán để tự động chọn loại biểu đồ ")
+                .append(chartType)
+                .append(" cho một kết quả truy vấn dữ liệu, dựa trên thông tin sau:\n");
+        sb.append("- Trục X (danh mục/thời gian): ").append(dimensionColumn).append("\n");
+        sb.append("- Cột số liệu: ").append(String.join(", ", numericColumns)).append("\n");
+        sb.append("- Số dòng dữ liệu: ").append(rowCount).append("\n");
+        sb.append("- Lý do kỹ thuật đã phát hiện: ").append(detectedPattern).append("\n\n");
+        sb.append("Hãy viết lại lý do trên thành 1-2 câu tiếng Việt tự nhiên, ngắn gọn, dễ hiểu cho người dùng cuối. ");
+        sb.append("CHỈ trả về đúng câu giải thích, không thêm tiêu đề, không dùng markdown, không lặp lại số liệu thô.");
+
+        return sb.toString();
+    }
+
     private void appendSchema(StringBuilder sb, DatabaseSchema schema) {
         for (TableMetadata table : schema.getTables()) {
 
