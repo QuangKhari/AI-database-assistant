@@ -1,11 +1,9 @@
 package com.example.aidatabaseassistant.controller;
 
-import com.example.aidatabaseassistant.dto.ExplainSqlRequest;
-import com.example.aidatabaseassistant.dto.ExplainSqlResponse;
-import com.example.aidatabaseassistant.dto.PreviewResponse;
-import com.example.aidatabaseassistant.dto.QueryRequest;
-import com.example.aidatabaseassistant.dto.QueryResponse;
+import com.example.aidatabaseassistant.dto.*;
+import com.example.aidatabaseassistant.service.ChartSuggestionService;
 import com.example.aidatabaseassistant.service.QueryService;
+import com.example.aidatabaseassistant.service.RateLimitService;
 import com.example.aidatabaseassistant.service.SqlExplanationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +21,8 @@ public class QueryController {
 
     private final QueryService queryService;
     private final SqlExplanationService sqlExplanationService;
+    private final ChartSuggestionService chartSuggestionService;
+    private final RateLimitService rateLimitService;
 
     @PostMapping("/explain")
     public ResponseEntity<ExplainSqlResponse> explain(Authentication authentication,
@@ -40,5 +40,14 @@ public class QueryController {
     public ResponseEntity<QueryResponse> execute(Authentication authentication,
                                                  @Valid @RequestBody QueryRequest request) {
         return ResponseEntity.ok(queryService.processQuery(authentication.getName(), request));
+    }
+
+    @PostMapping("/chart-suggestion")
+    public ResponseEntity<ChartSuggestionResponse> chartSuggestion(Authentication authentication,
+                                                                   @Valid @RequestBody ChartSuggestionRequest request) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+        }
+        return ResponseEntity.ok(chartSuggestionService.suggest(request));
     }
 }

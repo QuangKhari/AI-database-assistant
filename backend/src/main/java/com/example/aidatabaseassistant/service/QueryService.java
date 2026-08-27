@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +31,7 @@ public class QueryService {
     private final SQLCorrectionService sqlCorrectionService;
     private final LLMClient llmClient;
     private final RateLimitService rateLimitService;
+    private final ChartSuggestionService chartSuggestionService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
         User user = userRepository.findByUsername(username)
@@ -55,6 +57,7 @@ public class QueryService {
         }
     }
 
+    @Transactional
     public QueryResponse processQuery(String username, QueryRequest request) {
         if (!rateLimitService.tryConsume(username)) {
             throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
@@ -114,6 +117,9 @@ public class QueryService {
         }
 
         String summary = result.isSuccess() ? summarizeResult(request.getQuestion(), result.getFinalResult()) : null;
+        ChartSuggestionResponse chartSuggestion = result.isSuccess()
+                ? buildChartSuggestion(result.getFinalResult())
+                : null;
 
         return new QueryResponse(
                 conversation.getId(),
@@ -121,8 +127,17 @@ public class QueryService {
                 result.getSql(),
                 result.getFinalResult(),
                 summary,
-                logs.size()
+                logs.size(),
+                chartSuggestion
         );
+    }
+
+    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
+        try {
+            return chartSuggestionService.suggest(finalResult.getColumns(), finalResult.getRows());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String summarizeResult(String question, QueryResultDto result) {
@@ -130,9 +145,20 @@ public class QueryService {
                 ? result.getRows().subList(0, 20)
                 : result.getRows();
 
-        String prompt = "Câu hỏi: " + question + "\nKết quả (hiển thị " + limitedRows.size()
-                + "/" + result.getRowCount() + " dòng): " + limitedRows
-                + "\nTóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.";
+        String prompt = """
+            Câu hỏi: %s
+
+            Kết quả SQL:
+            %s
+
+            YÊU CẦU:
+            - Tóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.
+            - Chỉ sử dụng các số liệu xuất hiện trong kết quả.
+            - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
+            - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
+            - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
+            """.formatted(question, limitedRows);
+
         return llmClient.generateResponse(prompt);
     }
 

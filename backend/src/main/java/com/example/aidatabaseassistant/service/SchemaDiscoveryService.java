@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.entity.User;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -34,6 +35,7 @@ public class SchemaDiscoveryService {
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
 
+    @Transactional
     public DatabaseSchema discoverSchema(String username, Long connectionId) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));

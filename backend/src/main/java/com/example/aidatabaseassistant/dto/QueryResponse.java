@@ -12,4 +12,7 @@ public class QueryResponse {
     private QueryResultDto result;
     private String summary;
     private int attemptCount;
+
+    // Null neu query that bai (khong co du lieu de de xuat bieu do).
+    private ChartSuggestionResponse chartSuggestion;
 }
