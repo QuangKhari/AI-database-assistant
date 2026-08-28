@@ -4,6 +4,11 @@ import com.example.aidatabaseassistant.entity.ColumnMetadata;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
 import org.springframework.stereotype.Component;
+import com.example.aidatabaseassistant.dto.AnomalyDto;
+import com.example.aidatabaseassistant.dto.TrendDirection;
+import com.example.aidatabaseassistant.insight.DataInsightFacts;
+
+import java.util.Locale;
 
 @Component
 public class PromptBuilder {
@@ -156,6 +161,83 @@ public class PromptBuilder {
         sb.append("CHỈ trả về đúng câu giải thích, không thêm tiêu đề, không dùng markdown, không lặp lại số liệu thô.");
 
         return sb.toString();
+    }
+
+    /**
+     * Xay prompt de Gemini VIET LAI thanh van phong tu nhien cac SO LIEU DA
+     * duoc DataInsightAnalyzer tinh SAN bang thuat toan thuan (xem
+     * DataInsightService). Gemini KHONG duoc phep tu tinh toan hay bia them
+     * bat ky con so/danh muc nao ngoai nhung gi duoc liet ke trong prompt -
+     * day la yeu cau AN TOAN quan trong nhat cua tinh nang nay, vi day la
+     * cong cu phan tich du lieu, sai so lieu la khong the chap nhan duoc.
+     */
+    public String buildDataInsightPrompt(DataInsightFacts facts) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("""
+        Bạn là chuyên gia phân tích dữ liệu kinh doanh.
+
+        Nhiệm vụ:
+        VIẾT LẠI các số liệu ĐÃ ĐƯỢC TÍNH SẴN bên dưới thành một đoạn tóm
+        tắt 2-3 câu tiếng Việt tự nhiên, mạch lạc, dễ hiểu cho người không
+        rành kỹ thuật.
+
+        QUY TẮC BẮT BUỘC:
+
+        1. TUYỆT ĐỐI không bịa số liệu. CHỈ được nhắc tới đúng những con số,
+           tên danh mục, mốc thời gian được liệt kê bên dưới, không thêm,
+           không bớt, không đoán, không suy diễn ra bất cứ điều gì khác.
+        2. TUYỆT ĐỐI không tự tính toán lại (không cộng, trừ, nhân, chia,
+           không tính lại phần trăm, không làm tròn khác đi con số đã cho).
+        3. Mục nào KHÔNG được cung cấp bên dưới (ví dụ không có tăng
+           trưởng, không có tỷ trọng, không có bất thường) thì ĐỪNG nhắc
+           tới mục đó trong câu trả lời, tuyệt đối không tự suy ra.
+        4. Không dịch hoặc đổi tên cột, tên danh mục sang từ khác.
+        5. CHỈ trả về đoạn văn tóm tắt, không thêm tiêu đề, không dùng
+           markdown, không liệt kê gạch đầu dòng, không giải thích thêm
+           ngoài đoạn tóm tắt.
+
+        """);
+
+        sb.append("SỐ LIỆU ĐÃ TÍNH SẴN (đáng tin cậy 100%, không được thay đổi):\n");
+        sb.append("- Cột số liệu: ").append(facts.getNumericColumn()).append("\n");
+        sb.append("- Cột danh mục/thời gian: ").append(facts.getDimensionColumn()).append("\n");
+        sb.append(String.format(Locale.ROOT,
+                "- Giá trị cao nhất: %s = %.2f%n", facts.getHighestLabel(), facts.getHighestValue()));
+        sb.append(String.format(Locale.ROOT,
+                "- Giá trị thấp nhất: %s = %.2f%n", facts.getLowestLabel(), facts.getLowestValue()));
+
+        if (facts.getGrowthPercent() != null) {
+            sb.append(String.format(Locale.ROOT,
+                    "- Tăng trưởng từ đầu đến cuối kỳ: %.1f%%%n", facts.getGrowthPercent()));
+        }
+        if (facts.getTrend() != null) {
+            sb.append("- Xu hướng: ").append(trendToVietnamese(facts.getTrend())).append("\n");
+        }
+        if (facts.getTopSharePercent() != null) {
+            sb.append(String.format(Locale.ROOT,
+                    "- Danh mục chiếm tỷ trọng cao nhất: %s = %.1f%% tổng%n",
+                    facts.getTopShareLabel(), facts.getTopSharePercent()));
+        }
+        if (facts.getAnomalies() != null && !facts.getAnomalies().isEmpty()) {
+            sb.append("- Điểm bất thường phát hiện được:\n");
+            for (AnomalyDto anomaly : facts.getAnomalies()) {
+                sb.append(String.format(Locale.ROOT,
+                        "  + %s: %.2f (%s)%n", anomaly.getLabel(), anomaly.getValue(), anomaly.getDirection()));
+            }
+        }
+
+        sb.append("\nHãy viết đoạn tóm tắt (2-3 câu) dựa ĐÚNG và CHỈ trên số liệu ở trên:");
+
+        return sb.toString();
+    }
+
+    private String trendToVietnamese(TrendDirection trend) {
+        return switch (trend) {
+            case INCREASING -> "tăng dần";
+            case DECREASING -> "giảm dần";
+            case STABLE -> "ổn định, không tăng giảm rõ rệt";
+        };
     }
 
     private void appendSchema(StringBuilder sb, DatabaseSchema schema) {

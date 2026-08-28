@@ -32,6 +32,7 @@ public class QueryService {
     private final RateLimitService rateLimitService;
     private final ChartSuggestionService chartSuggestionService;
     private final SchemaLoaderService schemaLoaderService;
+    private final DataInsightService dataInsightService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
         User user = userRepository.findByUsername(username)
@@ -118,6 +119,10 @@ public class QueryService {
                 ? buildChartSuggestion(result.getFinalResult())
                 : null;
 
+        DataInsightResponse dataInsight = result.isSuccess()
+                ? buildDataInsight(result.getFinalResult())
+                : null;
+
         return new QueryResponse(
                 conversation.getId(),
                 assistantMessage.getId(),
@@ -125,8 +130,21 @@ public class QueryService {
                 result.getFinalResult(),
                 summary,
                 logs.size(),
-                chartSuggestion
+                chartSuggestion,
+                dataInsight
         );
+    }
+
+    private DataInsightResponse buildDataInsight(QueryResultDto finalResult) {
+        // Giong buildChartSuggestion: day la tinh nang BO SUNG, tuyet doi
+        // khong duoc lam vo luong /execute chinh neu co loi bat ngo. Neu
+        // khong tinh duoc (analyzer tra ve null) hoac loi, FE se tu dong
+        // fallback ve hien thi "summary" (da co san, khong bi anh huong).
+        try {
+            return dataInsightService.analyze(finalResult.getColumns(), finalResult.getRows());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
