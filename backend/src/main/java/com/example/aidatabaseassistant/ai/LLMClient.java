@@ -100,4 +100,33 @@ public class LLMClient {
 
         return answer;
     }
+    @SuppressWarnings("unchecked")
+    public float[] generateEmbedding(String text) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = Map.of(
+                "model", "models/text-embedding-004",
+                "content", Map.of("parts", List.of(Map.of("text", text)))
+        );
+
+        String url = embeddingApiUrl + "?key=" + apiKey; // property riêng, xem 3.4
+
+        ResponseEntity<Map> response = restTemplate.postForEntity(
+                url, new HttpEntity<>(body, headers), Map.class);
+
+        Map<String, Object> responseBody = response.getBody();
+        if (responseBody == null) {
+            throw new RuntimeException("Gemini Embedding API không trả về dữ liệu");
+        }
+
+        Map<String, Object> embedding = (Map<String, Object>) responseBody.get("embedding");
+        List<Double> values = (List<Double>) embedding.get("values");
+
+        float[] vector = new float[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            vector[i] = values.get(i).floatValue();
+        }
+        return vector;
+    }
 }
