@@ -26,6 +26,9 @@ public class LLMClient {
     @Value("${gemini.api.url}")
     private String apiUrl;
 
+    @Value("${gemini.embedding.api.url}")
+    private String embeddingApiUrl;
+
     public LLMClient(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
