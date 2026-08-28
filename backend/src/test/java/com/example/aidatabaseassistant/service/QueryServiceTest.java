@@ -5,10 +5,12 @@ import com.example.aidatabaseassistant.ai.LLMClient;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.ChartSuggestionResponse;
 import com.example.aidatabaseassistant.dto.ChartType;
+import com.example.aidatabaseassistant.dto.DataInsightResponse;
 import com.example.aidatabaseassistant.dto.PreviewResponse;
 import com.example.aidatabaseassistant.dto.QueryRequest;
 import com.example.aidatabaseassistant.dto.QueryResponse;
 import com.example.aidatabaseassistant.dto.QueryResultDto;
+import com.example.aidatabaseassistant.dto.TrendDirection;
 import com.example.aidatabaseassistant.entity.Conversation;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
@@ -67,6 +69,10 @@ class QueryServiceTest {
     private RateLimitService rateLimitService;
     @Mock
     private ChartSuggestionService chartSuggestionService;
+    @Mock
+    private SchemaLoaderService schemaLoaderService;
+    @Mock
+    private DataInsightService dataInsightService;
 
     private QueryService queryService;
 
@@ -77,10 +83,17 @@ class QueryServiceTest {
 
     @BeforeEach
     void setUp() {
+        // schemaRepository KHONG con duoc QueryService goi truc tiep nua -
+        // viec load schema day du (bao gom tables/columns) da duoc gom vao
+        // SchemaLoaderService.loadCompleteSchema(). Mock schemaRepository
+        // van duoc giu lai vi la tham so constructor bat buoc (Lombok
+        // @RequiredArgsConstructor), nhung KHONG duoc stub truc tiep trong
+        // cac test ben duoi (se gay UnnecessaryStubbingException).
         queryService = new QueryService(
                 userRepository, connectionRepository, schemaRepository, conversationRepository,
                 messageRepository, queryLogRepository, encryptionUtil, nl2SQLEngine, queryValidator,
-                sqlCorrectionService, llmClient, rateLimitService, chartSuggestionService);
+                sqlCorrectionService, llmClient, rateLimitService, chartSuggestionService,
+                schemaLoaderService, dataInsightService);
 
         // modelUrl la field @Value, KHONG duoc Lombok dua vao constructor vi
         // khong phai final - phai bom bang reflection, giong cach da lam o
@@ -157,14 +170,14 @@ class QueryServiceTest {
 
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("SELECT * FROM orders");
 
         PreviewResponse response = queryService.previewQuery("owner", request);
 
         assertTrue(response.isValid());
         assertEquals("SELECT * FROM orders", response.getGeneratedSql());
-        verifyNoInteractions(sqlCorrectionService, chartSuggestionService);
+        verifyNoInteractions(sqlCorrectionService, chartSuggestionService, dataInsightService);
     }
 
     @Test
@@ -173,7 +186,7 @@ class QueryServiceTest {
 
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("DELETE FROM orders");
         doThrow(new IllegalArgumentException("Chỉ cho phép câu lệnh SELECT"))
                 .when(queryValidator).validate("DELETE FROM orders", schema);
@@ -192,7 +205,7 @@ class QueryServiceTest {
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
 
         assertThrows(IllegalArgumentException.class, () -> queryService.previewQuery("intruder", request));
-        verifyNoInteractions(nl2SQLEngine, queryValidator);
+        verifyNoInteractions(nl2SQLEngine, queryValidator, schemaLoaderService);
     }
 
     // ===================== processQuery: guard clauses =====================
@@ -205,8 +218,8 @@ class QueryServiceTest {
         assertThrows(IllegalStateException.class, () -> queryService.processQuery("owner", request));
 
         // Bi chan ngay tu dau, tuyet doi khong duoc dong cham DB hay goi AI.
-        verifyNoInteractions(userRepository, connectionRepository, schemaRepository,
-                sqlCorrectionService, chartSuggestionService);
+        verifyNoInteractions(userRepository, connectionRepository, schemaLoaderService,
+                sqlCorrectionService, chartSuggestionService, dataInsightService);
     }
 
     @Test
@@ -236,7 +249,7 @@ class QueryServiceTest {
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
 
         assertThrows(IllegalArgumentException.class, () -> queryService.processQuery("intruder", request));
-        verifyNoInteractions(sqlCorrectionService, chartSuggestionService);
+        verifyNoInteractions(sqlCorrectionService, chartSuggestionService, dataInsightService);
     }
 
     @Test
@@ -245,7 +258,8 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.empty());
+        when(schemaLoaderService.loadCompleteSchema(10L))
+                .thenThrow(new IllegalArgumentException("Chưa discover schema cho connection này"));
 
         assertThrows(IllegalArgumentException.class, () -> queryService.processQuery("owner", request));
     }
@@ -259,7 +273,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -297,7 +311,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(conversationRepository.findById(500L)).thenReturn(Optional.of(existingConversation));
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubMessageSaveAssignsId();
@@ -326,7 +340,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -358,7 +372,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -374,11 +388,13 @@ class QueryServiceTest {
 
         assertNull(response.getSummary());
         assertNull(response.getChartSuggestion());
-        // That bai thi tuyet doi khong duoc goi AI de tom tat hay de xuat chart - vua sai logic, vua ton quota.
-        verifyNoInteractions(llmClient, chartSuggestionService);
+        assertNull(response.getDataInsight());
+        // That bai thi tuyet doi khong duoc goi AI de tom tat hay de xuat
+        // chart/insight - vua sai logic, vua ton quota.
+        verifyNoInteractions(llmClient, chartSuggestionService, dataInsightService);
     }
 
-    // ===================== processQuery: tích hợp chart suggestion (mới) =====================
+    // ===================== processQuery: tích hợp chart suggestion =====================
 
     @Test
     void processQuery_shouldAttachChartSuggestion_whenQuerySucceeds() {
@@ -387,7 +403,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -423,7 +439,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -451,7 +467,7 @@ class QueryServiceTest {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -475,5 +491,105 @@ class QueryServiceTest {
         assertEquals("SELECT thang, doanh_thu FROM revenue", response.getGeneratedSql());
         assertNotNull(response.getResult());
         assertNull(response.getChartSuggestion());
+    }
+
+    // ===================== processQuery: tích hợp data insight (mới) =====================
+
+    @Test
+    void processQuery_shouldAttachDataInsight_whenQuerySucceeds() {
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("thang", "doanh_thu");
+        List<Map<String, Object>> rows = List.of(
+                Map.of("thang", 1, "doanh_thu", 1000),
+                Map.of("thang", 2, "doanh_thu", 2000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 30L, 2, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tăng theo tháng");
+
+        DataInsightResponse expectedInsight = new DataInsightResponse(
+                "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
+                100.0, TrendDirection.INCREASING, null, null, List.of(),
+                "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
+        when(dataInsightService.analyze(columns, rows)).thenReturn(expectedInsight);
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertSame(expectedInsight, response.getDataInsight());
+        verify(dataInsightService).analyze(columns, rows);
+    }
+
+    @Test
+    void processQuery_shouldNotCallDataInsight_whenQueryFails() {
+        QueryRequest request = buildRequest("Câu hỏi không hợp lệ", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        QueryResultDto failedResult = new QueryResultDto(List.of(), List.of(), 0, 0, "Lỗi cú pháp");
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                false, "SELECT sai", failedResult,
+                List.of(buildAttemptLog("SELECT sai", false, failedResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertNull(response.getDataInsight());
+        verifyNoInteractions(dataInsightService);
+    }
+
+    @Test
+    void processQuery_shouldReturnNullDataInsight_whenDataInsightServiceThrowsUnexpectedly() {
+        // Giong chartSuggestion: neu DataInsightService nem exception bat
+        // ngo, luong /execute CHINH van phai thanh cong, chi dataInsight = null
+        // (FE se fallback ve hien thi "summary" thay the).
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("thang", "doanh_thu");
+        List<Map<String, Object>> rows = List.of(Map.of("thang", 1, "doanh_thu", 1000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 15L, 1, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
+        when(dataInsightService.analyze(columns, rows))
+                .thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertNotNull(response);
+        assertEquals("SELECT thang, doanh_thu FROM revenue", response.getGeneratedSql());
+        assertNotNull(response.getResult());
+        assertNull(response.getDataInsight());
     }
 }
