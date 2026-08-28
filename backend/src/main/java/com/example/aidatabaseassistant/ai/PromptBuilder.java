@@ -208,8 +208,14 @@ public class PromptBuilder {
                 "- Giá trị thấp nhất: %s = %.2f%n", facts.getLowestLabel(), facts.getLowestValue()));
 
         if (facts.getGrowthPercent() != null) {
-            sb.append(String.format(Locale.ROOT,
-                    "- Tăng trưởng từ đầu đến cuối kỳ: %.1f%%%n", facts.getGrowthPercent()));
+            if (facts.getPeriodStartLabel() != null && facts.getPeriodEndLabel() != null) {
+                sb.append(String.format(Locale.ROOT,
+                        "- Tăng trưởng từ mốc %s đến mốc %s: %.1f%% (CHỈ được dùng đúng 2 mốc thời gian này khi nhắc tới con số tăng trưởng, TUYỆT ĐỐI không dùng nhầm mốc khác, ví dụ không được dùng mốc của giá trị cao/thấp nhất bên trên)%n",
+                        facts.getPeriodStartLabel(), facts.getPeriodEndLabel(), facts.getGrowthPercent()));
+            } else {
+                sb.append(String.format(Locale.ROOT,
+                        "- Tăng trưởng từ đầu đến cuối kỳ: %.1f%%%n", facts.getGrowthPercent()));
+            }
         }
         if (facts.getTrend() != null) {
             sb.append("- Xu hướng: ").append(trendToVietnamese(facts.getTrend())).append("\n");

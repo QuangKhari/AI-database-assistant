@@ -522,7 +522,7 @@ class QueryServiceTest {
 
         DataInsightResponse expectedInsight = new DataInsightResponse(
                 "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
-                100.0, TrendDirection.INCREASING, null, null, List.of(),
+                100.0, TrendDirection.INCREASING, "1", "2", null, null, List.of(),
                 "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
         when(dataInsightService.analyze(columns, rows)).thenReturn(expectedInsight);
 

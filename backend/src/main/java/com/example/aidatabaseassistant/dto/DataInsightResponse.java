@@ -21,6 +21,12 @@ public class DataInsightResponse {
     private Double growthPercent;
     private TrendDirection trend;
 
+    // Nhan (label) diem dau/cuoi chuoi ma growthPercent duoc tinh tren do -
+    // luon di kem growthPercent (cung null hoac cung co gia tri), de FE/AI
+    // khong bao gio phai tu doan khoang thoi gian cua con so tang truong.
+    private String periodStartLabel;
+    private String periodEndLabel;
+
     // Null neu la chuoi thoi gian (khai niem "ty trong" khong ap dung cho tang truong).
     private String topShareLabel;
     private Double topSharePercent;

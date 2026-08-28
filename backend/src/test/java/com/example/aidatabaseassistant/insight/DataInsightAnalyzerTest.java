@@ -80,6 +80,11 @@ class DataInsightAnalyzerTest {
         assertNotNull(facts.getGrowthPercent());
         assertEquals(100.0, facts.getGrowthPercent(), 0.001);
         assertEquals(TrendDirection.INCREASING, facts.getTrend());
+        // Nhan diem dau/cuoi PHAI dung voi diem thuc su dung de tinh growth
+        // (thang 1 -> thang 4), KHONG duoc trung voi nhan cua highest/lowest
+        // mot cach ngau nhien roi gay hieu lam khi AI viet summary.
+        assertEquals("1", facts.getPeriodStartLabel());
+        assertEquals("4", facts.getPeriodEndLabel());
         // Chuoi thoi gian thi khong tinh ty trong (topShare).
         assertNull(facts.getTopShareLabel());
         assertNull(facts.getTopSharePercent());
@@ -162,5 +167,42 @@ class DataInsightAnalyzerTest {
         assertNotNull(facts);
         assertNotNull(facts.getAnomalies());
         assertTrue(facts.getAnomalies().isEmpty());
+    }
+
+    @Test
+    void analyze_periodLabels_shouldBeStartAndEndOfSeries_notHighestOrLowestLabels() {
+        // Tai hien chinh xac bug phat hien khi test thu cong: growthPercent
+        // tinh tu DIEM DAU/CUOI chuoi (thang1 -> thang8), nhung highest/
+        // lowest lai roi vao giua chuoi (thang7/thang3). PHAI dam bao
+        // periodStartLabel/periodEndLabel LUON la diem dau/cuoi chuoi that
+        // su, KHONG duoc trung nham voi nhan cua highest/lowest, neu khong
+        // AI se tu doan sai khoang thoi gian khi viet summary (da xay ra
+        // thuc te: AI noi "tu thang 3 den thang 7" trong khi growth thuc su
+        // la tu thang 1 den thang 8).
+        List<String> columns = List.of("thang", "doanh_thu");
+        List<Map<String, Object>> rows = List.of(
+                row("thang", "2025-01", "doanh_thu", 17230000),
+                row("thang", "2025-02", "doanh_thu", 10050000),
+                row("thang", "2025-03", "doanh_thu", 5250000),
+                row("thang", "2025-04", "doanh_thu", 7990000),
+                row("thang", "2025-05", "doanh_thu", 7700000),
+                row("thang", "2025-06", "doanh_thu", 6650000),
+                row("thang", "2025-07", "doanh_thu", 18090000),
+                row("thang", "2025-08", "doanh_thu", 7490000));
+
+        DataInsightFacts facts = analyzer.analyze(columns, rows);
+
+        assertNotNull(facts);
+        assertEquals("2025-07", facts.getHighestLabel());
+        assertEquals("2025-03", facts.getLowestLabel());
+        // Day la khang dinh quan trong nhat: period start/end PHAI la dau/
+        // cuoi CHUOI (thang 1 / thang 8), tuyet doi khong duoc la nhan cua
+        // highest/lowest (thang 7 / thang 3).
+        assertEquals("2025-01", facts.getPeriodStartLabel());
+        assertEquals("2025-08", facts.getPeriodEndLabel());
+        assertNotEquals(facts.getHighestLabel(), facts.getPeriodEndLabel());
+        assertNotEquals(facts.getLowestLabel(), facts.getPeriodStartLabel());
+        assertEquals(-56.529, facts.getGrowthPercent(), 0.01);
+        assertEquals(TrendDirection.DECREASING, facts.getTrend());
     }
 }

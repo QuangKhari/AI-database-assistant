@@ -26,6 +26,13 @@ public class DataInsightFacts {
     private Double growthPercent;
     private TrendDirection trend;
 
+    // Nhan (label) cua diem DAU va CUOI chuoi du lieu ma growthPercent duoc
+    // tinh tren do - BAT BUOC phai co trong prompt gui cho AI, neu khong AI
+    // se TU SUY DOAN khoang thoi gian (vi du nham voi nhan cua highest/
+    // lowest), day la loai "bia so lieu" tinh vi da phat hien qua test thuc te.
+    private String periodStartLabel;
+    private String periodEndLabel;
+
     private String topShareLabel;
     private Double topSharePercent;
 

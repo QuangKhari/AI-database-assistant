@@ -53,6 +53,7 @@ public class DataInsightService {
                 facts.getHighestLabel(), facts.getHighestValue(),
                 facts.getLowestLabel(), facts.getLowestValue(),
                 facts.getGrowthPercent(), facts.getTrend(),
+                facts.getPeriodStartLabel(), facts.getPeriodEndLabel(),
                 facts.getTopShareLabel(), facts.getTopSharePercent(),
                 facts.getAnomalies(), summary
         );
@@ -80,8 +81,13 @@ public class DataInsightService {
                 facts.getLowestLabel(), facts.getLowestValue()));
 
         if (facts.getGrowthPercent() != null) {
-            sb.append(String.format(Locale.ROOT, " Tăng trưởng %.1f%% từ đầu đến cuối kỳ.",
-                    facts.getGrowthPercent()));
+            if (facts.getPeriodStartLabel() != null && facts.getPeriodEndLabel() != null) {
+                sb.append(String.format(Locale.ROOT, " Tăng trưởng %.1f%% từ %s đến %s.",
+                        facts.getGrowthPercent(), facts.getPeriodStartLabel(), facts.getPeriodEndLabel()));
+            } else {
+                sb.append(String.format(Locale.ROOT, " Tăng trưởng %.1f%% từ đầu đến cuối kỳ.",
+                        facts.getGrowthPercent()));
+            }
         }
         if (facts.getTopSharePercent() != null) {
             sb.append(String.format(Locale.ROOT, " '%s' chiếm %.1f%% tổng.",

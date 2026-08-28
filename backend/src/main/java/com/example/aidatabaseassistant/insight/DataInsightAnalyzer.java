@@ -69,6 +69,13 @@ public class DataInsightAnalyzer {
         if (timeOrdered) {
             facts.setGrowthPercent(computeGrowthPercent(values));
             facts.setTrend(computeTrend(values));
+            // Ghi lai CHINH XAC nhan (label) cua diem dau/cuoi chuoi - de
+            // AI viet summary KHONG phai tu doan khoang thoi gian cua
+            // growthPercent (tranh nham lan voi nhan cua highest/lowest).
+            if (facts.getGrowthPercent() != null) {
+                facts.setPeriodStartLabel(labels.get(0));
+                facts.setPeriodEndLabel(labels.get(labels.size() - 1));
+            }
         } else {
             Double sharePercent = computeTopShare(values, highestIndex);
             if (sharePercent != null) {
