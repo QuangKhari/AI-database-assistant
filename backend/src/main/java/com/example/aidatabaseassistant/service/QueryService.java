@@ -177,10 +177,31 @@ public class QueryService {
         return llmClient.generateResponse(prompt);
     }
 
-    private Conversation getOrCreateConversation(User user, DatabaseConnection connection, QueryRequest request) {
+    private Conversation getOrCreateConversation(
+            User user,
+            DatabaseConnection connection,
+            QueryRequest request) {
+
         if (request.getConversationId() != null) {
-            return conversationRepository.findById(request.getConversationId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy conversation"));
+
+            Conversation conversation = conversationRepository
+                    .findById(request.getConversationId())
+                    .orElseThrow(() ->
+                            new IllegalArgumentException("Không tìm thấy conversation"));
+
+            // Kiểm tra conversation thuộc user hiện tại
+            if (!conversation.getUser().getId().equals(user.getId())) {
+                throw new IllegalArgumentException(
+                        "Bạn không có quyền truy cập conversation này");
+            }
+
+            // Kiểm tra conversation thuộc đúng connection
+            if (!conversation.getConnection().getId().equals(connection.getId())) {
+                throw new IllegalArgumentException(
+                        "Conversation không thuộc connection này");
+            }
+
+            return conversation;
         }
 
         Conversation conversation = Conversation.builder()
@@ -190,6 +211,7 @@ public class QueryService {
                         ? request.getQuestion().substring(0, 50) + "..."
                         : request.getQuestion())
                 .build();
+
         return conversationRepository.save(conversation);
     }
 
