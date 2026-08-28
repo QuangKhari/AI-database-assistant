@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import com.example.aidatabaseassistant.query.ReadOnlyViolationException;
 
 @Service
 @RequiredArgsConstructor
@@ -51,9 +52,28 @@ public class QueryService {
 
         try {
             queryValidator.validate(generatedSql, schema);
-            return new PreviewResponse(generatedSql, true, null);
+
+            return new PreviewResponse(
+                    generatedSql,
+                    true,
+                    null
+            );
+
+        } catch (ReadOnlyViolationException e) {
+
+            return new PreviewResponse(
+                    generatedSql,
+                    false,
+                    e.getMessage()
+            );
+
         } catch (IllegalArgumentException e) {
-            return new PreviewResponse(generatedSql, false, e.getMessage());
+
+            return new PreviewResponse(
+                    generatedSql,
+                    false,
+                    e.getMessage()
+            );
         }
     }
 
