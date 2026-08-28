@@ -4,6 +4,8 @@ import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 @RequiredArgsConstructor
 public class NL2SQLEngine {
@@ -12,7 +14,12 @@ public class NL2SQLEngine {
     private final PromptBuilder promptBuilder;
 
     public String generateSQL(String question, DatabaseSchema schema) {
-        String prompt = promptBuilder.buildGenerationPrompt(question, schema);
+        return generateSQL(question, schema, List.of());
+    }
+
+    public String generateSQL(String question, DatabaseSchema schema,
+                              List<ConversationContextMessage> context) {
+        String prompt = promptBuilder.buildGenerationPrompt(question, schema, context);
         return extractSql(llmClient.generateResponse(prompt));
     }
 

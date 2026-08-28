@@ -18,8 +18,11 @@ public class ConversationController {
     private final ConversationService conversationService;
 
     @GetMapping
-    public ResponseEntity<List<ConversationResponse>> getConversations(Authentication authentication) {
-        return ResponseEntity.ok(conversationService.getConversations(authentication.getName()));
+    public ResponseEntity<List<ConversationResponse>> getConversations(
+            Authentication authentication,
+            @RequestParam(required = false) Long connectionId) {
+        return ResponseEntity.ok(conversationService.getConversations(
+                authentication.getName(), connectionId));
     }
 
     @GetMapping("/{id}/messages")

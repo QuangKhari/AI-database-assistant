@@ -5,16 +5,33 @@ import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class PromptBuilder {
 
     public String buildGenerationPrompt(String question, DatabaseSchema schema) {
+        return buildGenerationPrompt(question, schema, List.of());
+    }
+
+    public String buildGenerationPrompt(String question, DatabaseSchema schema,
+                                        List<ConversationContextMessage> context) {
         StringBuilder sb = new StringBuilder();
         sb.append("Bạn là chuyên gia SQL. Dựa vào schema MySQL dưới đây, viết CHÍNH XÁC một câu lệnh SELECT để trả lời câu hỏi. ");
         sb.append("Chỉ được dùng SELECT, tuyệt đối không dùng INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/CREATE/RENAME/USE. ");
         sb.append("Chỉ trả về câu SQL, không giải thích, không dùng markdown code block.\n\n");
         sb.append("Schema:\n");
         appendSchema(sb, schema);
+        if (!context.isEmpty()) {
+            sb.append("\nNgữ cảnh hội thoại gần nhất (chỉ dùng để hiểu câu hỏi tiếp nối):\n");
+            for (ConversationContextMessage message : context) {
+                sb.append(message.role()).append(": ").append(message.content());
+                if (message.generatedSql() != null && !message.generatedSql().isBlank()) {
+                    sb.append("\nSQL preview: ").append(message.generatedSql());
+                }
+                sb.append("\n");
+            }
+        }
         sb.append("\nCâu hỏi: ").append(question).append("\n");
         sb.append("SQL:");
         return sb.toString();

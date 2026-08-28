@@ -19,8 +19,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BenchmarkService {
 
-    @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
-    private String modelUrl;
+    @org.springframework.beans.factory.annotation.Value("${openai.model:gpt-4.1-mini}")
+    private String modelName;
     private final BenchmarkQuestionRepository benchmarkQuestionRepository;
     private final BenchmarkResultRepository benchmarkResultRepository;
     private final DatabaseConnectionRepository connectionRepository;
@@ -79,7 +79,7 @@ public class BenchmarkService {
                     .expectedSql(question.getExpectedSql())
                     .isCorrect(isCorrect)
                     .latencyMs(latencyMs)
-                    .modelUsed(extractModelName(modelUrl))
+                    .modelUsed(modelName)
                     .build();
             benchmarkResultRepository.save(result);
 
@@ -119,9 +119,4 @@ public class BenchmarkService {
                 .collect(Collectors.toList());
     }
 
-    private String extractModelName(String url) {
-        int start = url.indexOf("/models/") + 8;
-        int end = url.indexOf(":", start);
-        return url.substring(start, end);
-    }
 }

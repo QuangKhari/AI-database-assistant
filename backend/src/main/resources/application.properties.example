@@ -37,5 +37,7 @@ spring.mail.port=${MAIL_PORT:1025}
 spring.mail.properties.mail.smtp.auth=false
 spring.mail.properties.mail.smtp.starttls.enable=false
 
-gemini.api.key=${GEMINI_API_KEY:}
-gemini.api.url=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent
+openai.api-key=${OPENAI_API_KEY:}
+openai.model=${OPENAI_MODEL:gpt-4.1-mini}
+openai.base-url=${OPENAI_BASE_URL:https://api.openai.com/v1}
+openai.timeout-seconds=${OPENAI_TIMEOUT_SECONDS:30}

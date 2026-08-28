@@ -19,7 +19,7 @@ public class HistoryController {
 
     @GetMapping
     public ResponseEntity<List<ConversationResponse>> getHistory(Authentication authentication) {
-        return ResponseEntity.ok(conversationService.getConversations(authentication.getName()));
+        return ResponseEntity.ok(conversationService.getConversations(authentication.getName(), null));
     }
 
     @GetMapping("/{id}")

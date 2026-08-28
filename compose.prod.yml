@@ -1,0 +1,67 @@
+name: ai-database-assistant
+
+services:
+  system-db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${SYSTEM_DB_NAME:-ai_db_assistant_system}
+      MYSQL_USER: ${SYSTEM_DB_USERNAME:-aidb_app}
+      MYSQL_PASSWORD: ${SYSTEM_DB_PASSWORD}
+    volumes:
+      - system_db_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      SYSTEM_DB_URL: jdbc:mysql://system-db:3306/${SYSTEM_DB_NAME:-ai_db_assistant_system}?createDatabaseIfNotExist=false&serverTimezone=UTC
+      SYSTEM_DB_USERNAME: ${SYSTEM_DB_USERNAME:-aidb_app}
+      SYSTEM_DB_PASSWORD: ${SYSTEM_DB_PASSWORD}
+    depends_on:
+      system-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8080}:8080"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 45s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  system_db_data:

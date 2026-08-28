@@ -9,6 +9,8 @@ import java.util.List;
 @Getter
 @AllArgsConstructor
 public class SchemaResponse {
+    private Long id;
+    private Long connectionId;
     private String databaseName;
     private LocalDateTime lastSyncedAt;
     private List<TableInfo> tables;
@@ -16,6 +18,7 @@ public class SchemaResponse {
     @Getter
     @AllArgsConstructor
     public static class TableInfo {
+        private Long id;
         private String name;
         private String description;
         private List<ColumnInfo> columns;
@@ -24,8 +27,10 @@ public class SchemaResponse {
     @Getter
     @AllArgsConstructor
     public static class ColumnInfo {
+        private Long id;
         private String name;
         private String dataType;
+        private boolean nullable;
         private boolean primaryKey;
         private boolean foreignKey;
         private String referencedTable;

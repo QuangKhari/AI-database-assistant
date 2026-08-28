@@ -127,8 +127,10 @@ public class QueryService {
 
     private Conversation getOrCreateConversation(User user, DatabaseConnection connection, QueryRequest request) {
         if (request.getConversationId() != null) {
-            return conversationRepository.findById(request.getConversationId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy conversation"));
+            return conversationRepository.findByIdAndUserUsernameIgnoreCaseAndConnectionId(
+                            request.getConversationId(), user.getUsername(), connection.getId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Conversation không thuộc tài khoản hoặc connection đã chọn"));
         }
 
         Conversation conversation = Conversation.builder()

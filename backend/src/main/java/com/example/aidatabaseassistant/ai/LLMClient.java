@@ -1,55 +1,99 @@
 package com.example.aidatabaseassistant.ai;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 @Component
 public class LLMClient {
 
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
+    private final String apiKey;
+    private final String model;
 
-    @Value("${gemini.api.key}")
-    private String apiKey;
+    public LLMClient(
+            @Value("${openai.api-key:}") String apiKey,
+            @Value("${openai.model:gpt-4.1-mini}") String model,
+            @Value("${openai.base-url:https://api.openai.com/v1}") String baseUrl,
+            @Value("${openai.timeout-seconds:30}") int timeoutSeconds) {
+        this.apiKey = apiKey;
+        this.model = model;
 
-    @Value("${gemini.api.url}")
-    private String apiUrl;
+        Duration timeout = Duration.ofSeconds(Math.max(5, Math.min(timeoutSeconds, 60)));
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(timeout);
 
-    public LLMClient(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl.replaceAll("/+$", ""))
+                .requestFactory(requestFactory)
+                .defaultHeader("Authorization", "Bearer " + apiKey)
+                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .build();
     }
 
-    @SuppressWarnings("unchecked")
     public String generateResponse(String prompt) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        Map<String, Object> body = Map.of(
-                "contents", List.of(Map.of(
-                        "parts", List.of(Map.of("text", prompt))
-                ))
-        );
-
-        String url = apiUrl + "?key=" + apiKey;
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
-
-        Map<String, Object> responseBody = response.getBody();
-        if (responseBody == null) {
-            throw new RuntimeException("Gemini API không trả về dữ liệu");
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("OpenAI API chưa được cấu hình.");
         }
 
-        List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get("candidates");
-        Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
-        List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
-        return (String) parts.get(0).get("text");
+        Map<String, Object> request = Map.of(
+                "model", model,
+                "instructions", "You generate safe, read-only MySQL for the supplied schema. "
+                        + "Follow the user's output format exactly.",
+                "input", prompt,
+                "temperature", 0.0,
+                "max_output_tokens", 1200,
+                "store", false
+        );
+
+        try {
+            OpenAIResponse response = restClient.post()
+                    .uri("/responses")
+                    .body(request)
+                    .retrieve()
+                    .body(OpenAIResponse.class);
+            String outputText = extractOutputText(response);
+            if (outputText == null || outputText.isBlank()) {
+                throw new IllegalStateException("OpenAI không trả về nội dung hợp lệ.");
+            }
+            return outputText;
+        } catch (RestClientResponseException | ResourceAccessException e) {
+            throw new IllegalStateException("Không thể nhận phản hồi từ OpenAI. Vui lòng thử lại.");
+        }
+    }
+
+    private String extractOutputText(OpenAIResponse response) {
+        if (response == null || response.output() == null) return null;
+        return response.output().stream()
+                .filter(item -> item.content() != null)
+                .flatMap(item -> item.content().stream())
+                .filter(content -> "output_text".equals(content.type()))
+                .map(OutputContent::text)
+                .filter(text -> text != null && !text.isBlank())
+                .findFirst()
+                .orElse(null);
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record OpenAIResponse(List<OutputItem> output) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record OutputItem(List<OutputContent> content) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record OutputContent(String type, String text) {
     }
 }

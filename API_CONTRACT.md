@@ -1,4 +1,4 @@
-# API Contract — phần 1, 2, 3 và 10
+# API Contract — phần 1–5 và 10
 
 Base URL local: `http://localhost:8080/api`. Dữ liệu gửi/nhận ở dạng JSON. Endpoint có biểu tượng 🔒 yêu cầu header `Authorization: Bearer <accessToken>`.
 
@@ -167,6 +167,84 @@ Kiểm tra lại cấu hình đã lưu. Nếu thành công và read-only, đặt
 ### `DELETE /connections/{id}`
 
 Ngắt mềm (`active=false`), không xóa cấu hình hoặc lịch sử. Trả `204`.
+
+## Schema metadata
+
+Mọi endpoint chỉ thao tác trên connection thuộc user trong JWT và đang hoạt động.
+
+### `POST /schema/connections/{connectionId}/sync`
+
+Mở một JDBC connection chỉ đọc, đọc table, column, datatype, nullable, PK và FK rồi đóng connection. Chỉ thay metadata đang lưu khi toàn bộ bước đọc thành công. Trả `200`:
+
+```json
+{
+  "id": 1,
+  "connectionId": 4,
+  "databaseName": "sample_store",
+  "lastSyncedAt": "2026-08-28T00:00:00",
+  "tables": [{
+    "id": 10,
+    "name": "orders",
+    "description": null,
+    "columns": [{
+      "id": 20,
+      "name": "customer_id",
+      "dataType": "BIGINT",
+      "nullable": false,
+      "primaryKey": false,
+      "foreignKey": true,
+      "referencedTable": "customers",
+      "referencedColumn": "id",
+      "description": null
+    }]
+  }]
+}
+```
+
+### `GET /schema/connections/{connectionId}`
+
+Trả metadata đã đồng bộ. Nếu chưa sync, trả `400` và không tự kết nối Target DB.
+
+### `PUT /schema/tables/{tableId}` và `PUT /schema/columns/{columnId}`
+
+Body: `{ "description": "Mô tả nghiệp vụ" }`. Chỉ owner của connection chứa metadata mới được sửa.
+
+## Chat và sinh SQL
+
+### `POST /chat/preview`
+
+```json
+{
+  "connectionId": 4,
+  "conversationId": 8,
+  "question": "Liệt kê 10 khách hàng có tổng đơn hàng cao nhất"
+}
+```
+
+`conversationId` để trống khi tạo cuộc trò chuyện mới. Backend gửi schema cùng tối đa 3 lượt gần nhất tới OpenAI, sau đó kiểm tra SQL chỉ đọc và tên bảng trước khi lưu preview. Endpoint này **không thực thi SQL**.
+
+```json
+{
+  "conversationId": 8,
+  "userMessageId": 31,
+  "assistantMessageId": 32,
+  "generatedSql": "SELECT ...",
+  "valid": true,
+  "validationError": null
+}
+```
+
+### `GET /conversations?connectionId={connectionId}`
+
+Liệt kê conversation của user hiện tại theo connection, mới nhất trước.
+
+### `GET /conversations/{id}/messages`
+
+Trả message của conversation thuộc user hiện tại. User khác không thể đọc.
+
+### `DELETE /conversations/{id}`
+
+Xóa conversation thuộc user hiện tại và dữ liệu con. Trả `204`.
 
 ## Admin
 

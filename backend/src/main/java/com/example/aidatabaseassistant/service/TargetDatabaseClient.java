@@ -34,18 +34,7 @@ public class TargetDatabaseClient {
 
     public ConnectionTestResponse test(TargetDatabaseCredentials credentials) {
         long startedAt = System.nanoTime();
-        hostValidator.validate(credentials.host());
-
-        Properties jdbcProperties = new Properties();
-        jdbcProperties.setProperty("user", credentials.username());
-        jdbcProperties.setProperty("password", credentials.password());
-        jdbcProperties.setProperty("connectTimeout", String.valueOf(properties.getConnectionTimeoutMs()));
-        jdbcProperties.setProperty("socketTimeout", String.valueOf(properties.getSocketTimeoutMs()));
-        jdbcProperties.setProperty("autoReconnect", "false");
-        jdbcProperties.setProperty("allowMultiQueries", "false");
-
-        try (Connection connection = DriverManager.getConnection(buildUrl(credentials), jdbcProperties)) {
-            connection.setReadOnly(true);
+        try (Connection connection = openReadOnlyConnection(credentials)) {
             if (!connection.isValid(Math.max(1, properties.getConnectionTimeoutMs() / 1_000))) {
                 return failed("CONNECTION_INVALID", "Database không phản hồi hợp lệ.", startedAt);
             }
@@ -64,9 +53,37 @@ public class TargetDatabaseClient {
                     "Kết nối thành công và tài khoản đã được xác minh chỉ đọc.",
                     elapsedMs(startedAt), version
             );
+        } catch (com.example.aidatabaseassistant.exception.TargetDatabaseConnectionException e) {
+            return failed(e.getCode(), e.getMessage(), startedAt);
         } catch (SQLException e) {
             return mapSqlError(e, startedAt);
         }
+    }
+
+    public Connection openReadOnlyConnection(TargetDatabaseCredentials credentials) {
+        long startedAt = System.nanoTime();
+        hostValidator.validate(credentials.host());
+        try {
+            Connection connection = DriverManager.getConnection(buildUrl(credentials), jdbcProperties(credentials));
+            connection.setReadOnly(true);
+            return connection;
+        } catch (SQLException e) {
+            ConnectionTestResponse error = mapSqlError(e, startedAt);
+            throw new com.example.aidatabaseassistant.exception.TargetDatabaseConnectionException(
+                    error.code(), error.message());
+        }
+    }
+
+    private Properties jdbcProperties(TargetDatabaseCredentials credentials) {
+        Properties jdbcProperties = new Properties();
+        jdbcProperties.setProperty("user", credentials.username());
+        jdbcProperties.setProperty("password", credentials.password());
+        jdbcProperties.setProperty("connectTimeout", String.valueOf(properties.getConnectionTimeoutMs()));
+        jdbcProperties.setProperty("socketTimeout", String.valueOf(properties.getSocketTimeoutMs()));
+        jdbcProperties.setProperty("autoReconnect", "false");
+        jdbcProperties.setProperty("allowMultiQueries", "false");
+        jdbcProperties.setProperty("useServerPrepStmts", "true");
+        return jdbcProperties;
     }
 
     private boolean hasReadOnlyGrants(Connection connection, String databaseName) throws SQLException {

@@ -18,6 +18,8 @@ export function AppShell() {
         <NavLink to="/" className={styles.brand}><span>AI</span> QueryMate</NavLink>
         <nav aria-label="Điều hướng chính">
           <NavLink to="/" end className={({ isActive }) => isActive ? styles.active : undefined}>Tổng quan</NavLink>
+          <NavLink to="/chat" className={({ isActive }) => isActive ? styles.active : undefined}>Chat</NavLink>
+          <NavLink to="/schema" className={({ isActive }) => isActive ? styles.active : undefined}>Schema</NavLink>
           <NavLink to="/connections" className={({ isActive }) => isActive ? styles.active : undefined}>Connections</NavLink>
           {user?.role === 'ADMIN' && <NavLink to="/admin" className={({ isActive }) => isActive ? styles.active : undefined}>Admin</NavLink>}
           <NavLink to="/profile" className={({ isActive }) => isActive ? styles.active : undefined}>Tài khoản</NavLink>

@@ -91,3 +91,65 @@ export interface AdminUserPage {
   totalElements: number
   totalPages: number
 }
+
+export interface SchemaColumn {
+  id: number
+  name: string
+  dataType: string
+  nullable: boolean
+  primaryKey: boolean
+  foreignKey: boolean
+  referencedTable: string | null
+  referencedColumn: string | null
+  description: string | null
+}
+
+export interface SchemaTable {
+  id: number
+  name: string
+  description: string | null
+  columns: SchemaColumn[]
+}
+
+export interface DatabaseSchema {
+  id: number
+  connectionId: number
+  databaseName: string
+  lastSyncedAt: string
+  tables: SchemaTable[]
+}
+
+export interface Conversation {
+  id: number
+  title: string
+  connectionId: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface QueryLog {
+  attemptNumber: number
+  sqlText: string
+  status: string
+  rowCount: number | null
+  executionTimeMs: number | null
+  errorMessage: string | null
+}
+
+export interface ChatMessage {
+  id: number
+  role: 'user' | 'assistant'
+  content: string
+  generatedSql: string | null
+  createdAt: string
+  queryLogs: QueryLog[]
+}
+
+export interface ChatPreviewResult {
+  conversationId: number
+  userMessageId: number
+  assistantMessageId: number
+  generatedSql: string
+  valid: boolean
+  validationError: string | null
+}

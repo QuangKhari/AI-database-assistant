@@ -1,6 +1,6 @@
 # AI Database Assistant
 
-Ứng dụng web công khai giúp người dùng tạo kết nối MySQL của riêng mình và sử dụng AI để hỗ trợ sinh, kiểm tra, thực thi SQL chỉ đọc. Hiện tại **phần 1, 2, 3 và 10** đã hoàn thành: nền tảng local, tài khoản, quản lý Target MySQL và Admin.
+Ứng dụng web công khai giúp người dùng tạo kết nối MySQL của riêng mình và sử dụng AI để hỗ trợ sinh, kiểm tra, thực thi SQL chỉ đọc. Hiện tại **phần 1–5 và 10** đã hoàn thành; phần chạy SQL vẫn chưa được mở trên giao diện.
 
 ## Những gì đã hoạt động
 
@@ -15,9 +15,14 @@
 - Từ chối MySQL account có quyền ghi; connection timeout 20 giây, trần 30 giây; tối đa 10 lần test/phút/user.
 - Mật khẩu Target MySQL được mã hóa AES-GCM và không xuất hiện trong API response.
 - Admin xem thống kê, tìm kiếm/phân trang user và khóa/mở khóa user; không xem credentials hoặc dữ liệu của user.
+- User đồng bộ schema của connection do mình sở hữu; hệ thống đọc table, column, datatype, nullable, PK và FK bằng JDBC metadata.
+- Schema Explorer cho phép chọn connection, tìm bảng/cột và đồng bộ lại; metadata cũ chỉ bị thay thế sau khi đọc thành công.
+- Chat tiếng Việt/Anh dùng OpenAI Responses API để sinh SQL preview, kiểm tra read-only/schema và nhớ 3 lượt gần nhất.
+- Mỗi conversation thuộc đúng một user và một connection; đổi connection sẽ tách ngữ cảnh.
 - MySQL System DB, Target MySQL mẫu chỉ đọc và Mailpit chạy bằng Docker Compose.
+- Có sẵn cấu hình chuẩn bị deployment cho một Ubuntu server: Docker Compose production, Nginx, backup, deploy và rollback script. Chưa tác động lên server/domain thật.
 
-Các module metadata, sinh/thực thi SQL và lịch sử vẫn là phần sau. Endpoint schema cũ chưa được mở vì chưa áp dụng đủ giới hạn tài nguyên.
+Các phần chạy SQL, tự sửa SQL, AI Summary, lịch sử đầy đủ và hoàn thiện hệ thống vẫn là phần sau.
 
 ## Chạy local
 
@@ -51,7 +56,7 @@ Backend tự đọc `.env` ở thư mục gốc. Nếu máy chưa nhận Java tr
 
 Chi tiết request/response nằm trong [API_CONTRACT.md](API_CONTRACT.md).
 
-## Checklist kiểm tra giao diện phần 1–3 và Admin
+## Checklist kiểm tra giao diện phần 1–5 và Admin
 
 1. Vào `/register`, thử mật khẩu yếu/email sai, sau đó đăng ký hợp lệ.
 2. Đăng xuất; thử đăng nhập lần lượt bằng username và email.
@@ -65,3 +70,8 @@ Chi tiết request/response nằm trong [API_CONTRACT.md](API_CONTRACT.md).
 10. Sửa connection và để trống password để giữ mật khẩu cũ; ngắt rồi kết nối lại.
 11. Đăng nhập Admin, vào `/admin`, tìm user và khóa user; xác nhận phiên user đang mở bị từ chối ở request tiếp theo.
 12. Mở khóa user và xác nhận user đăng nhập lại được.
+13. Vào `/schema`, chọn connection, nhấn đồng bộ và kiểm tra table/column/PK/FK; dùng ô tìm kiếm để lọc.
+14. Vào `/chat`, chọn connection đã sync, gửi câu hỏi và kiểm tra SQL preview; hỏi tiếp để kiểm tra context.
+15. Đổi connection và xác nhận conversation hiện tại được đóng, không dùng chéo schema/context.
+
+Xem hướng dẫn chuẩn bị server tại [DEPLOYMENT.md](DEPLOYMENT.md).

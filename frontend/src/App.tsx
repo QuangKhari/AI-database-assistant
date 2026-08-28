@@ -15,6 +15,8 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { SchemaExplorerPage } from './pages/SchemaExplorerPage'
+import { ChatPage } from './pages/ChatPage'
 
 export default function App() {
   return (
@@ -33,6 +35,8 @@ export default function App() {
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/connections/new" element={<ConnectionFormPage />} />
               <Route path="/connections/:id/edit" element={<ConnectionFormPage />} />
+              <Route path="/schema" element={<SchemaExplorerPage />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route element={<AdminRoute />}>
                 <Route path="/admin" element={<AdminPage />} />
