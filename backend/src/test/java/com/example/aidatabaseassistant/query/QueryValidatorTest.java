@@ -31,6 +31,10 @@ class QueryValidatorTest {
                 .build();
     }
 
+    // =========================================================
+    // SELECT - CÁC TRƯỜNG HỢP HỢP LỆ
+    // =========================================================
+
     @Test
     void shouldAllowValidSelect() {
 
@@ -66,6 +70,10 @@ class QueryValidatorTest {
         );
     }
 
+    // =========================================================
+    // READ-ONLY SECURITY
+    // =========================================================
+
     @Test
     void shouldRejectInsert() {
 
@@ -73,7 +81,7 @@ class QueryValidatorTest {
                 "INSERT INTO customers(full_name) VALUES ('Test')";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
@@ -85,7 +93,7 @@ class QueryValidatorTest {
                 "UPDATE customers SET full_name = 'Test'";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
@@ -97,7 +105,7 @@ class QueryValidatorTest {
                 "DELETE FROM customers";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
@@ -109,7 +117,7 @@ class QueryValidatorTest {
                 "DROP TABLE customers";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
@@ -121,7 +129,7 @@ class QueryValidatorTest {
                 "ALTER TABLE customers ADD COLUMN test VARCHAR(100)";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
@@ -133,10 +141,14 @@ class QueryValidatorTest {
                 "TRUNCATE TABLE customers";
 
         assertThrows(
-                IllegalArgumentException.class,
+                ReadOnlyViolationException.class,
                 () -> queryValidator.validate(sql, schema)
         );
     }
+
+    // =========================================================
+    // MULTIPLE STATEMENTS
+    // =========================================================
 
     @Test
     void shouldRejectMultipleStatements() {
@@ -144,11 +156,21 @@ class QueryValidatorTest {
         String sql =
                 "SELECT * FROM customers; DELETE FROM customers";
 
-        assertThrows(
+        IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> queryValidator.validate(sql, schema)
         );
+
+        assertTrue(
+                exception.getMessage().contains(
+                        "Chỉ cho phép đúng 1 câu lệnh SQL"
+                )
+        );
     }
+
+    // =========================================================
+    // SCHEMA SECURITY
+    // =========================================================
 
     @Test
     void shouldRejectUnknownTable() {
@@ -162,7 +184,9 @@ class QueryValidatorTest {
         );
 
         assertTrue(
-                exception.getMessage().contains("Bảng không tồn tại")
+                exception.getMessage().contains(
+                        "Bảng không tồn tại"
+                )
         );
     }
 }

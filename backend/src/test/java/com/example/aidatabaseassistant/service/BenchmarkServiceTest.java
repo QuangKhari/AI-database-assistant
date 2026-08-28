@@ -8,6 +8,7 @@ import com.example.aidatabaseassistant.dto.BenchmarkRunResponse;
 import com.example.aidatabaseassistant.dto.QueryResultDto;
 import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.query.QueryExecutor;
+import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,8 @@ class BenchmarkServiceTest {
     @Mock
     private QueryExecutor queryExecutor;
     @Mock
+    private QueryValidator queryValidator;
+    @Mock
     private UserRepository userRepository;
 
     private BenchmarkService benchmarkService;
@@ -59,8 +62,15 @@ class BenchmarkServiceTest {
     @BeforeEach
     void setUp() {
         benchmarkService = new BenchmarkService(
-                benchmarkQuestionRepository, benchmarkResultRepository, connectionRepository,
-                schemaRepository, encryptionUtil, nl2SQLEngine, queryExecutor, userRepository
+                benchmarkQuestionRepository,
+                benchmarkResultRepository,
+                connectionRepository,
+                schemaRepository,
+                encryptionUtil,
+                nl2SQLEngine,
+                queryExecutor,
+                queryValidator,
+                userRepository
         );
         ReflectionTestUtils.setField(benchmarkService, "modelUrl",
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
@@ -165,6 +175,8 @@ class BenchmarkServiceTest {
 
         String generatedSql = "SELECT COUNT(*) AS total FROM customers";
         when(nl2SQLEngine.generateSQL(eq("Co bao nhieu khach hang?"), eq(schema))).thenReturn(generatedSql);
+        doNothing().when(queryValidator)
+                .validate(generatedSql, schema);
 
         QueryResultDto sameResult = new QueryResultDto(
                 List.of("total"), List.of(Map.of("total", 42)), 15, 1, null);
@@ -243,5 +255,140 @@ class BenchmarkServiceTest {
         assertEquals(0.0, response.getAccuracy());
         assertTrue(response.getDetails().isEmpty());
         verifyNoInteractions(nl2SQLEngine, queryExecutor);
+    }
+
+    @Test
+    void runBenchmark_shouldNotExecuteGeneratedSql_whenValidatorRejectsIt() {
+        DatabaseSchema schema = DatabaseSchema.builder()
+                .id(1L)
+                .connection(connection)
+                .databaseName("shop")
+                .build();
+
+        BenchmarkQuestion question = BenchmarkQuestion.builder()
+                .id(100L)
+                .connection(connection)
+                .questionText("Xoa tat ca don hang")
+                .expectedSql("SELECT COUNT(*) FROM orders")
+                .build();
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        when(schemaRepository.findByConnectionId(10L))
+                .thenReturn(Optional.of(schema));
+
+        when(benchmarkQuestionRepository.findByConnectionId(10L))
+                .thenReturn(List.of(question));
+
+        when(encryptionUtil.decrypt("encrypted-secret"))
+                .thenReturn("plain-secret");
+
+        String generatedSql = "DELETE FROM orders";
+
+        when(nl2SQLEngine.generateSQL(
+                eq("Xoa tat ca don hang"),
+                eq(schema)
+        )).thenReturn(generatedSql);
+
+        doThrow(new IllegalArgumentException(
+                "Chỉ cho phép câu lệnh SELECT"
+        )).when(queryValidator)
+                .validate(generatedSql, schema);
+
+        when(benchmarkResultRepository.save(any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        BenchmarkRunResponse response =
+                benchmarkService.runBenchmark("owner", 10L);
+
+        assertEquals(1, response.getTotalQuestions());
+        assertEquals(0, response.getCorrectCount());
+        assertEquals(0.0, response.getAccuracy());
+
+        verify(queryValidator).validate(generatedSql, schema);
+
+        verify(queryExecutor, never()).executeQuery(
+                anyString(),
+                anyInt(),
+                anyString(),
+                anyString(),
+                anyString(),
+                eq(generatedSql)
+        );
+    }
+
+    @Test
+    void runBenchmark_shouldNotExecuteExpectedSql_whenValidatorRejectsIt() {
+        DatabaseSchema schema = DatabaseSchema.builder()
+                .id(1L)
+                .connection(connection)
+                .databaseName("shop")
+                .build();
+
+        BenchmarkQuestion question = BenchmarkQuestion.builder()
+                .id(100L)
+                .connection(connection)
+                .questionText("Dem don hang")
+                .expectedSql("DELETE FROM orders")
+                .build();
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        when(schemaRepository.findByConnectionId(10L))
+                .thenReturn(Optional.of(schema));
+
+        when(benchmarkQuestionRepository.findByConnectionId(10L))
+                .thenReturn(List.of(question));
+
+        when(encryptionUtil.decrypt("encrypted-secret"))
+                .thenReturn("plain-secret");
+
+        String generatedSql = "SELECT COUNT(*) FROM orders";
+
+        when(nl2SQLEngine.generateSQL(
+                eq("Dem don hang"),
+                eq(schema)
+        )).thenReturn(generatedSql);
+
+        // Generated SQL hợp lệ
+        doNothing().when(queryValidator)
+                .validate(generatedSql, schema);
+
+        // Expected SQL không hợp lệ
+        doThrow(new IllegalArgumentException(
+                "Chỉ cho phép câu lệnh SELECT"
+        )).when(queryValidator)
+                .validate(question.getExpectedSql(), schema);
+
+        when(benchmarkResultRepository.save(any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        BenchmarkRunResponse response =
+                benchmarkService.runBenchmark("owner", 10L);
+
+        assertEquals(1, response.getTotalQuestions());
+        assertEquals(0, response.getCorrectCount());
+        assertEquals(0.0, response.getAccuracy());
+
+        verify(queryValidator).validate(
+                generatedSql,
+                schema
+        );
+
+        verify(queryValidator).validate(
+                question.getExpectedSql(),
+                schema
+        );
+
+        // Vì expected SQL không hợp lệ nên KHÔNG SQL nào được execute
+        verifyNoInteractions(queryExecutor);
     }
 }

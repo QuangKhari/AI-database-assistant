@@ -22,23 +22,30 @@ public class QueryValidator {
 
     private Statement parse(String sql) {
         try {
-            net.sf.jsqlparser.statement.Statements statements = CCJSqlParserUtil.parseStatements(sql);
+            net.sf.jsqlparser.statement.Statements statements =
+                    CCJSqlParserUtil.parseStatements(sql);
 
             if (statements.getStatements().size() != 1) {
-                throw new IllegalArgumentException("Chỉ cho phép đúng 1 câu lệnh SQL, không được nối nhiều câu lệnh bằng dấu ';'");
+                throw new IllegalArgumentException(
+                        "Chỉ cho phép đúng 1 câu lệnh SQL, không được nối nhiều câu lệnh bằng dấu ';'"
+                );
             }
 
             return statements.getStatements().get(0);
+
         } catch (IllegalArgumentException e) {
             throw e;
+
         } catch (Exception e) {
-            throw new IllegalArgumentException("SQL không hợp lệ về cú pháp: " + e.getMessage());
+            throw new IllegalArgumentException(
+                    "SQL không hợp lệ về cú pháp: " + e.getMessage()
+            );
         }
     }
 
     public void checkReadOnly(Statement statement) {
         if (!(statement instanceof Select)) {
-            throw new IllegalArgumentException(
+            throw new ReadOnlyViolationException(
                     "Chỉ cho phép câu lệnh SELECT. Các câu lệnh INSERT, UPDATE, DELETE, " +
                             "DROP, ALTER, TRUNCATE, CREATE, RENAME, USE đều bị chặn."
             );
@@ -47,16 +54,24 @@ public class QueryValidator {
 
     public void checkSchemaMatch(Statement statement, DatabaseSchema schema) {
         Set<String> knownTables = new HashSet<>();
+
         for (TableMetadata table : schema.getTables()) {
             knownTables.add(table.getName().toLowerCase());
         }
 
         TablesNamesFinder finder = new TablesNamesFinder();
+
         for (String tableName : finder.getTableList(statement)) {
-            String clean = tableName.replaceAll("[`\"\\[\\]]", "").toLowerCase();
+            String clean = tableName
+                    .replaceAll("[`\"\\[\\]]", "")
+                    .toLowerCase();
+
             if (!knownTables.contains(clean)) {
-                throw new IllegalArgumentException("Bảng không tồn tại trong schema: " + tableName);
+                throw new IllegalArgumentException(
+                        "Bảng không tồn tại trong schema: " + tableName
+                );
             }
         }
     }
+
 }

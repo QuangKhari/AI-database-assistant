@@ -5,6 +5,7 @@ import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.query.QueryExecutor;
+import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -12,12 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.aidatabaseassistant.entity.User;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import static java.lang.Thread.sleep;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +31,7 @@ public class BenchmarkService {
     private final EncryptionUtil encryptionUtil;
     private final NL2SQLEngine nl2SQLEngine;
     private final QueryExecutor queryExecutor;
+    private final QueryValidator queryValidator;
     private final UserRepository userRepository;
 
     public BenchmarkQuestionResponse addQuestion(String username, Long connectionId, BenchmarkQuestionRequest request) {
@@ -96,6 +95,11 @@ public class BenchmarkService {
             if (generatedSql != null && !generatedSql.isBlank()) {
 
                 try {
+                    // Validate cả 2 SQL trước khi execute bất kỳ câu nào
+                    queryValidator.validate(generatedSql, schema);
+                    queryValidator.validate(question.getExpectedSql(), schema);
+
+                    // Chỉ execute sau khi cả 2 đều hợp lệ
                     generatedResult = queryExecutor.executeQuery(
                             connection.getHost(),
                             connection.getPort(),
@@ -270,8 +274,28 @@ public class BenchmarkService {
     }
 
     private String extractModelName(String url) {
-        int start = url.indexOf("/models/") + 8;
+        if (url == null || url.isBlank()) {
+            return "unknown";
+        }
+
+        int modelStart = url.indexOf("/models/");
+
+        if (modelStart < 0) {
+            return "unknown";
+        }
+
+        int start = modelStart + "/models/".length();
+
         int end = url.indexOf(":", start);
+
+        if (end < 0) {
+            end = url.length();
+        }
+
+        if (start >= end) {
+            return "unknown";
+        }
+
         return url.substring(start, end);
     }
 

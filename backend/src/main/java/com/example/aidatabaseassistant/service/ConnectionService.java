@@ -10,6 +10,7 @@ import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.example.aidatabaseassistant.security.SsrfProtection;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -24,14 +25,27 @@ public class ConnectionService {
     private final DatabaseConnectionRepository connectionRepository;
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
+    private final SsrfProtection ssrfProtection;
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int SOCKET_TIMEOUT_MS = 10000;
 
     public boolean testConnection(ConnectionRequest request) {
-        String url = buildJdbcUrl(request.getDbType(), request.getHost(), request.getPort(), request.getDatabaseName());
+        ssrfProtection.validateHost(request.getHost());
 
-        try (Connection conn = DriverManager.getConnection(url, request.getUsername(), request.getPassword())) {
+        String url = buildJdbcUrl(
+                request.getDbType(),
+                request.getHost(),
+                request.getPort(),
+                request.getDatabaseName()
+        );
+
+        try (Connection conn = DriverManager.getConnection(
+                url,
+                request.getUsername(),
+                request.getPassword())) {
+
             return conn.isValid(3);
+
         } catch (SQLException e) {
             return false;
         }

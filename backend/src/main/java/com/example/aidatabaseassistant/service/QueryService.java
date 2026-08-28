@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import com.example.aidatabaseassistant.query.ReadOnlyViolationException;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +33,7 @@ public class QueryService {
     private final RateLimitService rateLimitService;
     private final ChartSuggestionService chartSuggestionService;
     private final SchemaLoaderService schemaLoaderService;
+    private final DataInsightService dataInsightService;
 
     public PreviewResponse previewQuery(String username, QueryRequest request) {
         User user = userRepository.findByUsername(username)
@@ -50,9 +52,28 @@ public class QueryService {
 
         try {
             queryValidator.validate(generatedSql, schema);
-            return new PreviewResponse(generatedSql, true, null);
+
+            return new PreviewResponse(
+                    generatedSql,
+                    true,
+                    null
+            );
+
+        } catch (ReadOnlyViolationException e) {
+
+            return new PreviewResponse(
+                    generatedSql,
+                    false,
+                    e.getMessage()
+            );
+
         } catch (IllegalArgumentException e) {
-            return new PreviewResponse(generatedSql, false, e.getMessage());
+
+            return new PreviewResponse(
+                    generatedSql,
+                    false,
+                    e.getMessage()
+            );
         }
     }
 
@@ -118,6 +139,10 @@ public class QueryService {
                 ? buildChartSuggestion(result.getFinalResult())
                 : null;
 
+        DataInsightResponse dataInsight = result.isSuccess()
+                ? buildDataInsight(result.getFinalResult())
+                : null;
+
         return new QueryResponse(
                 conversation.getId(),
                 assistantMessage.getId(),
@@ -125,8 +150,21 @@ public class QueryService {
                 result.getFinalResult(),
                 summary,
                 logs.size(),
-                chartSuggestion
+                chartSuggestion,
+                dataInsight
         );
+    }
+
+    private DataInsightResponse buildDataInsight(QueryResultDto finalResult) {
+        // Giong buildChartSuggestion: day la tinh nang BO SUNG, tuyet doi
+        // khong duoc lam vo luong /execute chinh neu co loi bat ngo. Neu
+        // khong tinh duoc (analyzer tra ve null) hoac loi, FE se tu dong
+        // fallback ve hien thi "summary" (da co san, khong bi anh huong).
+        try {
+            return dataInsightService.analyze(finalResult.getColumns(), finalResult.getRows());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
@@ -159,10 +197,31 @@ public class QueryService {
         return llmClient.generateResponse(prompt);
     }
 
-    private Conversation getOrCreateConversation(User user, DatabaseConnection connection, QueryRequest request) {
+    private Conversation getOrCreateConversation(
+            User user,
+            DatabaseConnection connection,
+            QueryRequest request) {
+
         if (request.getConversationId() != null) {
-            return conversationRepository.findById(request.getConversationId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy conversation"));
+
+            Conversation conversation = conversationRepository
+                    .findById(request.getConversationId())
+                    .orElseThrow(() ->
+                            new IllegalArgumentException("Không tìm thấy conversation"));
+
+            // Kiểm tra conversation thuộc user hiện tại
+            if (!conversation.getUser().getId().equals(user.getId())) {
+                throw new IllegalArgumentException(
+                        "Bạn không có quyền truy cập conversation này");
+            }
+
+            // Kiểm tra conversation thuộc đúng connection
+            if (!conversation.getConnection().getId().equals(connection.getId())) {
+                throw new IllegalArgumentException(
+                        "Conversation không thuộc connection này");
+            }
+
+            return conversation;
         }
 
         Conversation conversation = Conversation.builder()
@@ -172,6 +231,7 @@ public class QueryService {
                         ? request.getQuestion().substring(0, 50) + "..."
                         : request.getQuestion())
                 .build();
+
         return conversationRepository.save(conversation);
     }
 

@@ -2,6 +2,7 @@ package com.example.aidatabaseassistant.controller;
 
 import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.service.ChartSuggestionService;
+import com.example.aidatabaseassistant.service.DataInsightService;
 import com.example.aidatabaseassistant.service.QueryService;
 import com.example.aidatabaseassistant.service.RateLimitService;
 import com.example.aidatabaseassistant.service.SqlExplanationService;
@@ -22,7 +23,9 @@ public class QueryController {
     private final QueryService queryService;
     private final SqlExplanationService sqlExplanationService;
     private final ChartSuggestionService chartSuggestionService;
+    private final DataInsightService dataInsightService;
     private final RateLimitService rateLimitService;
+
 
     @PostMapping("/explain")
     public ResponseEntity<ExplainSqlResponse> explain(Authentication authentication,
@@ -49,5 +52,18 @@ public class QueryController {
             throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
         }
         return ResponseEntity.ok(chartSuggestionService.suggest(request));
+    }
+
+    // Dung chung ChartSuggestionRequest (columns + rows) voi endpoint
+    // chart-suggestion vi ca hai deu la tinh nang STATELESS bo sung, phan
+    // tich lai tren cung mot ket qua truy van (columns/rows) ma FE da co
+    // san, khong can luu vao DB hay gan voi mot conversation/message cu the.
+    @PostMapping("/data-insight")
+    public ResponseEntity<DataInsightResponse> dataInsight(Authentication authentication,
+                                                           @Valid @RequestBody ChartSuggestionRequest request) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+        }
+        return ResponseEntity.ok(dataInsightService.analyze(request));
     }
 }
