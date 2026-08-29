@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.example.aidatabaseassistant.service.SqlOptimizationService;
 
 @RestController
 @RequestMapping("/api/query")
@@ -25,6 +26,7 @@ public class QueryController {
     private final ChartSuggestionService chartSuggestionService;
     private final DataInsightService dataInsightService;
     private final RateLimitService rateLimitService;
+    private final SqlOptimizationService sqlOptimizationService;
 
 
     @PostMapping("/explain")
@@ -65,5 +67,14 @@ public class QueryController {
             throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
         }
         return ResponseEntity.ok(dataInsightService.analyze(request));
+    }
+
+    @PostMapping("/optimize")
+    public ResponseEntity<OptimizeSqlResponse> optimize(Authentication authentication,
+                                                        @Valid @RequestBody OptimizeSqlRequest request) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+        }
+        return ResponseEntity.ok(sqlOptimizationService.optimize(authentication.getName(), request));
     }
 }

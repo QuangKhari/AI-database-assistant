@@ -61,6 +61,12 @@ class SchemaRetrievalServiceTest {
                 "topK",
                 5
         );
+
+        ReflectionTestUtils.setField(
+                service,
+                "minTablesToActivate",
+                8
+        );
     }
 
     @Test
@@ -204,6 +210,154 @@ class SchemaRetrievalServiceTest {
          */
         verify(tableEmbeddingRepository, times(1))
                 .findBySchemaId(1L);
+    }
+
+    @Test
+    void shouldExcludeUnrelatedTablesBelowSimilarityThreshold() {
+
+        /*
+         * Mô phỏng schema có 1 bảng liên quan (customers)
+         * và nhiều bảng "nhiễu" hoàn toàn không liên quan
+         * (không FK tới customers), giống tình huống schema
+         * thật lớn có nhiều domain khác nhau
+         * (VD: employees, audit_logs, notifications...).
+         */
+        TableMetadata customers = mock(TableMetadata.class);
+
+        when(customers.getName())
+                .thenReturn("customers");
+
+        when(customers.getColumns())
+                .thenReturn(List.of());
+
+        List<TableMetadata> tables =
+                new ArrayList<>();
+
+        tables.add(customers);
+
+        for (int i = 0; i < 9; i++) {
+
+            TableMetadata noise =
+                    mock(TableMetadata.class);
+
+            when(noise.getName())
+                    .thenReturn("noise_table_" + i);
+
+            when(noise.getColumns())
+                    .thenReturn(List.of());
+
+            tables.add(noise);
+        }
+
+        DatabaseSchema schema = createSchema(tables);
+
+        ReflectionTestUtils.setField(
+                service,
+                "minSimilarity",
+                0.6
+        );
+
+        when(llmClient.generateEmbedding(anyString()))
+                .thenReturn(new float[]{1f, 0f});
+
+        List<TableEmbedding> embeddings =
+                new ArrayList<>();
+
+        /*
+         * customers gần như song song với question vector
+         * -> similarity ~ 1.0, vượt ngưỡng 0.6.
+         */
+        embeddings.add(
+                createEmbedding(
+                        schema,
+                        "customers",
+                        "[1.0,0.0]"
+                )
+        );
+
+        /*
+         * Các bảng nhiễu gần như vuông góc với question vector
+         * -> similarity ~ 0.0, dưới ngưỡng 0.6.
+         */
+        for (int i = 0; i < 9; i++) {
+
+            embeddings.add(
+                    createEmbedding(
+                            schema,
+                            "noise_table_" + i,
+                            "[0.0,1.0]"
+                    )
+            );
+        }
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(embeddings);
+
+        DatabaseSchema result =
+                service.retrieveRelevantSchema(
+                        "Tìm khách hàng",
+                        schema
+                );
+
+        /*
+         * Chỉ còn customers, các bảng nhiễu bị loại
+         * dù topK = 5 (đủ chỗ để lấy thêm nếu không có threshold).
+         */
+        assertEquals(1, result.getTables().size());
+
+        assertEquals(
+                "customers",
+                result.getTables().get(0).getName()
+        );
+    }
+
+    @Test
+    void shouldFallBackToFullSchemaWhenNoTableMeetsThreshold() {
+
+        List<TableMetadata> tables = createTables(10);
+
+        DatabaseSchema schema = createSchema(tables);
+
+        ReflectionTestUtils.setField(
+                service,
+                "minSimilarity",
+                0.9
+        );
+
+        when(llmClient.generateEmbedding(anyString()))
+                .thenReturn(new float[]{1f, 0f});
+
+        List<TableEmbedding> embeddings = new ArrayList<>();
+
+        /*
+         * Tất cả bảng đều gần như vuông góc với câu hỏi
+         * -> similarity thấp, không bảng nào đạt ngưỡng 0.9.
+         */
+        for (TableMetadata table : tables) {
+
+            embeddings.add(
+                    createEmbedding(
+                            schema,
+                            table.getName(),
+                            "[0.05,1.0]"
+                    )
+            );
+        }
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(embeddings);
+
+        DatabaseSchema result =
+                service.retrieveRelevantSchema(
+                        "Câu hỏi không liên quan tới bảng nào",
+                        schema
+                );
+
+        /*
+         * Không bảng nào đạt ngưỡng -> fallback về full schema
+         * thay vì trả schema rỗng.
+         */
+        assertSame(schema, result);
     }
 
     @Test

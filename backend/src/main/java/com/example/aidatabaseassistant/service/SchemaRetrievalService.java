@@ -34,7 +34,6 @@ public class SchemaRetrievalService {
      *
      * Vì gửi toàn bộ schema vẫn đủ nhỏ.
      */
-    private static final int MIN_TABLES_TO_ACTIVATE = 8;
 
     private final LLMClient llmClient;
     private final TableEmbeddingRepository tableEmbeddingRepository;
@@ -56,6 +55,38 @@ public class SchemaRetrievalService {
      */
     @Value("${schema.rag.top-k:5}")
     private int topK;
+
+    /**
+     * Số bảng tối thiểu để kích hoạt RAG.
+     *
+     * Nếu schema có <= minTablesToActivate bảng:
+     *
+     *     không cần RAG, gửi toàn bộ schema vẫn đủ nhỏ,
+     *     không tốn thêm 1 lần gọi embedding API.
+     *
+     * schema.rag.min-tables-to-activate=8
+     */
+    @Value("${schema.rag.min-tables-to-activate:8}")
+    private int minTablesToActivate;
+
+    /**
+     * Ngưỡng cosine similarity tối thiểu để một bảng
+     * được coi là "liên quan" tới câu hỏi.
+     *
+     * Nếu similarity < minSimilarity:
+     *
+     *     bảng bị loại khỏi kết quả, kể cả khi
+     *     nó nằm trong top-K theo thứ hạng.
+     *
+     * Mục đích: top-K một mình không đủ, vì top-K
+     * luôn trả về K bảng "gần nhất có thể" ngay cả khi
+     * câu hỏi không thực sự liên quan tới bảng nào
+     * (similarity thấp nhưng vẫn là số cao nhất trong danh sách).
+     *
+     * schema.rag.min-similarity=0.5
+     */
+    @Value("${schema.rag.min-similarity:0.5}")
+    private double minSimilarity;
 
     /**
      * Lấy ra schema liên quan nhất với câu hỏi.
@@ -102,7 +133,7 @@ public class SchemaRetrievalService {
          */
         if (!ragEnabled
                 || fullSchema.getTables().size()
-                <= MIN_TABLES_TO_ACTIVATE) {
+                <= minTablesToActivate) {
 
             return fullSchema;
         }
@@ -227,7 +258,7 @@ public class SchemaRetrievalService {
          * 5. TÍNH SIMILARITY
          * =========================================================
          */
-        List<TableMetadata> ranked =
+        List<Map.Entry<TableMetadata, Double>> scored =
                 fullSchema.getTables()
                         .stream()
 
@@ -298,8 +329,55 @@ public class SchemaRetrievalService {
                                         )
                         )
 
+                        .collect(Collectors.toList());
+
+        /*
+         * Log toàn bộ similarity score (đã sắp xếp) để tiện
+         * theo dõi / tinh chỉnh schema.rag.min-similarity
+         * bằng dữ liệu thật, thay vì đoán mò.
+         */
+        if (log.isDebugEnabled()) {
+
+            log.debug(
+                    "Similarity scores cho câu hỏi \"{}\": {}",
+                    question,
+                    scored.stream()
+                            .map(e -> e.getKey().getName()
+                                            + "=" + String.format(
+                                            Locale.ROOT,
+                                            "%.3f",
+                                            e.getValue()
+                                    )
+                            )
+                            .collect(Collectors.joining(", "))
+            );
+        }
+
+        List<TableMetadata> ranked =
+                scored.stream()
+
+                        /*
+                         * =========================================
+                         * NGƯỠNG SIMILARITY
+                         * =========================================
+                         *
+                         * Loại các bảng có similarity quá thấp,
+                         * dù chúng vẫn có thể lọt vào top-K nếu
+                         * chỉ xét theo thứ hạng.
+                         *
+                         * Ví dụ: câu hỏi không liên quan tới bảng
+                         * nào trong DB -> tất cả similarity đều thấp
+                         * -> không nên ép trả về K bảng "đỡ tệ nhất".
+                         */
+                        .filter(entry ->
+                                entry.getValue() >= minSimilarity
+                        )
+
                         /*
                          * Không lấy quá số bảng thực tế.
+                         *
+                         * scored đã được sắp xếp giảm dần similarity
+                         * từ bước trước.
                          */
                         .limit(
                                 Math.min(
@@ -326,8 +404,11 @@ public class SchemaRetrievalService {
         if (ranked.isEmpty()) {
 
             log.warn(
-                    "Không tìm thấy table embedding hợp lệ cho schema {}. " +
+                    "Không có bảng nào đạt ngưỡng similarity >= {} " +
+                            "cho schema {} (câu hỏi có thể không liên quan " +
+                            "tới bảng nào, hoặc thiếu table embedding hợp lệ). " +
                             "Fallback về full schema.",
+                    minSimilarity,
                     fullSchema.getId()
             );
 
@@ -486,6 +567,12 @@ public class SchemaRetrievalService {
                 );
             }
         }
+
+        log.info("RAG chọn {} bảng (top-{}, min-similarity={}): {} | Sau FK expansion: {} bảng: {}",
+                ranked.size(), topK, minSimilarity,
+                ranked.stream().map(TableMetadata::getName).toList(),
+                expanded.size(),
+                expanded.stream().map(TableMetadata::getName).toList());
 
         /*
          * =========================================================
