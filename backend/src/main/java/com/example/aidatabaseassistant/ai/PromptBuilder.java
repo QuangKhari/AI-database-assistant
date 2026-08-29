@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 import com.example.aidatabaseassistant.dto.AnomalyDto;
 import com.example.aidatabaseassistant.dto.TrendDirection;
 import com.example.aidatabaseassistant.insight.DataInsightFacts;
+import com.example.aidatabaseassistant.dto.IndexSuggestionDto;
+import com.example.aidatabaseassistant.dto.OptimizationIssueDto;
+import java.util.List;
 
 import java.util.Locale;
 
@@ -234,6 +237,64 @@ public class PromptBuilder {
         }
 
         sb.append("\nHãy viết đoạn tóm tắt (2-3 câu) dựa ĐÚNG và CHỈ trên số liệu ở trên:");
+
+        return sb.toString();
+    }
+
+    /**
+     * Giong buildDataInsightPrompt: Gemini CHI duoc VIET LAI cac phat hien
+     * (issues/suggestions) da duoc SqlOptimizationAnalyzer tinh SAN tu
+     * EXPLAIN va index THAT cua MySQL - khong duoc tu bia them van de hieu
+     * nang hay index nao khac ngoai danh sach duoc cung cap.
+     */
+    public String buildOptimizationPrompt(String sql, List<OptimizationIssueDto> issues,
+                                          List<IndexSuggestionDto> suggestions) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("""
+        Bạn là chuyên gia tối ưu hiệu năng MySQL.
+
+        Nhiệm vụ:
+        VIẾT LẠI các phát hiện hiệu năng ĐÃ ĐƯỢC PHÂN TÍCH SẴN bên dưới (dựa
+        trên EXPLAIN thực tế của MySQL) thành một đoạn nhận xét 2-4 câu tiếng
+        Việt tự nhiên, dễ hiểu cho người không rành kỹ thuật sâu.
+
+        QUY TẮC BẮT BUỘC:
+
+        1. TUYỆT ĐỐI không bịa thêm vấn đề hiệu năng nào ngoài danh sách bên
+           dưới, không suy đoán nguyên nhân khác.
+        2. TUYỆT ĐỐI không tự đề xuất index nào khác ngoài danh sách gợi ý
+           bên dưới - danh sách đó đã dựa trên index THẬT đang tồn tại.
+        3. Nếu danh sách vấn đề rỗng, chỉ cần xác nhận SQL không có vấn đề
+           hiệu năng rõ rệt, không suy diễn thêm.
+        4. CHỈ trả về đoạn nhận xét, không thêm tiêu đề, không dùng markdown,
+           không liệt kê gạch đầu dòng.
+
+        """);
+
+        sb.append("SQL đang phân tích:\n").append(sql).append("\n\n");
+
+        if (issues.isEmpty()) {
+            sb.append("VẤN ĐỀ PHÁT HIỆN ĐƯỢC: Không có.\n");
+        } else {
+            sb.append("VẤN ĐỀ PHÁT HIỆN ĐƯỢC (đáng tin cậy 100%, không được đổi khác):\n");
+            for (OptimizationIssueDto issue : issues) {
+                sb.append("- [").append(issue.getSeverity()).append("] ")
+                        .append(issue.getDescription()).append("\n");
+            }
+        }
+
+        if (!suggestions.isEmpty()) {
+            sb.append("\nGỢI Ý INDEX (đáng tin cậy 100%, không được đổi khác):\n");
+            for (IndexSuggestionDto s : suggestions) {
+                sb.append("- Bảng ").append(s.getTable())
+                        .append(", cột: ").append(String.join(", ", s.getColumns()))
+                        .append(" (").append(s.getReason()).append(") -> ")
+                        .append(s.getCreateIndexSql()).append("\n");
+            }
+        }
+
+        sb.append("\nHãy viết nhận xét (2-4 câu) dựa ĐÚNG và CHỈ trên thông tin ở trên:");
 
         return sb.toString();
     }
