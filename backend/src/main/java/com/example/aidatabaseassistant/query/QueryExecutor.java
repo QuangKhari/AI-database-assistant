@@ -2,6 +2,8 @@ package com.example.aidatabaseassistant.query;
 
 import com.example.aidatabaseassistant.dto.QueryResultDto;
 import org.springframework.stereotype.Component;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.util.TablesNamesFinder;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -91,23 +93,38 @@ public class QueryExecutor {
 
             List<Map<String, Object>> explainRows = runExplain(conn, sql);
 
-            Set<String> tables = new LinkedHashSet<>();
-            for (Map<String, Object> row : explainRows) {
-                Object t = row.get("table");
-                if (t == null) {
-                    t = row.get("TABLE");
-                }
-                if (t != null) {
-                    tables.add(t.toString());
-                }
-            }
+            // QUAN TRONG: KHONG duoc lay ten bang tu cot "table" cua EXPLAIN
+            // de tra index - MySQL tra ve ALIAS trong cot do neu cau SQL co
+            // dat alias (vi du "c" thay vi "customers"), se khien
+            // getIndexInfo() tra cuu nham mot bang khong ton tai va luon
+            // tra ve rong => goi y index sai (tuong chua co index trong khi
+            // thuc ra da co). Phai lay TEN BANG THAT truc tiep tu cau SQL
+            // bang TablesNamesFinder (giong cach QueryValidator dang lam).
+            Set<String> realTableNames = extractRealTableNames(sql);
 
-            Map<String, Set<String>> indexedColumns = fetchIndexedColumns(conn, databaseName, tables);
+            Map<String, Set<String>> indexedColumns = fetchIndexedColumns(conn, databaseName, realTableNames);
 
             return new SqlOptimizationRawData(explainRows, indexedColumns, null);
 
         } catch (Exception e) {
             return new SqlOptimizationRawData(List.of(), Map.of(), e.getMessage());
+        }
+    }
+
+    private Set<String> extractRealTableNames(String sql) {
+        try {
+            var statement = CCJSqlParserUtil.parse(sql);
+            TablesNamesFinder finder = new TablesNamesFinder();
+            Set<String> names = new LinkedHashSet<>();
+            for (String tableName : finder.getTableList(statement)) {
+                names.add(tableName.replaceAll("[`\"\\[\\]]", ""));
+            }
+            return names;
+        } catch (Exception e) {
+            // Khong parse duoc (rat hiem vi SQL da qua QueryValidator truoc
+            // do) -> tra ve rong, chi mat phan goi y index, khong lam vo
+            // hieu EXPLAIN.
+            return Set.of();
         }
     }
 

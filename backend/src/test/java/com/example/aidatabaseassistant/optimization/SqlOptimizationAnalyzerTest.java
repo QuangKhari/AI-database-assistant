@@ -133,4 +133,63 @@ class SqlOptimizationAnalyzerTest {
         assertEquals(2, result.getIssues().size());
         assertTrue(result.getSuggestions().isEmpty());
     }
+
+    @Test
+    void analyze_shouldNotSuggestIndex_whenColumnAlreadyIndexed_andExplainUsesAlias() {
+        // Tai hien dung bug thuc te: EXPLAIN tra ve alias "c" trong cot table,
+        // nhung indexedColumnsByTable phai duoc key bang TEN BANG THAT.
+        String sql = "SELECT o.id, c.full_name FROM orders o JOIN customers c ON o.customer_id = c.id";
+        List<Map<String, Object>> explain = List.of(
+                explainRow(1, "c", "ALL", "PRIMARY", null, 10L, null),
+                explainRow(2, "o", "ref", "customer_id", "customer_id", 2L, "Using index"));
+
+        // "id" DA co index (PRIMARY) tren customers - key phai la ten bang that
+        Map<String, Set<String>> indexed = Map.of(
+                "customers", Set.of("id"),
+                "orders", Set.of("customer_id"));
+
+        SqlOptimizationResult result = analyzer.analyze(sql, explain, indexed);
+
+        assertEquals(1, result.getIssues().size()); // van con issue full-scan (dung, vi day la bang driving cua JOIN)
+        assertTrue(result.getSuggestions().isEmpty()); // nhung KHONG duoc goi y them index cho "id"
+    }
+
+    @Test
+    void analyze_shouldNotSuggestIndex_onAggregateAlias_inOrderBy() {
+        // total_orders la alias cua COUNT(*), KHONG PHAI cot that -> tuyet doi
+        // khong duoc goi y CREATE INDEX tren no.
+        String sql = "SELECT category, COUNT(*) AS total_orders FROM orders "
+                + "GROUP BY category ORDER BY total_orders DESC";
+        List<Map<String, Object>> explain = List.of(
+                explainRow(1, "orders", "index", null, "PRIMARY", 500L,
+                        "Using temporary; Using filesort"));
+        Map<String, Set<String>> indexed = Map.of("orders", Set.of());
+
+        SqlOptimizationResult result = analyzer.analyze(sql, explain, indexed);
+
+        assertEquals(2, result.getIssues().size()); // filesort + temporary van duoc bao cao
+
+        // Chi duoc goi y index cho "category" (GROUP BY - cot that), TUYET DOI
+        // khong duoc co goi y nao chua "total_orders".
+        assertEquals(1, result.getSuggestions().size());
+        assertTrue(result.getSuggestions().get(0).getColumns().contains("category"));
+        assertFalse(result.getSuggestions().stream()
+                .anyMatch(s -> s.getColumns().contains("total_orders")));
+    }
+
+    @Test
+    void analyze_shouldResolveOrderByAlias_toRealColumnName() {
+        // "name" la alias truc tiep cua cot that "full_name" -> phai goi y
+        // index tren "full_name", khong phai "name".
+        String sql = "SELECT full_name AS name FROM customers ORDER BY name";
+        List<Map<String, Object>> explain = List.of(
+                explainRow(1, "customers", "index", null, "PRIMARY", 300L, "Using filesort"));
+        Map<String, Set<String>> indexed = Map.of("customers", Set.of());
+
+        SqlOptimizationResult result = analyzer.analyze(sql, explain, indexed);
+
+        assertEquals(1, result.getSuggestions().size());
+        assertTrue(result.getSuggestions().get(0).getColumns().contains("full_name"));
+        assertFalse(result.getSuggestions().get(0).getColumns().contains("name"));
+    }
 }

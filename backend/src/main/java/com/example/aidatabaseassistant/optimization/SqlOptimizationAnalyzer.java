@@ -13,6 +13,7 @@ import net.sf.jsqlparser.statement.select.GroupByElement;
 import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -234,8 +235,6 @@ public class SqlOptimizationAnalyzer {
             net.sf.jsqlparser.statement.Statement statement = CCJSqlParserUtil.parse(sql);
 
             if (!(statement instanceof PlainSelect plainSelect)) {
-                // UNION / cau lenh phuc tap khac PlainSelect don: bo qua
-                // goi y cot, van con issues tu EXPLAIN o buoc analyze().
                 return new QueryColumnInfo(aliasToTable, whereJoinColumns, orderGroupColumns);
             }
 
@@ -249,6 +248,32 @@ public class SqlOptimizationAnalyzer {
             boolean singleTable = aliasToTable.values().stream().distinct().count() == 1;
             String onlyTable = singleTable ? aliasToTable.values().iterator().next() : null;
 
+            // ==== Doc alias trong SELECT truoc, de biet dinh danh nao trong
+            // ORDER BY/GROUP BY thuc ra la alias, khong phai cot bang that ====
+            // aliasToRealColumn: alias -> ten cot that, chi ap dung cho
+            // SelectItem la 1 cot don gian (VD: "full_name AS name").
+            // computedAliases: alias cua bieu thuc tinh toan (ham tong hop,
+            // phep toan, CASE...) - KHONG THE tao index tren gia tri nay,
+            // phai loai hoan toan khoi danh sach goi y.
+            Map<String, String> aliasToRealColumn = new HashMap<>();
+            Set<String> computedAliases = new HashSet<>();
+
+            if (plainSelect.getSelectItems() != null) {
+                for (SelectItem<?> item : plainSelect.getSelectItems()) {
+                    if (item.getAlias() == null || item.getAlias().getName() == null) {
+                        continue;
+                    }
+                    String aliasName = item.getAlias().getName().toLowerCase(Locale.ROOT);
+                    Expression expr = item.getExpression();
+
+                    if (expr instanceof Column plainColumn) {
+                        aliasToRealColumn.put(aliasName, plainColumn.getColumnName());
+                    } else {
+                        computedAliases.add(aliasName);
+                    }
+                }
+            }
+
             List<Column> whereJoinCols = new ArrayList<>();
             collectColumns(plainSelect.getWhere(), whereJoinCols);
             if (plainSelect.getJoins() != null) {
@@ -256,35 +281,69 @@ public class SqlOptimizationAnalyzer {
                     collectColumns(join.getOnExpression(), whereJoinCols);
                 }
             }
+            // WHERE/JOIN...ON theo chuan SQL KHONG duoc phep tham chieu alias
+            // cua SELECT (alias chua ton tai tai thoi diem WHERE/JOIN chay),
+            // nen KHONG ap dung resolveSelectAliases o day - giu nguyen.
             attributeColumns(whereJoinCols, aliasToTable, onlyTable, whereJoinColumns);
 
-            List<Column> orderGroupCols = new ArrayList<>();
+            List<Column> orderGroupColsRaw = new ArrayList<>();
             GroupByElement groupBy = plainSelect.getGroupBy();
             if (groupBy != null && groupBy.getGroupByExpressionList() != null) {
-                // getGroupByExpressionList() tra ve KIEU RAW ExpressionList (khong co
-                // generic <Expression>) trong JSqlParser 4.9 - phai gan qua bien
-                // List<Expression> trung gian truoc khi for-each, neu khong compiler
-                // se coi phan tu la Object thay vi Expression.
                 List<Expression> groupByExpressions = groupBy.getGroupByExpressionList();
                 for (Expression expr : groupByExpressions) {
-                    collectColumns(expr, orderGroupCols);
+                    collectColumns(expr, orderGroupColsRaw);
                 }
             }
             if (plainSelect.getOrderByElements() != null) {
                 for (OrderByElement ob : plainSelect.getOrderByElements()) {
-                    collectColumns(ob.getExpression(), orderGroupCols);
+                    collectColumns(ob.getExpression(), orderGroupColsRaw);
                 }
             }
+
+            // ORDER BY/GROUP BY THI CO uu tien phan giai theo alias SELECT
+            // truoc khi coi la cot bang - ap dung resolveSelectAliases.
+            List<Column> orderGroupCols = resolveSelectAliases(
+                    orderGroupColsRaw, aliasToRealColumn, computedAliases);
             attributeColumns(orderGroupCols, aliasToTable, onlyTable, orderGroupColumns);
 
         } catch (Exception e) {
-            // SQL khong parse duoc theo cu phap JSqlParser mong doi (hiem
-            // gap vi SQL da qua QueryValidator truoc do) - bo qua goi y cot,
-            // an toan hon la nem loi lam vo hieu tinh nang chinh.
             return new QueryColumnInfo(new HashMap<>(), new HashMap<>(), new HashMap<>());
         }
 
         return new QueryColumnInfo(aliasToTable, whereJoinColumns, orderGroupColumns);
+    }
+
+    /**
+     * Loai bo cot trung ten voi alias tinh toan (ham tong hop/bieu thuc),
+     * va quy doi cot trung ten voi alias cua 1 cot that ve lai ten that -
+     * CHI ap dung cho dinh danh KHONG co tien to bang (dinh danh co tien to
+     * nhu "o.status" chac chan la cot that, khong lien quan alias SELECT).
+     */
+    private List<Column> resolveSelectAliases(List<Column> columns, Map<String, String> aliasToRealColumn,
+                                              Set<String> computedAliases) {
+        List<Column> result = new ArrayList<>();
+
+        for (Column col : columns) {
+            if (col.getTable() != null && col.getTable().getName() != null) {
+                result.add(col);
+                continue;
+            }
+
+            String name = col.getColumnName().toLowerCase(Locale.ROOT);
+
+            if (computedAliases.contains(name)) {
+                continue; // alias tinh toan -> khong the tao index, loai bo
+            }
+
+            String realColumnName = aliasToRealColumn.get(name);
+            if (realColumnName != null && !realColumnName.equalsIgnoreCase(col.getColumnName())) {
+                result.add(new Column(realColumnName));
+            } else {
+                result.add(col);
+            }
+        }
+
+        return result;
     }
 
     private void attributeColumns(
