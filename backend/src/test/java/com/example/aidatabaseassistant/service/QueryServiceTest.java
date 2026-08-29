@@ -73,6 +73,8 @@ class QueryServiceTest {
     private SchemaLoaderService schemaLoaderService;
     @Mock
     private DataInsightService dataInsightService;
+    @Mock
+    private SchemaRetrievalService schemaRetrievalService;
 
     private QueryService queryService;
 
@@ -93,7 +95,7 @@ class QueryServiceTest {
                 userRepository, connectionRepository, schemaRepository, conversationRepository,
                 messageRepository, queryLogRepository, encryptionUtil, nl2SQLEngine, queryValidator,
                 sqlCorrectionService, llmClient, rateLimitService, chartSuggestionService,
-                schemaLoaderService, dataInsightService);
+                schemaLoaderService, dataInsightService, schemaRetrievalService);
 
         // modelUrl la field @Value, KHONG duoc Lombok dua vao constructor vi
         // khong phai final - phai bom bang reflection, giong cach da lam o
@@ -171,6 +173,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("SELECT * FROM orders");
 
         PreviewResponse response = queryService.previewQuery("owner", request);
@@ -187,6 +190,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("DELETE FROM orders");
         doThrow(new IllegalArgumentException("Chỉ cho phép câu lệnh SELECT"))
                 .when(queryValidator).validate("DELETE FROM orders", schema);
@@ -205,7 +209,7 @@ class QueryServiceTest {
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
 
         assertThrows(IllegalArgumentException.class, () -> queryService.previewQuery("intruder", request));
-        verifyNoInteractions(nl2SQLEngine, queryValidator, schemaLoaderService);
+        verifyNoInteractions(nl2SQLEngine, queryValidator, schemaLoaderService, schemaRetrievalService);
     }
 
     // ===================== processQuery: guard clauses =====================
@@ -219,7 +223,7 @@ class QueryServiceTest {
 
         // Bi chan ngay tu dau, tuyet doi khong duoc dong cham DB hay goi AI.
         verifyNoInteractions(userRepository, connectionRepository, schemaLoaderService,
-                sqlCorrectionService, chartSuggestionService, dataInsightService);
+                schemaRetrievalService, sqlCorrectionService, chartSuggestionService, dataInsightService);
     }
 
     @Test
@@ -274,6 +278,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -285,7 +290,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT thang, doanh_thu FROM revenue", finalResult,
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
 
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
@@ -312,6 +317,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(conversationRepository.findById(500L)).thenReturn(Optional.of(existingConversation));
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubMessageSaveAssignsId();
@@ -320,7 +326,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT col FROM t", finalResult,
                 List.of(buildAttemptLog("SELECT col FROM t", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList()))
@@ -341,6 +347,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -353,7 +360,7 @@ class QueryServiceTest {
 
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT col FROM t", finalResult, logs);
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList()))
@@ -373,6 +380,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -381,7 +389,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 false, "SELECT sai", failedResult,
                 List.of(buildAttemptLog("SELECT sai", false, failedResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -404,6 +412,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -417,7 +426,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT thang, doanh_thu FROM revenue", finalResult,
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tăng theo tháng");
 
@@ -440,6 +449,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -448,7 +458,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 false, "SELECT sai", failedResult,
                 List.of(buildAttemptLog("SELECT sai", false, failedResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -468,6 +478,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -479,7 +490,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT thang, doanh_thu FROM revenue", finalResult,
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
         when(chartSuggestionService.suggest(columns, rows))
@@ -503,6 +514,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -516,7 +528,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT thang, doanh_thu FROM revenue", finalResult,
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tăng theo tháng");
 
@@ -540,6 +552,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -548,7 +561,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 false, "SELECT sai", failedResult,
                 List.of(buildAttemptLog("SELECT sai", false, failedResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -568,6 +581,7 @@ class QueryServiceTest {
         when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
@@ -579,7 +593,7 @@ class QueryServiceTest {
         SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
                 true, "SELECT thang, doanh_thu FROM revenue", finalResult,
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(connection), eq("plain-pass")))
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
         when(dataInsightService.analyze(columns, rows))
