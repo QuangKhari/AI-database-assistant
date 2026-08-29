@@ -21,23 +21,6 @@ public class SQLCorrectionService {
     private final QueryValidator queryValidator;
     private final QueryExecutor queryExecutor;
 
-    /**
-     * Chạy quá trình:
-     *
-     * 1. AI sinh SQL dựa trên filteredSchema (schema sau RAG).
-     * 2. Validator kiểm tra SQL dựa trên fullSchema.
-     * 3. Nếu SQL lỗi -> AI self-correct dựa trên filteredSchema.
-     * 4. Tối đa MAX_RETRIES lần.
-     *
-     * filteredSchema:
-     *      Schema đã được SchemaRetrievalService lọc
-     *      -> dùng cho AI để giảm lượng schema đưa vào prompt.
-     *
-     * fullSchema:
-     *      Toàn bộ schema thật của database
-     *      -> dùng cho QueryValidator để đảm bảo không chặn
-     *         những bảng/cột hợp lệ nhưng không nằm trong filtered schema.
-     */
     public AttemptResult run(
             String question,
             DatabaseSchema filteredSchema,
@@ -52,53 +35,59 @@ public class SQLCorrectionService {
         String lastError = null;
 
         /*
+         * Schema đang dùng để AI generate/self-correct.
+         *
+         * Bắt đầu bằng filteredSchema (RAG) để giữ prompt nhỏ.
+         *
          * =========================================================
-         * BƯỚC 1: AI SINH SQL BAN ĐẦU
+         * TẠI SAO CẦN "MỞ RỘNG" SCHEMA KHI CÓ LỖI:
          * =========================================================
          *
-         * Quan trọng:
-         * AI chỉ nhận filteredSchema.
+         * Nếu RAG (Top-K + FK expansion) bỏ sót 1 bảng cần thiết cho
+         * câu hỏi, AI sẽ sinh SQL sai / tham chiếu nhầm bảng.
          *
-         * Điều này giúp RAG giảm schema context gửi cho LLM.
+         * Trước đây: mọi lần selfCorrect() đều dùng lại đúng
+         * filteredSchema ban đầu -> AI không có thêm thông tin gì mới
+         * để tự sửa -> lặp lại lỗi tương tự cho tới khi hết MAX_RETRIES.
+         *
+         * Bây giờ: ngay khi 1 lần thử thất bại, chuyển sang fullSchema
+         * cho các lần selfCorrect còn lại, để AI có đủ ngữ cảnh tự sửa.
+         *
+         * Việc mở rộng chỉ xảy ra SAU KHI THẤT BẠI, nên không ảnh hưởng
+         * tới chi phí prompt ở trường hợp bình thường (RAG đủ chính xác).
          */
+        DatabaseSchema schemaForGeneration = filteredSchema;
+
         try {
 
-            currentSql = nl2SQLEngine.generateSQL(
-                    question,
-                    filteredSchema
-            );
+            currentSql =
+                    nl2SQLEngine.generateSQL(
+                            question,
+                            schemaForGeneration
+                    );
 
         } catch (ReadOnlyViolationException e) {
-
-            /*
-             * Trường hợp câu hỏi chứa yêu cầu:
-             * INSERT / UPDATE / DELETE / DROP / ...
-             *
-             * NL2SQLEngine chặn ngay từ trước khi gọi LLM.
-             */
 
             lastError = e.getMessage();
 
             attemptResult.success = false;
             attemptResult.sql = null;
 
-            attemptResult.finalResult = new QueryResultDto(
-                    List.of(),
-                    List.of(),
-                    0,
-                    0,
-                    lastError
-            );
+            attemptResult.finalResult =
+                    new QueryResultDto(
+                            List.of(),
+                            List.of(),
+                            0,
+                            0,
+                            lastError
+                    );
 
             return attemptResult;
         }
 
-        /*
-         * =========================================================
-         * BƯỚC 2: THỬ CHẠY SQL
-         * =========================================================
-         */
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        for (int attempt = 1;
+             attempt <= MAX_RETRIES;
+             attempt++) {
 
             AttemptLog log = new AttemptLog();
 
@@ -107,44 +96,30 @@ public class SQLCorrectionService {
             try {
 
                 /*
-                 * =================================================
                  * SECURITY:
                  *
-                 * Validator LUÔN nhận fullSchema.
+                 * Validator luôn dùng FULL schema.
                  *
-                 * Không dùng filteredSchema ở đây.
-                 *
-                 * Vì filteredSchema chỉ phục vụ AI/RAG,
-                 * không phải source of truth để xác định
-                 * database có bảng nào.
-                 * =================================================
+                 * filteredSchema/schemaForGeneration chỉ dùng cho AI/RAG,
+                 * không dùng để quyết định bảng nào được phép truy cập.
                  */
                 queryValidator.validate(
                         currentSql,
                         fullSchema
                 );
 
-                /*
-                 * =================================================
-                 * THỰC THI SQL
-                 * =================================================
-                 */
-                QueryResultDto queryResult = queryExecutor.executeQuery(
-                        connection.getHost(),
-                        connection.getPort(),
-                        connection.getDatabaseName(),
-                        connection.getUsername(),
-                        rawPassword,
-                        currentSql
-                );
+                QueryResultDto queryResult =
+                        queryExecutor.executeQuery(
+                                connection.getHost(),
+                                connection.getPort(),
+                                connection.getDatabaseName(),
+                                connection.getUsername(),
+                                rawPassword,
+                                currentSql
+                        );
 
                 log.result = queryResult;
 
-                /*
-                 * =================================================
-                 * QUERY THÀNH CÔNG
-                 * =================================================
-                 */
                 if (queryResult.getError() == null) {
 
                     log.success = true;
@@ -158,34 +133,26 @@ public class SQLCorrectionService {
                     return attemptResult;
                 }
 
-                /*
-                 * QueryValidator pass nhưng database
-                 * trả về lỗi khi execute.
-                 */
-                lastError = queryResult.getError();
+                lastError =
+                        queryResult.getError();
 
             } catch (ReadOnlyViolationException e) {
 
                 /*
-                 * =================================================
                  * SECURITY:
-                 *
-                 * Nếu AI sinh ra INSERT / UPDATE / DELETE / ...
-                 * thì DỪNG NGAY.
-                 *
-                 * Không cho self-correction tiếp tục.
-                 * =================================================
+                 * Nếu SQL không phải SELECT thì dừng ngay.
+                 * Không cho AI self-correct thành một câu SELECT khác.
                  */
-
                 lastError = e.getMessage();
 
-                log.result = new QueryResultDto(
-                        List.of(),
-                        List.of(),
-                        0,
-                        0,
-                        lastError
-                );
+                log.result =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
 
                 log.success = false;
 
@@ -194,132 +161,105 @@ public class SQLCorrectionService {
                 attemptResult.success = false;
                 attemptResult.sql = currentSql;
 
-                attemptResult.finalResult = new QueryResultDto(
-                        List.of(),
-                        List.of(),
-                        0,
-                        0,
-                        lastError
-                );
+                attemptResult.finalResult =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
 
                 return attemptResult;
 
             } catch (IllegalArgumentException e) {
 
-                /*
-                 * =================================================
-                 * SQL không hợp lệ hoặc không khớp schema.
-                 *
-                 * Ví dụ:
-                 * - SQL syntax error
-                 * - bảng không tồn tại
-                 * - nhiều statement
-                 * =================================================
-                 */
-
                 lastError = e.getMessage();
 
-                log.result = new QueryResultDto(
+                log.result =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
+            }
+
+            log.success = false;
+
+            attemptResult.attemptLogs.add(log);
+
+            /*
+             * =====================================================
+             * MỞ RỘNG SCHEMA SAU LẦN THẤT BẠI ĐẦU TIÊN
+             * =====================================================
+             *
+             * Chỉ chuyển 1 lần (khi đang còn là filteredSchema),
+             * và chỉ khi filteredSchema thực sự khác fullSchema
+             * (RAG không kích hoạt thì 2 schema này đã là cùng
+             * 1 object -> không cần làm gì thêm).
+             */
+            if (schemaForGeneration == filteredSchema
+                    && filteredSchema != fullSchema) {
+
+                schemaForGeneration = fullSchema;
+            }
+
+            /*
+             * Chỉ self-correct các lỗi thông thường:
+             * - SQL syntax error
+             * - bảng/cột không tồn tại
+             * - lỗi thực thi query
+             *
+             * ReadOnlyViolationException đã return ở trên.
+             */
+            if (attempt < MAX_RETRIES) {
+
+                currentSql =
+                        nl2SQLEngine.selfCorrect(
+                                currentSql,
+                                lastError,
+                                schemaForGeneration
+                        );
+            }
+        }
+
+        attemptResult.success = false;
+        attemptResult.sql = currentSql;
+
+        attemptResult.finalResult =
+                new QueryResultDto(
                         List.of(),
                         List.of(),
                         0,
                         0,
                         lastError
                 );
-            }
-
-            /*
-             * Attempt hiện tại thất bại.
-             */
-            log.success = false;
-
-            attemptResult.attemptLogs.add(log);
-
-            /*
-             * =================================================
-             * BƯỚC 3: SELF-CORRECTION
-             * =================================================
-             *
-             * Chỉ self-correct nếu vẫn còn attempt.
-             *
-             * AI tiếp tục nhận filteredSchema.
-             */
-            if (attempt < MAX_RETRIES) {
-
-                currentSql = nl2SQLEngine.selfCorrect(
-                        currentSql,
-                        lastError,
-                        filteredSchema
-                );
-            }
-        }
-
-        /*
-         * =========================================================
-         * BƯỚC 4: TẤT CẢ ATTEMPT ĐỀU THẤT BẠI
-         * =========================================================
-         */
-
-        attemptResult.success = false;
-        attemptResult.sql = currentSql;
-
-        attemptResult.finalResult = new QueryResultDto(
-                List.of(),
-                List.of(),
-                0,
-                0,
-                lastError
-        );
 
         return attemptResult;
     }
 
-    /**
-     * Kết quả tổng hợp của toàn bộ quá trình query.
-     */
     @Getter
     public static class AttemptResult {
 
-        /**
-         * true nếu có ít nhất một attempt chạy thành công.
-         */
         boolean success;
 
-        /**
-         * SQL cuối cùng được sử dụng.
-         */
         String sql;
 
-        /**
-         * Kết quả cuối cùng.
-         */
         QueryResultDto finalResult;
 
-        /**
-         * Log của từng attempt.
-         */
-        List<AttemptLog> attemptLogs = new ArrayList<>();
+        List<AttemptLog> attemptLogs =
+                new ArrayList<>();
     }
 
-    /**
-     * Log của một lần thử.
-     */
     @Getter
     public static class AttemptLog {
 
-        /**
-         * SQL được thử ở attempt này.
-         */
         String sql;
 
-        /**
-         * Attempt có thành công hay không.
-         */
         boolean success;
 
-        /**
-         * Kết quả query của attempt.
-         */
         QueryResultDto result;
     }
 }

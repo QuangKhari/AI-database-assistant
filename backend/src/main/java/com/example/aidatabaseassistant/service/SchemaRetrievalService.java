@@ -1,31 +1,39 @@
 package com.example.aidatabaseassistant.service;
 
 import com.example.aidatabaseassistant.ai.LLMClient;
-import com.example.aidatabaseassistant.entity.ColumnMetadata;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
-import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.entity.TableEmbedding;
+import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class SchemaRetrievalService {
 
-    private static final int DEFAULT_TOP_K = 5;
+    private static final Logger log =
+            LoggerFactory.getLogger(SchemaRetrievalService.class);
 
-    // DB nhỏ -> không cần RAG
+    /*
+     * Nếu database có <= 8 bảng:
+     *
+     * không cần RAG.
+     *
+     * Vì gửi toàn bộ schema vẫn đủ nhỏ.
+     */
     private static final int MIN_TABLES_TO_ACTIVATE = 8;
 
     private final LLMClient llmClient;
@@ -33,133 +41,332 @@ public class SchemaRetrievalService {
     private final SchemaEmbeddingService schemaEmbeddingService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Bật / tắt RAG bằng application.properties.
+     *
+     * schema.rag.enabled=true
+     */
     @Value("${schema.rag.enabled:true}")
     private boolean ragEnabled;
 
+    /**
+     * Số bảng lấy từ semantic retrieval.
+     *
+     * schema.rag.top-k=5
+     */
     @Value("${schema.rag.top-k:5}")
     private int topK;
 
+    /**
+     * Lấy ra schema liên quan nhất với câu hỏi.
+     *
+     * Pipeline:
+     *
+     * question
+     *      ↓
+     * question embedding
+     *      ↓
+     * table embeddings
+     *      ↓
+     * cosine similarity
+     *      ↓
+     * Top-K tables
+     *      ↓
+     * FK expansion
+     *      ↓
+     * filtered schema
+     */
     public DatabaseSchema retrieveRelevantSchema(
             String question,
-            DatabaseSchema fullSchema
-    ) {
+            DatabaseSchema fullSchema) {
 
-        /*
-         * ============================================================
-         * 1. DB nhỏ hoặc RAG bị tắt
-         * ============================================================
-         *
-         * Không cần embedding.
-         * Trả về toàn bộ schema.
-         */
-        if (!ragEnabled
-                || fullSchema.getTables().size() <= MIN_TABLES_TO_ACTIVATE) {
+        if (question == null || question.isBlank()) {
+            return fullSchema;
+        }
+
+        if (fullSchema == null
+                || fullSchema.getTables() == null
+                || fullSchema.getTables().isEmpty()) {
 
             return fullSchema;
         }
 
         /*
-         * ============================================================
-         * 2. Đảm bảo embedding của các bảng đã tồn tại
-         * ============================================================
+         * =========================================================
+         * 1. RAG OFF / DATABASE NHỎ
+         * =========================================================
          *
-         * Nếu bảng chưa có embedding:
-         * -> gọi Embedding API
+         * Không gọi embedding API.
          *
-         * Nếu content_hash không đổi:
-         * -> không gọi API lại.
+         * Trả nguyên schema.
          */
-        schemaEmbeddingService.ensureEmbeddings(fullSchema);
+        if (!ragEnabled
+                || fullSchema.getTables().size()
+                <= MIN_TABLES_TO_ACTIVATE) {
+
+            return fullSchema;
+        }
 
         /*
-         * ============================================================
-         * 3. Load TOÀN BỘ embedding của schema chỉ 1 lần
-         * ============================================================
+         * =========================================================
+         * 2. ĐẢM BẢO TABLE EMBEDDINGS ĐÃ TỒN TẠI
+         * =========================================================
          *
-         * Trước đây:
+         * Nếu discovery đã tạo embedding:
          *
-         *   findByTableId(...)
+         *     không gọi lại API nếu hash + model không đổi.
          *
-         * được gọi bên trong similarityOf()
+         * Nếu thiếu:
          *
-         * => mỗi bảng lại query DB một lần
-         * => N+1 query.
+         *     tự động tạo.
+         */
+        try {
+            schemaEmbeddingService.ensureEmbeddings(
+                    fullSchema
+            );
+        } catch (Exception e) {
+
+            /*
+             * RAG là chức năng bổ sung.
+             *
+             * Nếu embedding service lỗi:
+             *
+             *     không được làm hỏng toàn bộ query.
+             *
+             * Fallback về full schema.
+             */
+            log.warn(
+                    "Không thể đảm bảo schema embeddings cho schema {}: {}",
+                    fullSchema.getId(),
+                    e.getMessage()
+            );
+
+            return fullSchema;
+        }
+
+        /*
+         * =========================================================
+         * 3. EMBEDDING CỦA QUESTION
+         * =========================================================
+         */
+        float[] questionVector;
+
+        try {
+
+            questionVector =
+                    llmClient.generateEmbedding(question);
+
+        } catch (Exception e) {
+
+            /*
+             * Nếu không thể tạo embedding cho question:
+             *
+             * RAG không thể thực hiện semantic retrieval.
+             *
+             * Fallback về full schema để query vẫn hoạt động.
+             */
+            log.warn(
+                    "Không thể tạo question embedding cho schema {}: {}",
+                    fullSchema.getId(),
+                    e.getMessage()
+            );
+
+            return fullSchema;
+        }
+
+        /*
+         * Question vector phải hợp lệ.
          *
-         * Bây giờ:
+         * Vector null / rỗng không thể dùng để tính similarity.
+         */
+        if (!isValidVector(questionVector)) {
+
+            log.warn(
+                    "Question embedding không hợp lệ cho schema {}",
+                    fullSchema.getId()
+            );
+
+            return fullSchema;
+        }
+
+        /*
+         * =========================================================
+         * 4. LOAD TOÀN BỘ TABLE EMBEDDING CHỈ 1 LẦN
+         * =========================================================
          *
-         *   findBySchemaId(...)
+         * Không query DB cho từng table.
          *
-         * chỉ chạy đúng 1 query.
+         * Một schema có 50 bảng:
+         *
+         *     1 query
+         *
+         * thay vì:
+         *
+         *     50 queries.
          */
         Map<String, float[]> embeddingsByName =
                 tableEmbeddingRepository
                         .findBySchemaId(fullSchema.getId())
                         .stream()
+                        .filter(e ->
+                                e.getTableName() != null
+                                        && !e.getTableName().isBlank()
+                        )
                         .collect(Collectors.toMap(
-                                e -> e.getTableName().toLowerCase(),
-                                e -> fromJson(e.getVectorJson()),
-                                (existing, replacement) -> existing
+                                e -> normalizeName(
+                                        e.getTableName()
+                                ),
+                                e -> fromJson(
+                                        e.getVectorJson()
+                                ),
+                                (a, b) -> a
                         ));
 
         /*
-         * ============================================================
-         * 4. Tạo embedding cho câu hỏi
-         * ============================================================
+         * =========================================================
+         * 5. TÍNH SIMILARITY
+         * =========================================================
          */
-        float[] questionVector =
-                llmClient.generateEmbedding(question);
+        List<TableMetadata> ranked =
+                fullSchema.getTables()
+                        .stream()
 
-        /*
-         * ============================================================
-         * 5. Tính cosine similarity
-         * ============================================================
-         *
-         * Không query database ở bước này nữa.
-         *
-         * Chỉ lấy vector từ Map:
-         *
-         * embeddingsByName.get(tableName)
-         */
-        List<TableMetadata> ranked = fullSchema.getTables()
-                .stream()
-                .map(table -> Map.entry(
-                        table,
-                        similarityOf(table, questionVector, embeddingsByName)
-                ))
-                .sorted((a, b) ->
-                        Double.compare(
-                                b.getValue(),
-                                a.getValue()
+                        /*
+                         * Chỉ tính với bảng có embedding.
+                         */
+                        .filter(table ->
+                                table != null
+                                        && table.getName() != null
+                                        && embeddingsByName.containsKey(
+                                        normalizeName(
+                                                table.getName()
+                                        )
+                                )
                         )
-                )
-                .limit(topK)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toCollection(ArrayList::new));
+
+                        /*
+                         * Vector của từng bảng có thể bị lỗi:
+                         *
+                         * - JSON không hợp lệ
+                         * - vector null
+                         * - vector rỗng
+                         * - khác dimension
+                         * - zero-vector
+                         *
+                         * Những bảng này sẽ bị loại bỏ.
+                         */
+                        .map(table -> {
+
+                            float[] tableVector =
+                                    embeddingsByName.get(
+                                            normalizeName(
+                                                    table.getName()
+                                            )
+                                    );
+
+                            double similarity =
+                                    cosineSimilarity(
+                                            questionVector,
+                                            tableVector
+                                    );
+
+                            return Map.entry(
+                                    table,
+                                    similarity
+                            );
+                        })
+
+                        /*
+                         * Chỉ giữ similarity hợp lệ.
+                         *
+                         * Không được để vector invalid lọt vào Top-K.
+                         */
+                        .filter(entry ->
+                                Double.isFinite(
+                                        entry.getValue()
+                                )
+                        )
+
+                        /*
+                         * Similarity cao nhất đứng đầu.
+                         */
+                        .sorted(
+                                (a, b) ->
+                                        Double.compare(
+                                                b.getValue(),
+                                                a.getValue()
+                                        )
+                        )
+
+                        /*
+                         * Không lấy quá số bảng thực tế.
+                         */
+                        .limit(
+                                Math.min(
+                                        Math.max(1, topK),
+                                        fullSchema.getTables().size()
+                                )
+                        )
+
+                        .map(Map.Entry::getKey)
+
+                        .collect(
+                                Collectors.toCollection(
+                                        ArrayList::new
+                                )
+                        );
 
         /*
-         * ============================================================
-         * 6. Lấy tên các bảng được chọn
-         * ============================================================
+         * Nếu vì lý do nào đó không có embedding hợp lệ:
+         *
+         * không nên trả schema rỗng.
+         *
+         * Fallback về full schema an toàn hơn.
          */
-        Set<String> selectedNames = ranked.stream()
-                .map(table ->
-                        table.getName().toLowerCase()
-                )
-                .collect(Collectors.toSet());
+        if (ranked.isEmpty()) {
+
+            log.warn(
+                    "Không tìm thấy table embedding hợp lệ cho schema {}. " +
+                            "Fallback về full schema.",
+                    fullSchema.getId()
+            );
+
+            return fullSchema;
+        }
 
         /*
-         * ============================================================
-         * 7. Mở rộng theo Foreign Key
-         * ============================================================
+         * =========================================================
+         * 6. LƯU TÊN BẢNG ĐÃ ĐƯỢC CHỌN
+         * =========================================================
+         */
+        Set<String> selectedNames =
+                ranked.stream()
+                        .map(TableMetadata::getName)
+                        .filter(name ->
+                                name != null
+                                        && !name.isBlank()
+                        )
+                        .map(this::normalizeName)
+                        .collect(Collectors.toSet());
+
+        /*
+         * =========================================================
+         * 7. FK EXPANSION
+         * =========================================================
          *
-         * Ví dụ:
+         * Không chỉ lấy Top-K.
          *
-         * orders
-         *    |
-         *    FK -> customers
+         * Nếu:
          *
-         * Nếu RAG chọn orders
-         * thì tự động thêm customers.
+         *     orders
+         *       ↓ FK
+         *     customers
+         *
+         * thì khi orders được chọn:
+         *
+         *     customers
+         *
+         * cũng được thêm vào context.
          *
          * Kiểm tra cả 2 chiều:
          *
@@ -169,156 +376,170 @@ public class SchemaRetrievalService {
         List<TableMetadata> expanded =
                 new ArrayList<>(ranked);
 
-        for (TableMetadata table : fullSchema.getTables()) {
+        /*
+         * Dùng Set để tránh thêm trùng table.
+         */
+        Set<String> expandedNames =
+                new HashSet<>(selectedNames);
 
-            /*
-             * Bảng đã được chọn rồi -> bỏ qua
-             */
-            if (selectedNames.contains(
-                    table.getName().toLowerCase())) {
+        for (TableMetadata table :
+                fullSchema.getTables()) {
+
+            if (table == null
+                    || table.getName() == null
+                    || table.getName().isBlank()) {
 
                 continue;
             }
 
             /*
-             * --------------------------------------------------------
+             * Đã được chọn rồi -> bỏ qua.
+             */
+            if (expandedNames.contains(
+                    normalizeName(table.getName()))) {
+
+                continue;
+            }
+
+            /*
+             * -----------------------------------------------------
              * Trường hợp 1:
              *
-             * table -> selectedTable
+             * table hiện tại REFERENCES bảng được chọn.
              *
              * Ví dụ:
              *
              * orders.customer_id
-             *      FK -> customers.id
-             *
-             * customers đang được chọn
-             * => thêm orders
-             * --------------------------------------------------------
+             *      -> customers.id
+             * -----------------------------------------------------
              */
             boolean referencesSelected =
-                    table.getColumns()
+                    table.getColumns() != null
+                            && table.getColumns()
                             .stream()
                             .anyMatch(column ->
                                     Boolean.TRUE.equals(
                                             column.getForeignKey()
                                     )
-                                            && column.getReferencedTable() != null
+                                            && column
+                                            .getReferencedTable() != null
                                             && selectedNames.contains(
-                                            column.getReferencedTable()
-                                                    .toLowerCase()
+                                            normalizeName(
+                                                    column
+                                                            .getReferencedTable()
+                                            )
                                     )
                             );
 
             /*
-             * --------------------------------------------------------
+             * -----------------------------------------------------
              * Trường hợp 2:
              *
-             * selectedTable -> table
+             * bảng được chọn REFERENCES table hiện tại.
              *
              * Ví dụ:
              *
-             * orders.customer_id
-             *      FK -> customers.id
+             * orders
+             *      -> customers
              *
-             * orders đang được chọn
-             * => thêm customers
-             * --------------------------------------------------------
+             * customers là table hiện tại.
+             * -----------------------------------------------------
              */
             boolean referencedBySelected =
                     ranked.stream()
-                            .anyMatch(selected ->
-                                    selected.getColumns()
+                            .anyMatch(selectedTable ->
+                                    selectedTable.getColumns() != null
+                                            && selectedTable
+                                            .getColumns()
                                             .stream()
                                             .anyMatch(column ->
                                                     Boolean.TRUE.equals(
                                                             column.getForeignKey()
                                                     )
-                                                            && column.getReferencedTable() != null
-                                                            && table.getName()
-                                                            .equalsIgnoreCase(
-                                                                    column.getReferencedTable()
+                                                            && column
+                                                            .getReferencedTable()
+                                                            != null
+                                                            && normalizeName(
+                                                            table.getName()
+                                                    ).equals(
+                                                            normalizeName(
+                                                                    column
+                                                                            .getReferencedTable()
                                                             )
+                                                    )
                                             )
                             );
 
             /*
-             * Nếu có quan hệ FK với bảng đã chọn
-             * => thêm bảng vào schema kết quả.
+             * Có quan hệ FK với bảng Top-K
+             * -> thêm vào context.
              */
-            if (referencesSelected || referencedBySelected) {
+            if (referencesSelected
+                    || referencedBySelected) {
+
                 expanded.add(table);
+
+                expandedNames.add(
+                        normalizeName(
+                                table.getName()
+                        )
+                );
             }
         }
 
         /*
-         * ============================================================
-         * 8. Tạo DatabaseSchema mới chỉ chứa bảng liên quan
-         * ============================================================
+         * =========================================================
+         * 8. TẠO FILTERED SCHEMA
+         * =========================================================
          *
-         * Không sửa fullSchema gốc.
+         * Quan trọng:
+         *
+         * Không sửa fullSchema.
+         *
+         * Tạo DatabaseSchema mới.
          */
         return DatabaseSchema.builder()
                 .id(fullSchema.getId())
                 .connection(fullSchema.getConnection())
                 .databaseName(fullSchema.getDatabaseName())
                 .dbType(fullSchema.getDbType())
-                .lastSyncedAt(fullSchema.getLastSyncedAt())
+                .lastSyncedAt(
+                        fullSchema.getLastSyncedAt()
+                )
                 .tables(expanded)
                 .build();
     }
 
     /**
-     * Tính similarity của một bảng với câu hỏi.
+     * Tính cosine similarity giữa:
      *
-     * QUAN TRỌNG:
-     * Không query database ở đây.
+     * question vector
+     * và
+     * table vector.
      *
-     * Embedding đã được load trước vào:
+     * Công thức:
      *
-     * Map<String, float[]> embeddingsByName
-     */
-    private double similarityOf(
-            TableMetadata table,
-            float[] questionVector,
-            Map<String, float[]> embeddingsByName
-    ) {
-
-        float[] tableVector =
-                embeddingsByName.get(
-                        table.getName().toLowerCase()
-                );
-
-        /*
-         * Chưa có embedding:
-         * -> xếp cuối.
-         */
-        if (tableVector == null) {
-            return -1;
-        }
-
-        return cosineSimilarity(
-                questionVector,
-                tableVector
-        );
-    }
-
-    /**
-     * Cosine Similarity:
-     *
-     * similarity = (A . B)
-     *              ----------------
-     *              |A| * |B|
+     *             A . B
+     * --------------------------------
+     *       ||A|| * ||B||
      */
     private double cosineSimilarity(
             float[] a,
-            float[] b
-    ) {
+            float[] b) {
 
         /*
-         * Hai vector embedding phải có cùng số chiều.
+         * Vector khác dimension
+         * -> không thể tính.
+         *
+         * Trả NaN thay vì -1.
+         *
+         * NaN sẽ bị filter trước khi Top-K.
          */
-        if (a == null || b == null || a.length != b.length) {
-            return -1;
+        if (!isValidVector(a)
+                || !isValidVector(b)
+                || a.length != b.length) {
+
+            return Double.NaN;
         }
 
         double dot = 0;
@@ -326,6 +547,17 @@ public class SchemaRetrievalService {
         double normB = 0;
 
         for (int i = 0; i < a.length; i++) {
+
+            /*
+             * Kiểm tra từng phần tử.
+             *
+             * NaN / Infinity sẽ làm vector invalid.
+             */
+            if (!Float.isFinite(a[i])
+                    || !Float.isFinite(b[i])) {
+
+                return Double.NaN;
+            }
 
             dot += a[i] * b[i];
 
@@ -335,28 +567,69 @@ public class SchemaRetrievalService {
         }
 
         /*
-         * Tránh chia cho 0.
+         * Vector zero -> similarity không hợp lệ.
          */
-        double denominator =
-                Math.sqrt(normA) * Math.sqrt(normB);
+        if (normA == 0 || normB == 0) {
 
-        if (denominator == 0) {
-            return -1;
+            return Double.NaN;
         }
 
-        return dot / denominator;
+        double similarity =
+                dot /
+                        (Math.sqrt(normA)
+                                * Math.sqrt(normB));
+
+        /*
+         * Bảo vệ thêm trường hợp số học bất thường.
+         */
+        return Double.isFinite(similarity)
+                ? similarity
+                : Double.NaN;
     }
 
     /**
-     * Chuyển JSON:
+     * Kiểm tra vector có hợp lệ hay không.
      *
-     * "[0.123,0.456,...]"
+     * Vector hợp lệ:
      *
-     * thành:
+     * - không null
+     * - không rỗng
+     * - tất cả phần tử là số hữu hạn
+     */
+    private boolean isValidVector(float[] vector) {
+
+        if (vector == null
+                || vector.length == 0) {
+
+            return false;
+        }
+
+        for (float value : vector) {
+
+            if (!Float.isFinite(value)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Chuyển JSON TEXT trong database
+     * thành float[].
      *
-     * float[]
+     * Nếu JSON lỗi:
+     *
+     *     trả null
+     *
+     * để retrieval bỏ qua embedding lỗi
+     * thay vì làm crash toàn bộ query.
      */
     private float[] fromJson(String json) {
+
+        if (json == null || json.isBlank()) {
+            return null;
+        }
 
         try {
 
@@ -367,10 +640,25 @@ public class SchemaRetrievalService {
 
         } catch (Exception e) {
 
-            throw new IllegalArgumentException(
-                    "Không thể đọc vector embedding.",
-                    e
+            log.warn(
+                    "Không thể đọc embedding vector từ database: {}",
+                    e.getMessage()
             );
+
+            return null;
         }
+    }
+
+    /**
+     * Chuẩn hóa tên bảng để so sánh.
+     *
+     * Dùng Locale.ROOT để tránh vấn đề locale
+     * khi chạy trên các môi trường khác nhau.
+     */
+    private String normalizeName(String name) {
+
+        return name
+                .trim()
+                .toLowerCase(Locale.ROOT);
     }
 }

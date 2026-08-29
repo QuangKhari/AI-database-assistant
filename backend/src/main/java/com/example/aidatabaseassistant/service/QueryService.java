@@ -7,19 +7,19 @@ import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
-import com.example.aidatabaseassistant.query.ReadOnlyViolationException;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+
+import com.example.aidatabaseassistant.query.ReadOnlyViolationException;
 
 @Service
 @RequiredArgsConstructor
 public class QueryService {
 
-    @Value("${gemini.api.url}")
+    @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
     private String modelUrl;
 
     private final UserRepository userRepository;
@@ -28,7 +28,6 @@ public class QueryService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final QueryLogRepository queryLogRepository;
-
     private final EncryptionUtil encryptionUtil;
     private final NL2SQLEngine nl2SQLEngine;
     private final QueryValidator queryValidator;
@@ -38,41 +37,21 @@ public class QueryService {
     private final ChartSuggestionService chartSuggestionService;
     private final SchemaLoaderService schemaLoaderService;
     private final DataInsightService dataInsightService;
-
-    /*
-     * RAG:
-     *
-     * Service này chịu trách nhiệm chọn ra những bảng liên quan
-     * đến câu hỏi trước khi gửi schema cho AI.
-     */
     private final SchemaRetrievalService schemaRetrievalService;
-
-
-    // ============================================================
-    // PREVIEW QUERY
-    // ============================================================
 
     public PreviewResponse previewQuery(
             String username,
             QueryRequest request
     ) {
 
-        /*
-         * ========================================================
-         * 1. Tìm user
-         * ========================================================
-         */
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Không tìm thấy user")
-                );
+        User user =
+                userRepository.findByUsername(username)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Không tìm thấy user"
+                                )
+                        );
 
-
-        /*
-         * ========================================================
-         * 2. Tìm database connection
-         * ========================================================
-         */
         DatabaseConnection connection =
                 connectionRepository.findById(
                                 request.getDatabaseConnectionId()
@@ -83,12 +62,6 @@ public class QueryService {
                                 )
                         );
 
-
-        /*
-         * ========================================================
-         * 3. Kiểm tra quyền sở hữu connection
-         * ========================================================
-         */
         if (!connection.getUser().getId().equals(user.getId())) {
 
             throw new IllegalArgumentException(
@@ -96,35 +69,24 @@ public class QueryService {
             );
         }
 
-
         /*
-         * ========================================================
-         * 4. Load FULL schema
-         * ========================================================
+         * Luôn load FULL schema trước.
          *
-         * Đây là schema đầy đủ của database.
-         *
-         * Không dùng trực tiếp fullSchema để gửi cho AI nữa.
+         * fullSchema được dùng cho:
+         * - Validator
+         * - đảm bảo không giới hạn bảng hợp lệ bởi RAG
          */
         DatabaseSchema fullSchema =
                 schemaLoaderService.loadCompleteSchema(
                         connection.getId()
                 );
 
-
         /*
-         * ========================================================
-         * 5. RAG - lấy FILTERED schema
-         * ========================================================
+         * RAG chọn ra các bảng liên quan đến câu hỏi.
          *
-         * filteredSchema chỉ chứa những bảng có khả năng
-         * liên quan đến câu hỏi.
-         *
-         * Mục đích:
-         * - giảm prompt
-         * - giảm token
-         * - giảm chi phí embedding/LLM
-         * - tăng khả năng AI tập trung vào bảng liên quan
+         * filteredSchema chỉ được dùng để:
+         * - build prompt
+         * - generate SQL
          */
         DatabaseSchema filteredSchema =
                 schemaRetrievalService.retrieveRelevantSchema(
@@ -132,35 +94,20 @@ public class QueryService {
                         fullSchema
                 );
 
-
-        /*
-         * ========================================================
-         * 6. AI sinh SQL
-         * ========================================================
-         *
-         * QUAN TRỌNG:
-         *
-         * AI nhận filteredSchema.
-         */
         String generatedSql =
                 nl2SQLEngine.generateSQL(
                         request.getQuestion(),
                         filteredSchema
                 );
 
-
-        /*
-         * ========================================================
-         * 7. Validate SQL
-         * ========================================================
-         *
-         * Validator phải nhận FULL schema.
-         *
-         * Vì filteredSchema chỉ phục vụ RAG,
-         * không phải source of truth của database.
-         */
         try {
 
+            /*
+             * SECURITY:
+             * Validate bằng FULL schema.
+             *
+             * RAG không được biến thành whitelist bảng.
+             */
             queryValidator.validate(
                     generatedSql,
                     fullSchema
@@ -190,21 +137,11 @@ public class QueryService {
         }
     }
 
-
-    // ============================================================
-    // PROCESS QUERY
-    // ============================================================
-
     public QueryResponse processQuery(
             String username,
             QueryRequest request
     ) {
 
-        /*
-         * ========================================================
-         * 1. Rate limit
-         * ========================================================
-         */
         if (!rateLimitService.tryConsume(username)) {
 
             throw new IllegalStateException(
@@ -212,25 +149,14 @@ public class QueryService {
             );
         }
 
+        User user =
+                userRepository.findByUsername(username)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Không tìm thấy user"
+                                )
+                        );
 
-        /*
-         * ========================================================
-         * 2. Tìm user
-         * ========================================================
-         */
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Không tìm thấy user"
-                        )
-                );
-
-
-        /*
-         * ========================================================
-         * 3. Tìm connection
-         * ========================================================
-         */
         DatabaseConnection connection =
                 connectionRepository.findById(
                                 request.getDatabaseConnectionId()
@@ -241,12 +167,6 @@ public class QueryService {
                                 )
                         );
 
-
-        /*
-         * ========================================================
-         * 4. Kiểm tra quyền
-         * ========================================================
-         */
         if (!connection.getUser().getId().equals(user.getId())) {
 
             throw new IllegalArgumentException(
@@ -254,24 +174,27 @@ public class QueryService {
             );
         }
 
-
         /*
-         * ========================================================
-         * 5. Load FULL schema
-         * ========================================================
+         * Load FULL schema.
+         *
+         * Đây vẫn là schema đầy đủ của database thật.
          */
         DatabaseSchema fullSchema =
                 schemaLoaderService.loadCompleteSchema(
                         connection.getId()
                 );
 
-
         /*
-         * ========================================================
-         * 6. RAG
-         * ========================================================
+         * Schema RAG:
          *
-         * Từ fullSchema → filteredSchema.
+         * fullSchema
+         *     ↓
+         * SchemaRetrievalService
+         *     ↓
+         * filteredSchema
+         *
+         * filteredSchema chỉ chứa các bảng liên quan
+         * để đưa vào AI prompt.
          */
         DatabaseSchema filteredSchema =
                 schemaRetrievalService.retrieveRelevantSchema(
@@ -279,12 +202,6 @@ public class QueryService {
                         fullSchema
                 );
 
-
-        /*
-         * ========================================================
-         * 7. Conversation
-         * ========================================================
-         */
         Conversation conversation =
                 getOrCreateConversation(
                         user,
@@ -292,42 +209,28 @@ public class QueryService {
                         request
                 );
 
-
-        /*
-         * ========================================================
-         * 8. Lưu câu hỏi của user
-         * ========================================================
-         */
-        Message userMessage = Message.builder()
-                .conversation(conversation)
-                .role("user")
-                .content(request.getQuestion())
-                .build();
+        Message userMessage =
+                Message.builder()
+                        .conversation(conversation)
+                        .role("user")
+                        .content(request.getQuestion())
+                        .build();
 
         messageRepository.save(userMessage);
 
-
-        /*
-         * ========================================================
-         * 9. Decrypt password database
-         * ========================================================
-         */
         String rawPassword =
                 encryptionUtil.decrypt(
                         connection.getEncryptedPassword()
                 );
 
-
         /*
-         * ========================================================
-         * 10. Generate + Validate + Execute + Self-correct
-         * ========================================================
+         * SQLCorrectionService :
          *
          * filteredSchema:
-         *      → AI
+         *     dùng cho AI generate/self-correct
          *
          * fullSchema:
-         *      → QueryValidator
+         *     dùng cho SQL validation
          */
         SQLCorrectionService.AttemptResult result =
                 sqlCorrectionService.run(
@@ -338,76 +241,62 @@ public class QueryService {
                         rawPassword
                 );
 
-
-        /*
-         * ========================================================
-         * 11. Lưu assistant message
-         * ========================================================
-         */
-        Message assistantMessage = Message.builder()
-                .conversation(conversation)
-                .role("assistant")
-                .content(
-                        result.isSuccess()
-                                ? "Đã trả lời thành công"
-                                : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
-                )
-                .generatedSql(result.getSql())
-                .build();
+        Message assistantMessage =
+                Message.builder()
+                        .conversation(conversation)
+                        .role("assistant")
+                        .content(
+                                result.isSuccess()
+                                        ? "Đã trả lời thành công"
+                                        : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
+                        )
+                        .generatedSql(result.getSql())
+                        .build();
 
         messageRepository.save(assistantMessage);
 
-
-        /*
-         * ========================================================
-         * 12. Lưu QueryLog
-         * ========================================================
-         */
         var logs = result.getAttemptLogs();
 
         for (int i = 0; i < logs.size(); i++) {
 
             var log = logs.get(i);
 
-            QueryLog queryLog = QueryLog.builder()
-                    .message(assistantMessage)
-                    .attemptNumber(i + 1)
-                    .sqlText(log.getSql())
-                    .status(
-                            log.isSuccess()
-                                    ? "SUCCESS"
-                                    : "FAILED"
-                    )
-                    .rowCount(
-                            log.getResult() != null
-                                    ? log.getResult().getRowCount()
-                                    : null
-                    )
-                    .executionTimeMs(
-                            log.getResult() != null
-                                    ? (int) log.getResult()
-                                    .getExecutionTimeMs()
-                                    : null
-                    )
-                    .errorMessage(
-                            log.getResult() != null
-                                    ? log.getResult().getError()
-                                    : null
-                    )
-                    .question(request.getQuestion())
-                    .modelUsed(extractModelName(modelUrl))
-                    .retryCount(logs.size())
-                    .build();
+            QueryLog queryLog =
+                    QueryLog.builder()
+                            .message(assistantMessage)
+                            .attemptNumber(i + 1)
+                            .sqlText(log.getSql())
+                            .status(
+                                    log.isSuccess()
+                                            ? "SUCCESS"
+                                            : "FAILED"
+                            )
+                            .rowCount(
+                                    log.getResult() != null
+                                            ? log.getResult().getRowCount()
+                                            : null
+                            )
+                            .executionTimeMs(
+                                    log.getResult() != null
+                                            ? (int) log.getResult()
+                                            .getExecutionTimeMs()
+                                            : null
+                            )
+                            .errorMessage(
+                                    log.getResult() != null
+                                            ? log.getResult().getError()
+                                            : null
+                            )
+                            .question(request.getQuestion())
+                            .modelUsed(
+                                    extractModelName(modelUrl)
+                            )
+                            .retryCount(logs.size())
+                            .build();
 
             queryLogRepository.save(queryLog);
         }
 
-
-        /*
-         * ========================================================
-         * 13. Summary
-         * ========================================================
-         */
         String summary =
                 result.isSuccess()
                         ? summarizeResult(
@@ -416,12 +305,6 @@ public class QueryService {
                 )
                         : null;
 
-
-        /*
-         * ========================================================
-         * 14. Chart suggestion
-         * ========================================================
-         */
         ChartSuggestionResponse chartSuggestion =
                 result.isSuccess()
                         ? buildChartSuggestion(
@@ -429,12 +312,6 @@ public class QueryService {
                 )
                         : null;
 
-
-        /*
-         * ========================================================
-         * 15. Data insight
-         * ========================================================
-         */
         DataInsightResponse dataInsight =
                 result.isSuccess()
                         ? buildDataInsight(
@@ -442,12 +319,6 @@ public class QueryService {
                 )
                         : null;
 
-
-        /*
-         * ========================================================
-         * 16. Trả response
-         * ========================================================
-         */
         return new QueryResponse(
                 conversation.getId(),
                 assistantMessage.getId(),
@@ -460,21 +331,14 @@ public class QueryService {
         );
     }
 
-
-    // ============================================================
-    // DATA INSIGHT
-    // ============================================================
-
     private DataInsightResponse buildDataInsight(
             QueryResultDto finalResult
     ) {
 
-        /*
-         * Đây là feature bổ sung.
-         *
-         * Nếu DataInsight lỗi thì không được làm hỏng
-         * toàn bộ /execute.
-         */
+        // Giong buildChartSuggestion: day la tinh nang BO SUNG, tuyet doi
+        // khong duoc lam vo luong /execute chinh neu co loi bat ngo. Neu
+        // khong tinh duoc (analyzer tra ve null) hoac loi, FE se tu dong
+        // fallback ve hien thi "summary" (da co san, khong bi anh huong).
         try {
 
             return dataInsightService.analyze(
@@ -488,20 +352,10 @@ public class QueryService {
         }
     }
 
-
-    // ============================================================
-    // CHART SUGGESTION
-    // ============================================================
-
     private ChartSuggestionResponse buildChartSuggestion(
             QueryResultDto finalResult
     ) {
 
-        /*
-         * Chart suggestion cũng là feature bổ sung.
-         *
-         * Nếu lỗi -> trả null.
-         */
         try {
 
             return chartSuggestionService.suggest(
@@ -515,52 +369,35 @@ public class QueryService {
         }
     }
 
-
-    // ============================================================
-    // SUMMARY
-    // ============================================================
-
     private String summarizeResult(
             String question,
             QueryResultDto result
     ) {
 
-        /*
-         * Không đưa toàn bộ dữ liệu cho LLM.
-         *
-         * Chỉ lấy tối đa 20 dòng đầu tiên để summary.
-         */
         List<java.util.Map<String, Object>> limitedRows =
                 result.getRows().size() > 20
                         ? result.getRows().subList(0, 20)
                         : result.getRows();
 
-
         String prompt = """
-                Câu hỏi: %s
+            Câu hỏi: %s
 
-                Kết quả SQL:
-                %s
+            Kết quả SQL:
+            %s
 
-                YÊU CẦU:
-                - Tóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.
-                - Chỉ sử dụng các số liệu xuất hiện trong kết quả.
-                - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
-                - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
-                - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
-                """.formatted(
+            YÊU CẦU:
+            - Tóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.
+            - Chỉ sử dụng các số liệu xuất hiện trong kết quả.
+            - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
+            - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
+            - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
+            """.formatted(
                 question,
                 limitedRows
         );
 
-
         return llmClient.generateResponse(prompt);
     }
-
-
-    // ============================================================
-    // GET OR CREATE CONVERSATION
-    // ============================================================
 
     private Conversation getOrCreateConversation(
             User user,
@@ -568,10 +405,6 @@ public class QueryService {
             QueryRequest request
     ) {
 
-        /*
-         * Nếu FE gửi conversationId
-         * -> tiếp tục conversation cũ.
-         */
         if (request.getConversationId() != null) {
 
             Conversation conversation =
@@ -585,25 +418,16 @@ public class QueryService {
                                     )
                             );
 
-
-            /*
-             * Conversation phải thuộc user hiện tại.
-             */
-            if (!conversation.getUser()
-                    .getId()
-                    .equals(user.getId())) {
+            // Kiểm tra conversation thuộc user hiện tại
+            if (!conversation.getUser().getId().equals(user.getId())) {
 
                 throw new IllegalArgumentException(
                         "Bạn không có quyền truy cập conversation này"
                 );
             }
 
-
-            /*
-             * Conversation phải thuộc đúng database connection.
-             */
-            if (!conversation.getConnection()
-                    .getId()
+            // Kiểm tra conversation thuộc đúng connection
+            if (!conversation.getConnection().getId()
                     .equals(connection.getId())) {
 
                 throw new IllegalArgumentException(
@@ -611,15 +435,9 @@ public class QueryService {
                 );
             }
 
-
             return conversation;
         }
 
-
-        /*
-         * Nếu chưa có conversationId
-         * -> tạo conversation mới.
-         */
         Conversation conversation =
                 Conversation.builder()
                         .user(user)
@@ -627,28 +445,27 @@ public class QueryService {
                         .title(
                                 request.getQuestion().length() > 50
                                         ? request.getQuestion()
-                                        .substring(0, 50)
-                                        + "..."
+                                        .substring(0, 50) + "..."
                                         : request.getQuestion()
                         )
                         .build();
-
 
         return conversationRepository.save(
                 conversation
         );
     }
 
-
-    // ============================================================
-    // EXTRACT MODEL NAME
-    // ============================================================
-
     private String extractModelName(String url) {
 
-        int start = url.indexOf("/models/") + 8;
-        int end = url.indexOf(":", start);
+        int start =
+                url.indexOf("/models/") + 8;
 
-        return url.substring(start, end);
+        int end =
+                url.indexOf(":", start);
+
+        return url.substring(
+                start,
+                end
+        );
     }
 }

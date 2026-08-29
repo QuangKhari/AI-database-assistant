@@ -1,7 +1,6 @@
 package com.example.aidatabaseassistant.service;
 
 import com.example.aidatabaseassistant.ai.LLMClient;
-import com.example.aidatabaseassistant.entity.ColumnMetadata;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableEmbedding;
 import com.example.aidatabaseassistant.entity.TableMetadata;
@@ -13,12 +12,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +36,7 @@ class SchemaEmbeddingServiceTest {
 
     @BeforeEach
     void setUp() {
+
         objectMapper = new ObjectMapper();
 
         service = new SchemaEmbeddingService(
@@ -43,7 +44,28 @@ class SchemaEmbeddingServiceTest {
                 tableEmbeddingRepository,
                 objectMapper
         );
+
+        /*
+         * SchemaEmbeddingService có:
+         *
+         * @Value("${gemini.embedding.model:gemini-embedding-001}")
+         * private String embeddingModel;
+         *
+         * Nhưng test tạo service bằng new,
+         * nên Spring không inject @Value.
+         *
+         * Vì vậy phải set thủ công.
+         */
+        ReflectionTestUtils.setField(
+                service,
+                "embeddingModel",
+                "gemini-embedding-001"
+        );
     }
+
+    // =========================================================
+    // 1. BẢNG MỚI -> TẠO EMBEDDING
+    // =========================================================
 
     @Test
     void shouldCreateEmbeddingForNewTable() {
@@ -55,22 +77,36 @@ class SchemaEmbeddingServiceTest {
         when(schema.getTables()).thenReturn(List.of(table));
 
         when(table.getName()).thenReturn("customers");
-        when(table.getDescription()).thenReturn("Danh sách khách hàng");
-        when(table.getColumns()).thenReturn(List.of());
+        when(table.getDescription())
+                .thenReturn("Danh sách khách hàng");
+        when(table.getColumns())
+                .thenReturn(List.of());
 
-        when(tableEmbeddingRepository
-                .findBySchemaIdAndTableNameIgnoreCase(1L, "customers"))
-                .thenReturn(Optional.empty());
+        /*
+         * Service hiện tại không còn query:
+         *
+         * findBySchemaIdAndTableNameIgnoreCase()
+         *
+         * mà load toàn bộ embedding bằng:
+         *
+         * findBySchemaId()
+         */
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(List.of());
 
-        float[] vector = {0.1f, 0.2f, 0.3f};
+        float[] vector = {
+                0.1f,
+                0.2f,
+                0.3f
+        };
 
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(vector);
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(List.of());
-
+        // Act
         service.ensureEmbeddings(schema);
+
+        // Assert
 
         verify(llmClient, times(1))
                 .generateEmbedding(anyString());
@@ -83,13 +119,38 @@ class SchemaEmbeddingServiceTest {
 
         TableEmbedding saved = captor.getValue();
 
-        assertEquals(schema, saved.getSchema());
-        assertEquals("customers", saved.getTableName());
-        assertEquals("[0.1,0.2,0.3]", saved.getVectorJson());
-        assertNotNull(saved.getContentHash());
-        assertEquals("text-embedding-004", saved.getModelName());
-        assertNotNull(saved.getUpdatedAt());
+        assertEquals(
+                schema,
+                saved.getSchema()
+        );
+
+        assertEquals(
+                "customers",
+                saved.getTableName()
+        );
+
+        assertEquals(
+                "[0.1,0.2,0.3]",
+                saved.getVectorJson()
+        );
+
+        assertNotNull(
+                saved.getContentHash()
+        );
+
+        assertEquals(
+                "gemini-embedding-001",
+                saved.getModelName()
+        );
+
+        assertNotNull(
+                saved.getUpdatedAt()
+        );
     }
+
+    // =========================================================
+    // 2. HASH KHÔNG ĐỔI -> KHÔNG GỌI EMBEDDING API
+    // =========================================================
 
     @Test
     void shouldNotCallEmbeddingApiWhenContentHashHasNotChanged() {
@@ -101,42 +162,59 @@ class SchemaEmbeddingServiceTest {
         when(schema.getTables()).thenReturn(List.of(table));
 
         when(table.getName()).thenReturn("customers");
-        when(table.getDescription()).thenReturn("Danh sách khách hàng");
-        when(table.getColumns()).thenReturn(List.of());
+
+        when(table.getDescription())
+                .thenReturn("Danh sách khách hàng");
+
+        when(table.getColumns())
+                .thenReturn(List.of());
 
         /*
-         * Hash này cần tương ứng với nội dung:
-         *
-         * Bảng: customers - Danh sách khách hàng. Cột:
+         * Phải giống chính xác nội dung mà
+         * buildEmbeddingText() của service tạo ra.
          */
         String content =
                 "Bảng: customers - Danh sách khách hàng. Cột: ";
 
         String hash = sha256(content);
 
-        TableEmbedding existing = TableEmbedding.builder()
-                .schema(schema)
-                .tableName("customers")
-                .vectorJson("[0.1,0.2,0.3]")
-                .contentHash(hash)
-                .modelName("text-embedding-004")
-                .build();
+        TableEmbedding existing =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("customers")
+                        .vectorJson("[0.1,0.2,0.3]")
+                        .contentHash(hash)
+                        .modelName("gemini-embedding-001")
+                        .build();
 
-        when(tableEmbeddingRepository
-                .findBySchemaIdAndTableNameIgnoreCase(1L, "customers"))
-                .thenReturn(Optional.of(existing));
-
+        /*
+         * Service load toàn bộ embedding của schema.
+         */
         when(tableEmbeddingRepository.findBySchemaId(1L))
                 .thenReturn(List.of(existing));
 
+        // Act
         service.ensureEmbeddings(schema);
 
+        // Assert
+
+        /*
+         * Hash giống + model giống
+         * => KHÔNG gọi Gemini.
+         */
         verify(llmClient, never())
                 .generateEmbedding(anyString());
 
+        /*
+         * Không cần update database.
+         */
         verify(tableEmbeddingRepository, never())
                 .save(any());
     }
+
+    // =========================================================
+    // 3. HASH THAY ĐỔI -> TẠO EMBEDDING MỚI
+    // =========================================================
 
     @Test
     void shouldRegenerateEmbeddingWhenContentHashChanges() {
@@ -148,34 +226,57 @@ class SchemaEmbeddingServiceTest {
         when(schema.getTables()).thenReturn(List.of(table));
 
         when(table.getName()).thenReturn("customers");
-        when(table.getDescription()).thenReturn("Mô tả mới");
-        when(table.getColumns()).thenReturn(List.of());
 
-        TableEmbedding existing = TableEmbedding.builder()
-                .schema(schema)
-                .tableName("customers")
-                .vectorJson("[0.1,0.2,0.3]")
-                .contentHash("old-hash")
-                .modelName("text-embedding-004")
-                .build();
+        when(table.getDescription())
+                .thenReturn("Mô tả mới");
 
-        when(tableEmbeddingRepository
-                .findBySchemaIdAndTableNameIgnoreCase(1L, "customers"))
-                .thenReturn(Optional.of(existing));
+        when(table.getColumns())
+                .thenReturn(List.of());
 
+        /*
+         * Embedding cũ có hash cũ.
+         */
+        TableEmbedding existing =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("customers")
+                        .vectorJson("[0.1,0.2,0.3]")
+                        .contentHash("old-hash")
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        /*
+         * Service tìm embedding cũ thông qua
+         * findBySchemaId().
+         */
         when(tableEmbeddingRepository.findBySchemaId(1L))
                 .thenReturn(List.of(existing));
 
-        float[] newVector = {0.9f, 0.8f, 0.7f};
+        float[] newVector = {
+                0.9f,
+                0.8f,
+                0.7f
+        };
 
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(newVector);
 
+        // Act
         service.ensureEmbeddings(schema);
 
+        // Assert
+
+        /*
+         * Hash thay đổi
+         * => phải gọi embedding API.
+         */
         verify(llmClient, times(1))
                 .generateEmbedding(anyString());
 
+        /*
+         * Vì embedding đã tồn tại,
+         * service update chính object existing.
+         */
         verify(tableEmbeddingRepository)
                 .save(existing);
 
@@ -188,7 +289,20 @@ class SchemaEmbeddingServiceTest {
                 "old-hash",
                 existing.getContentHash()
         );
+
+        assertEquals(
+                "gemini-embedding-001",
+                existing.getModelName()
+        );
+
+        assertNotNull(
+                existing.getUpdatedAt()
+        );
     }
+
+    // =========================================================
+    // 4. XÓA EMBEDDING CỦA BẢNG KHÔNG CÒN TỒN TẠI
+    // =========================================================
 
     @Test
     void shouldDeleteStaleEmbeddings() {
@@ -200,52 +314,116 @@ class SchemaEmbeddingServiceTest {
         when(schema.getTables()).thenReturn(List.of(table));
 
         when(table.getName()).thenReturn("customers");
-        when(table.getDescription()).thenReturn(null);
-        when(table.getColumns()).thenReturn(List.of());
 
-        when(tableEmbeddingRepository
-                .findBySchemaIdAndTableNameIgnoreCase(1L, "customers"))
-                .thenReturn(Optional.empty());
+        when(table.getDescription())
+                .thenReturn(null);
 
-        when(llmClient.generateEmbedding(anyString()))
-                .thenReturn(new float[]{0.1f, 0.2f});
+        when(table.getColumns())
+                .thenReturn(List.of());
 
-        TableEmbedding current = TableEmbedding.builder()
-                .schema(schema)
-                .tableName("customers")
-                .vectorJson("[0.1,0.2]")
-                .contentHash("hash")
-                .modelName("text-embedding-004")
-                .build();
+        /*
+         * Khi description = null và không có column,
+         * buildEmbeddingText() tạo:
+         *
+         * Bảng: customers. Cột:
+         */
+        String currentContent =
+                "Bảng: customers. Cột: ";
 
-        TableEmbedding stale = TableEmbedding.builder()
-                .schema(schema)
-                .tableName("old_orders")
-                .vectorJson("[0.3,0.4]")
-                .contentHash("old")
-                .modelName("text-embedding-004")
-                .build();
+        String currentHash = sha256(currentContent);
 
+        /*
+         * Embedding của bảng hiện tại.
+         */
+        TableEmbedding current =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("customers")
+                        .vectorJson("[0.1,0.2]")
+                        .contentHash(currentHash)
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        /*
+         * Embedding của bảng cũ,
+         * hiện không còn trong schema.
+         */
+        TableEmbedding stale =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("old_orders")
+                        .vectorJson("[0.3,0.4]")
+                        .contentHash("old")
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        /*
+         * DB đang có:
+         *
+         * customers
+         * old_orders
+         *
+         * Nhưng schema hiện tại chỉ có:
+         *
+         * customers
+         */
         when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(List.of(current, stale));
+                .thenReturn(List.of(
+                        current,
+                        stale
+                ));
 
+        // Act
         service.ensureEmbeddings(schema);
 
+        // Assert
+
+        /*
+         * old_orders không còn trong schema
+         * => phải xóa.
+         */
         verify(tableEmbeddingRepository)
                 .deleteAll(List.of(stale));
+
+        /*
+         * customers không thay đổi
+         * => không gọi embedding API.
+         */
+        verify(llmClient, never())
+                .generateEmbedding(anyString());
+
+        /*
+         * customers cũng không cần save lại.
+         */
+        verify(tableEmbeddingRepository, never())
+                .save(any());
     }
 
+    // =========================================================
+    // SHA-256 HELPER
+    // =========================================================
+
     private String sha256(String input) {
+
         try {
-            var digest = java.security.MessageDigest.getInstance("SHA-256");
 
-            byte[] hash = digest.digest(
-                    input.getBytes(java.nio.charset.StandardCharsets.UTF_8)
-            );
+            var digest =
+                    java.security.MessageDigest
+                            .getInstance("SHA-256");
 
-            return java.util.HexFormat.of().formatHex(hash);
+            byte[] hash =
+                    digest.digest(
+                            input.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8
+                            )
+                    );
+
+            return java.util.HexFormat
+                    .of()
+                    .formatHex(hash);
 
         } catch (Exception e) {
+
             throw new RuntimeException(e);
         }
     }

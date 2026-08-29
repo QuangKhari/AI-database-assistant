@@ -132,14 +132,17 @@ class SchemaRetrievalServiceTest {
 
             TableMetadata table = tables.get(i);
 
-            float x = 1f - (i * 0.05f);
+            double angle = Math.toRadians(i * 10);
+
+            float x = (float) Math.cos(angle);
+            float y = (float) Math.sin(angle);
 
             TableEmbedding embedding = TableEmbedding.builder()
                     .schema(schema)
                     .tableName(table.getName())
-                    .vectorJson("[" + x + ",0.0]")
+                    .vectorJson("[" + x + "," + y + "]")
                     .contentHash("hash-" + i)
-                    .modelName("text-embedding-004")
+                    .modelName("gemini-embedding-001")
                     .build();
 
             embeddings.add(embedding);
@@ -531,10 +534,24 @@ class SchemaRetrievalServiceTest {
             TableMetadata table =
                     mock(TableMetadata.class);
 
-            when(table.getName())
+            /*
+             * lenient(): createTables() la helper dung chung cho nhieu test.
+             *
+             * Voi cac test RAG khong kich hoat (RAG disabled / DB nho -
+             * shouldReturnFullSchemaWhenRagIsDisabled,
+             * shouldReturnFullSchemaWhenDatabaseIsSmall,
+             * shouldNotQueryEmbeddingRepositoryForSmallDatabase),
+             * retrieveRelevantSchema() tra ve full schema NGAY LAP TUC va
+             * khong bao gio goi getName()/getColumns() cua tung table.
+             *
+             * Neu khong danh dau lenient, Mockito strict mode se bao loi
+             * UnnecessaryStubbingException cho nhung test do, du day la
+             * hanh vi dung (early return), khong phai bug.
+             */
+            lenient().when(table.getName())
                     .thenReturn("table_" + i);
 
-            when(table.getColumns())
+            lenient().when(table.getColumns())
                     .thenReturn(List.of());
 
             tables.add(table);
