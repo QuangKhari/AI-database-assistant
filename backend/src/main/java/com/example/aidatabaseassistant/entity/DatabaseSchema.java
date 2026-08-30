@@ -40,4 +40,10 @@ public class DatabaseSchema {
     @OneToMany(mappedBy = "schema", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TableMetadata> tables = new ArrayList<>();
+
+    @Column(name = "suggested_questions", columnDefinition = "TEXT")
+    private String suggestedQuestionsJson;
+
+    @Column(name = "suggested_questions_generated_at")
+    private LocalDateTime suggestedQuestionsGeneratedAt;
 }

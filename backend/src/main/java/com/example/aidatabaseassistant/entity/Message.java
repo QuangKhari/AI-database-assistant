@@ -48,4 +48,7 @@ public class Message {
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<QueryLog> queryLogs = new ArrayList<>();
+
+    @Column(nullable = true)  // để nullable, tránh lỗi migrate ALTER TABLE trên dữ liệu cũ
+    private Boolean pinned;
 }

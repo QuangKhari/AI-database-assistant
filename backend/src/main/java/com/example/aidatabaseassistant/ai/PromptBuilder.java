@@ -350,4 +350,28 @@ public class PromptBuilder {
             sb.append("\n");
         }
     }
+
+    public String buildSuggestedQuestionsPrompt(DatabaseSchema schema, int maxQuestions) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("Bạn là chuyên gia phân tích dữ liệu.\n\n");
+        sb.append("Dưới đây là schema của một cơ sở dữ liệu:\n\n");
+        appendSchema(sb, schema);
+
+        sb.append("""
+    Nhiệm vụ:
+    Đề xuất tối đa %d câu hỏi bằng TIẾNG VIỆT mà người dùng có thể hỏi một hệ thống
+    Text-to-SQL, CHỈ dựa trên các bảng/cột đã liệt kê ở trên.
+
+    YÊU CẦU BẮT BUỘC:
+    1. Câu hỏi ngắn gọn, tự nhiên, giống người dùng thật sự sẽ gõ.
+    2. Đa dạng loại: đếm số lượng, liệt kê top N, tính tổng/trung bình,
+       lọc theo điều kiện, và ít nhất 1 câu cần JOIN 2 bảng (nếu schema có khóa ngoại).
+    3. TUYỆT ĐỐI không hỏi về bảng/cột không có trong schema ở trên.
+    4. CHỈ trả về một JSON array of string, KHÔNG markdown, KHÔNG giải thích thêm.
+       Ví dụ định dạng đúng: ["Có bao nhiêu khách hàng?", "Top 5 sản phẩm bán chạy nhất là gì?"]
+    """.formatted(maxQuestions));
+
+        return sb.toString();
+    }
 }
