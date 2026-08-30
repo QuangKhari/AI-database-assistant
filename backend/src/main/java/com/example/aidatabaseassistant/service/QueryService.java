@@ -9,12 +9,14 @@ import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 import com.example.aidatabaseassistant.query.ReadOnlyViolationException;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class QueryService {
@@ -299,7 +301,7 @@ public class QueryService {
 
         String summary =
                 result.isSuccess()
-                        ? summarizeResult(
+                        ? safeSummarize(
                         request.getQuestion(),
                         result.getFinalResult()
                 )
@@ -366,6 +368,33 @@ public class QueryService {
         } catch (Exception e) {
 
             return null;
+        }
+    }
+
+    // Giong buildChartSuggestion/buildDataInsight: AI Summary la tinh nang
+    // BO SUNG, tuyet doi khong duoc lam vo luong /execute chinh neu Gemini
+    // loi/timeout/tra ve rong. LLMClient.generateResponse() nem thang
+    // RuntimeException trong cac truong hop do, nen phai bat lai o day va
+    // tra ve fallback thay vi de loi lan len Controller (=> 500 du SQL da
+    // chay thanh cong).
+    private String safeSummarize(
+            String question,
+            QueryResultDto result
+    ) {
+
+        try {
+
+            return summarizeResult(question, result);
+
+        } catch (Exception e) {
+
+            log.warn(
+                    "AI Summary that bai, tra ve fallback. Cau hoi: '{}', ly do: {}",
+                    question,
+                    e.toString()
+            );
+
+            return "Không thể tạo tóm tắt tự động cho kết quả này. Vui lòng xem bảng dữ liệu bên dưới.";
         }
     }
 
