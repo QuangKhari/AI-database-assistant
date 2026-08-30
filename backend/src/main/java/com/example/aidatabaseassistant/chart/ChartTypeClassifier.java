@@ -40,6 +40,15 @@ public class ChartTypeClassifier {
 
         for (String column : columns) {
             if (isNumericColumn(column, rows)) {
+                if (isIdLikeColumn(column)) {
+                    // Cot la khoa chinh/khoa ngoai (id, customer_id, order_id...)
+                    // - KHONG duoc coi la so lieu (measure) du kieu du lieu la
+                    // so nguyen. Cong/trung binh/so sanh cac ID khong co y
+                    // nghia thong ke va se tao ra insight/chart sai lech
+                    // (vi du: "doanh thu cao nhat la 20" trong khi 20 thuc
+                    // ra la order_id chu khong phai so tien).
+                    continue;
+                }
                 if (numericTimeLikeColumn == null && matchesTimeKeyword(column)) {
                     // Khong add vao numericColumns ngay - de quyet dinh o duoi,
                     // vi day co the la MOC THOI GIAN (dimension) chu khong
@@ -158,11 +167,40 @@ public class ChartTypeClassifier {
         return values;
     }
 
-    private Set<String> tokenize(String column) {
+    /**
+     * Nhan dien cot la khoa chinh/khoa ngoai dua tren TEN cot: "id",
+     * "customer_id", "orderId", "product_id"... - token CUOI CUNG sau khi
+     * tach tu la "id".
+     *
+     * Chi dua vao ten cot (khong co metadata schema o tang nay - ket qua
+     * SQL chi la List<String> columns + List<Map> rows thuan tuy), nen day
+     * la heuristic, khong tuyet doi chinh xac 100%. Chap nhan duoc vi:
+     *
+     * - Alias SQL thuc te hau nhu luon giu nguyen ten cot goc (id,
+     *   customer_id...) hoac dat ten ro rang, hiem khi dat ten mo ho.
+     * - Rui ro bo sot mot ID hiem gap con AN TOAN HON nhieu so voi rui ro
+     *   hien tai: coi ID la so lieu roi tinh "doanh thu cao nhat = 20"
+     *   trong khi 20 thuc ra la order_id.
+     */
+    private boolean isIdLikeColumn(String column) {
+        List<String> tokens = tokenizeOrdered(column);
+        if (tokens.isEmpty()) {
+            return false;
+        }
+        String lastToken = tokens.get(tokens.size() - 1);
+        return "id".equals(lastToken);
+    }
+
+    private List<String> tokenizeOrdered(String column) {
         String noAccent = Normalizer.normalize(column, Normalizer.Form.NFD)
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         String spaced = noAccent.replaceAll("([a-z])([A-Z])", "$1 $2");
         String[] parts = spaced.toLowerCase(Locale.ROOT).split("[^a-zA-Z0-9]+");
-        return new HashSet<>(Arrays.asList(parts));
+        return Arrays.asList(parts);
     }
+
+    private Set<String> tokenize(String column) {
+        return new HashSet<>(tokenizeOrdered(column));
+    }
+
 }
