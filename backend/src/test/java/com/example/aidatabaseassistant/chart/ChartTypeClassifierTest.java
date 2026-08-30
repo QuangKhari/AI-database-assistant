@@ -162,4 +162,69 @@ class ChartTypeClassifierTest {
 
         assertEquals(0, result.getSeries().get(0).getData().get(0));
     }
+
+    @Test
+    void shouldSuggestTable_whenOnlyNumericColumnIsIdColumn() {
+        // Bug thuc te: SELECT p.name, o.id FROM ... -> "o.id" (order id)
+        // bi coi la so lieu (measure), dan toi chart/insight vo nghia
+        // (VD: "doanh thu cao nhat la 20" trong khi 20 la order_id).
+        List<Map<String, Object>> rows = List.of(
+                row("name", "Laptop Dell", "id", 1),
+                row("name", "Ban phim AKKO", "id", 1),
+                row("name", "Tai nghe Sony", "id", 4)
+        );
+
+        ChartClassificationResult result = classifier.classify(List.of("name", "id"), rows);
+
+        assertEquals(ChartType.TABLE, result.getChartType());
+        assertTrue(result.getSeries().isEmpty());
+    }
+
+    @Test
+    void shouldExcludeForeignKeyIdColumn_fromMeasures() {
+        // "customer_id" cung phai bi loai, khong chi rieng cot ten "id".
+        List<Map<String, Object>> rows = List.of(
+                row("full_name", "Nguyen Van A", "customer_id", 3),
+                row("full_name", "Tran Thi B", "customer_id", 7)
+        );
+
+        ChartClassificationResult result = classifier.classify(List.of("full_name", "customer_id"), rows);
+
+        assertEquals(ChartType.TABLE, result.getChartType());
+        assertTrue(result.getSeries().isEmpty());
+    }
+
+    @Test
+    void shouldStillUseRealMeasure_whenIdColumnPresentAlongside() {
+        // "order_id" bi loai, nhung "total_amount" van phai duoc dung
+        // lam so lieu binh thuong - fix khong duoc loai nham measure that.
+        List<Map<String, Object>> rows = List.of(
+                row("order_id", 1, "customer_name", "Nguyen Van A", "total_amount", 1000),
+                row("order_id", 2, "customer_name", "Tran Thi B", "total_amount", 2000),
+                row("order_id", 3, "customer_name", "Le Van C", "total_amount", 500)
+        );
+
+        ChartClassificationResult result = classifier.classify(
+                List.of("order_id", "customer_name", "total_amount"), rows);
+
+        assertEquals(1, result.getSeries().size());
+        assertEquals("total_amount", result.getSeries().get(0).getName());
+        assertEquals("customer_name", result.getDimensionColumn());
+    }
+
+    @Test
+    void shouldNotTreatColumnContainingIdAsSubstring_likeIdColumn() {
+        // "valid_count" chua chuoi con "id" nhung KHONG phai la khoa -
+        // token cuoi cung la "count", khong phai "id" -> phai duoc giu
+        // lai lam so lieu binh thuong.
+        List<Map<String, Object>> rows = List.of(
+                row("category", "A", "valid_count", 10),
+                row("category", "B", "valid_count", 20)
+        );
+
+        ChartClassificationResult result = classifier.classify(List.of("category", "valid_count"), rows);
+
+        assertEquals(1, result.getSeries().size());
+        assertEquals("valid_count", result.getSeries().get(0).getName());
+    }
 }
