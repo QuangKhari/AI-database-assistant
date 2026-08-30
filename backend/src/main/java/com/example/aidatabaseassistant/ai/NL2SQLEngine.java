@@ -17,6 +17,12 @@ public class NL2SQLEngine {
      * Các từ khóa biểu thị thao tác thay đổi dữ liệu / cấu trúc database.
      *
      * Bao gồm cả tiếng Anh và tiếng Việt.
+     *
+     * Dùng Pattern.UNICODE_CHARACTER_CLASS để \b nhận diện đúng ranh giới
+     * từ có dấu tiếng Việt. Mặc định Java chỉ coi ky tu ASCII (a-z, 0-9, _)
+     * la "ky tu tu" - nhung tu bat dau bang mot ky tu co dau (vi du "đổi",
+     * bat dau bang "đ") se KHONG BAO GIO khop du regex co "\bđổi\b", vi
+     * Java khong coi vi tri giua khoang trang va "đ" la mot ranh gioi tu.
      */
     private static final Pattern WRITE_OPERATION = Pattern.compile(
             "(?i)\\b(" +
@@ -39,7 +45,8 @@ public class NL2SQLEngine {
                     "xóa dữ liệu|xoá dữ liệu|xoa du lieu|" +
                     "thêm dữ liệu|them du lieu|" +
                     "chèn dữ liệu|chen du lieu" +
-                    ")\\b"
+                    ")\\b",
+            Pattern.UNICODE_CHARACTER_CLASS
     );
 
     public String generateSQL(String question, DatabaseSchema schema) {
