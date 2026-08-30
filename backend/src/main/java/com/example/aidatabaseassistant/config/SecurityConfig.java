@@ -19,6 +19,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -26,6 +27,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -106,34 +108,58 @@ public class SecurityConfig {
                 // Authentication failure → 401
                 .exceptionHandling(exception ->
                         exception.authenticationEntryPoint(
-                                (request, response, authException) -> {
+                                        (request, response, authException) -> {
 
-                                    response.setStatus(
-                                            HttpServletResponse.SC_UNAUTHORIZED
-                                    );
+                                            response.setStatus(
+                                                    HttpServletResponse.SC_UNAUTHORIZED
+                                            );
 
-                                    response.setContentType(
-                                            "application/json;charset=UTF-8"
-                                    );
+                                            response.setContentType(
+                                                    "application/json;charset=UTF-8"
+                                            );
 
-                                    response.getWriter().write("""
+                                            response.getWriter().write("""
                                             {
                                                 "status": 401,
                                                 "error": "Unauthorized",
                                                 "message": "Authentication required"
                                             }
                                             """);
-                                }
-                        )
+                                        }
+                                )
+
+                                // Da dang nhap thanh cong nhung thieu quyen (VD:
+                                // USER goi endpoint /api/admin/**) -> 403, KHONG
+                                // phai 401. Truoc day khong khai bao rieng nen bi
+                                // lan vao nhanh 401 o tren, gay hieu lam "chua
+                                // dang nhap" du token hoan toan hop le.
+                                .accessDeniedHandler(
+                                        (request, response, accessDeniedException) -> {
+
+                                            response.setStatus(
+                                                    HttpServletResponse.SC_FORBIDDEN
+                                            );
+
+                                            response.setContentType(
+                                                    "application/json;charset=UTF-8"
+                                            );
+
+                                            response.getWriter().write("""
+                                            {
+                                                "status": 403,
+                                                "error": "Forbidden",
+                                                "message": "Bạn không có quyền truy cập tài nguyên này"
+                                            }
+                                            """);
+                                        }
+                                )
                 )
 
                 .authorizeHttpRequests(auth ->
                         auth
-                                .requestMatchers("/api/auth/**")
-                                .permitAll()
-
-                                .anyRequest()
-                                .authenticated()
+                                .requestMatchers("/api/auth/**").permitAll()
+                                .requestMatchers("/api/admin/**").hasRole("ADMIN")   // MỚI — defense in depth
+                                .anyRequest().authenticated()
                 )
 
                 .authenticationProvider(authenticationProvider())
