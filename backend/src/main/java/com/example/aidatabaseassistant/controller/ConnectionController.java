@@ -4,6 +4,7 @@ import com.example.aidatabaseassistant.dto.ConnectionRequest;
 import com.example.aidatabaseassistant.dto.ConnectionResponse;
 import com.example.aidatabaseassistant.dto.ConnectionUpdateRequest;
 import com.example.aidatabaseassistant.service.ConnectionService;
+import com.example.aidatabaseassistant.service.SuggestedQuestionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ public class ConnectionController {
 
     private final ConnectionService connectionService;
     private final SchemaDiscoveryService schemaDiscoveryService;
+    private final SuggestedQuestionService suggestedQuestionService;
 //    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
 //
 //    @GetMapping("/test-ai")
@@ -84,5 +86,16 @@ public class ConnectionController {
     public ResponseEntity<Void> disconnect(Authentication authentication, @PathVariable Long id) {
         connectionService.disconnect(authentication.getName(), id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/suggested-questions")
+    public ResponseEntity<com.example.aidatabaseassistant.dto.SuggestedQuestionsResponse> getSuggestedQuestions(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean refresh) {
+
+        return ResponseEntity.ok(
+                suggestedQuestionService.getSuggestions(authentication.getName(), id, refresh)
+        );
     }
 }
