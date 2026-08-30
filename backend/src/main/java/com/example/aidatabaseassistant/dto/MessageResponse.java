@@ -15,6 +15,7 @@ public class MessageResponse {
     private String generatedSql;
     private LocalDateTime createdAt;
     private List<QueryLogResponse> queryLogs;
+    private Boolean pinned;   // MỚI
 
     @Getter
     @AllArgsConstructor
