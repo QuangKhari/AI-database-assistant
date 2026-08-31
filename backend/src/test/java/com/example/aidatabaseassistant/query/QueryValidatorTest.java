@@ -16,20 +16,25 @@ class QueryValidatorTest {
 
     @BeforeEach
     void setUp() {
+
         queryValidator = new QueryValidator();
 
-        TableMetadata customers = TableMetadata.builder()
-                .name("customers")
-                .build();
+        TableMetadata customers =
+                TableMetadata.builder()
+                        .name("customers")
+                        .build();
 
-        TableMetadata orders = TableMetadata.builder()
-                .name("orders")
-                .build();
+        TableMetadata orders =
+                TableMetadata.builder()
+                        .name("orders")
+                        .build();
 
-        schema = DatabaseSchema.builder()
-                .tables(List.of(customers, orders))
-                .build();
+        schema =
+                DatabaseSchema.builder()
+                        .tables(List.of(customers, orders))
+                        .build();
     }
+
 
     // =========================================================
     // SELECT - CÁC TRƯỜNG HỢP HỢP LỆ
@@ -38,12 +43,14 @@ class QueryValidatorTest {
     @Test
     void shouldAllowValidSelect() {
 
-        String sql = "SELECT * FROM customers";
+        String sql =
+                "SELECT * FROM customers";
 
         assertDoesNotThrow(() ->
                 queryValidator.validate(sql, schema)
         );
     }
+
 
     @Test
     void shouldAllowSelectWithWhere() {
@@ -55,6 +62,7 @@ class QueryValidatorTest {
                 queryValidator.validate(sql, schema)
         );
     }
+
 
     @Test
     void shouldAllowJoin() {
@@ -69,6 +77,179 @@ class QueryValidatorTest {
                 queryValidator.validate(sql, schema)
         );
     }
+
+
+    // =========================================================
+    // CASE VARIATION
+    // =========================================================
+
+    @Test
+    void shouldAllowSelectRegardlessOfKeywordCase() {
+
+        String sql =
+                "sElEcT * fRoM customers";
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldAllowMixedCaseSelectWithJoin() {
+
+        String sql = """
+                SeLeCt c.full_name, o.id
+                FrOm customers c
+                jOiN orders o ON c.id = o.customer_id
+                """;
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // COMMENT HANDLING
+    // =========================================================
+
+    @Test
+    void shouldAllowSelectWithNormalSqlComment() {
+
+        String sql =
+                "SELECT * FROM customers -- comment";
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectBlockComment() {
+
+        String sql =
+                "SELECT /* comment */ * FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // COMMENT INJECTION / READ-ONLY BYPASS
+    // =========================================================
+
+    @Test
+    void shouldNotAllowCommentToBypassReadOnlyCheck() {
+
+        String sql =
+                "SELECT * FROM customers /* */ ; DELETE FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCommentObfuscatedUpdate() {
+
+        String sql =
+                "UPD/*comment*/ATE customers SET full_name = 'Hacked'";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCommentObfuscatedDelete() {
+
+        String sql =
+                "DEL/*comment*/ETE FROM customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCommentObfuscatedDrop() {
+
+        String sql =
+                "DR/*comment*/OP TABLE customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCommentObfuscatedTruncate() {
+
+        String sql =
+                "TRUN/*comment*/CATE TABLE customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // COMMENT BETWEEN SELECT KEYWORDS
+    // =========================================================
+
+    @Test
+    void shouldNotBypassParserWithCommentBetweenSelectKeywords() {
+
+        String sql =
+                "SEL/*comment*/ECT * FROM customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldNotBypassParserWithCommentBetweenFromKeywords() {
+
+        String sql =
+                "SELECT * FR/*comment*/OM customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectSlashStarCommentObfuscation() {
+
+        String sql =
+                "SELECT/**/*/**/FROM customers";
+
+        assertThrows(
+                Exception.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
 
     // =========================================================
     // READ-ONLY SECURITY
@@ -86,6 +267,7 @@ class QueryValidatorTest {
         );
     }
 
+
     @Test
     void shouldRejectUpdate() {
 
@@ -97,6 +279,7 @@ class QueryValidatorTest {
                 () -> queryValidator.validate(sql, schema)
         );
     }
+
 
     @Test
     void shouldRejectDelete() {
@@ -110,6 +293,7 @@ class QueryValidatorTest {
         );
     }
 
+
     @Test
     void shouldRejectDrop() {
 
@@ -121,6 +305,7 @@ class QueryValidatorTest {
                 () -> queryValidator.validate(sql, schema)
         );
     }
+
 
     @Test
     void shouldRejectAlter() {
@@ -134,6 +319,7 @@ class QueryValidatorTest {
         );
     }
 
+
     @Test
     void shouldRejectTruncate() {
 
@@ -146,6 +332,7 @@ class QueryValidatorTest {
         );
     }
 
+
     // =========================================================
     // MULTIPLE STATEMENTS
     // =========================================================
@@ -156,10 +343,11 @@ class QueryValidatorTest {
         String sql =
                 "SELECT * FROM customers; DELETE FROM customers";
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> queryValidator.validate(sql, schema)
-        );
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> queryValidator.validate(sql, schema)
+                );
 
         assertTrue(
                 exception.getMessage().contains(
@@ -167,6 +355,7 @@ class QueryValidatorTest {
                 )
         );
     }
+
 
     // =========================================================
     // SCHEMA SECURITY
@@ -178,10 +367,11 @@ class QueryValidatorTest {
         String sql =
                 "SELECT * FROM products";
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> queryValidator.validate(sql, schema)
-        );
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> queryValidator.validate(sql, schema)
+                );
 
         assertTrue(
                 exception.getMessage().contains(
