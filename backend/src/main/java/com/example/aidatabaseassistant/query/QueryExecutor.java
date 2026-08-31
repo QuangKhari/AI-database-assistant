@@ -117,7 +117,11 @@ public class QueryExecutor {
             return new SqlOptimizationRawData(explainRows, indexedColumns, null);
 
         } catch (Exception e) {
-            return new SqlOptimizationRawData(List.of(), Map.of(), e.getMessage());
+            return new SqlOptimizationRawData(
+                    List.of(),
+                    Map.of(),
+                    buildSafeDatabaseErrorMessage(e)
+            );
         }
     }
 
