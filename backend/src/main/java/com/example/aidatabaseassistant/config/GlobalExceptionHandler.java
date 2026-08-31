@@ -4,9 +4,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -36,6 +38,16 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(LockedException.class)
+    public ResponseEntity<Map<String, Object>> handleLockedAccount(
+            LockedException e) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                "Tài khoản đã bị khóa"
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException e) {
@@ -53,9 +65,9 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalState(
-            IllegalStateException e) {
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleRateLimit(
+            RateLimitExceededException e) {
 
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,

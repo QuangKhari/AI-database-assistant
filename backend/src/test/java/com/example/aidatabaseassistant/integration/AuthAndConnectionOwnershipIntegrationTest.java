@@ -15,6 +15,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
+import com.example.aidatabaseassistant.config.EncryptionUtil;
+import com.example.aidatabaseassistant.entity.DatabaseConnection;
+import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
+import com.example.aidatabaseassistant.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,6 +49,15 @@ class AuthAndConnectionOwnershipIntegrationTest {
 
     @Value("${local.server.port}")
     private int port;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private DatabaseConnectionRepository connectionRepository;
+
+    @Autowired
+    private EncryptionUtil encryptionUtil;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -140,54 +155,146 @@ class AuthAndConnectionOwnershipIntegrationTest {
 
     @Test
     void user_shouldNotBeAbleToReadOrDeleteAnotherUsersConnection_IDOR() throws Exception {
-        String ownerToken = registerAndGetToken(
-                "owner_" + System.nanoTime(), "owner_" + System.nanoTime() + "@example.com");
-        String intruderToken = registerAndGetToken(
-                "intruder_" + System.nanoTime(), "intruder_" + System.nanoTime() + "@example.com");
 
-        ConnectionRequest connectionRequest = new ConnectionRequest();
-        connectionRequest.setName("Owner's DB");
-        connectionRequest.setDbType("mysql");
-        connectionRequest.setHost("localhost");
-        connectionRequest.setPort(3306);
-        connectionRequest.setDatabaseName("shop");
-        connectionRequest.setUsername("root");
-        connectionRequest.setPassword("secret");
+        // ============================================================
+        // 1. Đăng ký 2 user để lấy JWT token
+        // ============================================================
 
-        HttpEntity<ConnectionRequest> createRequest = new HttpEntity<>(connectionRequest, authHeaders(ownerToken));
-        ResponseEntity<String> createResponse = exchange(
-                baseUrl() + "/api/connections", HttpMethod.POST, createRequest);
+        String ownerUsername = "owner_" + System.nanoTime();
+        String intruderUsername = "intruder_" + System.nanoTime();
 
-        assertEquals(HttpStatus.OK, createResponse.getStatusCode());
-        long connectionId = toJson(createResponse.getBody()).get("id").asLong();
+        String ownerEmail = ownerUsername + "@example.com";
+        String intruderEmail = intruderUsername + "@example.com";
 
-        // Chinh chu doc duoc
+        String ownerToken = registerAndGetToken(ownerUsername, ownerEmail);
+        String intruderToken = registerAndGetToken(intruderUsername, intruderEmail);
+
+
+        // ============================================================
+        // 2. Lấy User entity từ H2
+        // ============================================================
+
+        User owner = userRepository.findByUsername(ownerUsername)
+                .orElseThrow(() -> new AssertionError("Không tìm thấy owner"));
+
+        User intruder = userRepository.findByUsername(intruderUsername)
+                .orElseThrow(() -> new AssertionError("Không tìm thấy intruder"));
+
+
+        // ============================================================
+        // 3. Tạo DatabaseConnection trực tiếp trong H2
+        //
+        // Không gọi POST /api/connections vì API này có SSRF protection
+        // và sẽ cố tình chặn localhost.
+        // ============================================================
+
+        DatabaseConnection connection = DatabaseConnection.builder()
+                .user(owner)
+                .name("Owner's DB")
+                .dbType("mysql")
+                .host("localhost")
+                .port(3308)
+                .databaseName("shop")
+                .username("root")
+                .encryptedPassword(encryptionUtil.encrypt("abc123"))
+                .build();
+
+        connection = connectionRepository.saveAndFlush(connection);
+
+        Long connectionId = connection.getId();
+
+        assertNotNull(connectionId);
+
+
+        // ============================================================
+        // DEBUG
+        // ============================================================
+
+        System.out.println("========== IDOR TEST DEBUG ==========");
+        System.out.println("OWNER USER ID     = " + owner.getId());
+        System.out.println("INTRUDER USER ID  = " + intruder.getId());
+        System.out.println("CONNECTION ID     = " + connectionId);
+        System.out.println("CONNECTION OWNER  = " + connection.getUser().getUsername());
+        System.out.println("=====================================");
+
+
+        // ============================================================
+        // 4. Owner đọc connection của chính mình
+        // => PHẢI 200 OK
+        // ============================================================
+
         ResponseEntity<String> ownerReadResponse = exchange(
                 baseUrl() + "/api/connections/" + connectionId,
                 HttpMethod.GET,
                 new HttpEntity<>(authHeaders(ownerToken)));
+
+        System.out.println("========== OWNER READ ==========");
+        System.out.println("STATUS = " + ownerReadResponse.getStatusCode());
+        System.out.println("BODY   = " + ownerReadResponse.getBody());
+        System.out.println("================================");
+
         assertEquals(HttpStatus.OK, ownerReadResponse.getStatusCode());
 
-        // Nguoi khac doan ID va co doc -> phai bi chan (loi IDOR da duoc fix o Buoc 1)
+
+        // ============================================================
+        // 5. Intruder đoán được ID và cố đọc
+        // => PHẢI bị từ chối
+        // ============================================================
+
         ResponseEntity<String> intruderReadResponse = exchange(
                 baseUrl() + "/api/connections/" + connectionId,
                 HttpMethod.GET,
                 new HttpEntity<>(authHeaders(intruderToken)));
-        assertEquals(HttpStatus.BAD_REQUEST, intruderReadResponse.getStatusCode());
-        assertTrue(toJson(intruderReadResponse.getBody()).get("message").asText().contains("không có quyền"));
 
-        // Nguoi khac cung khong the xoa
+        System.out.println("========== INTRUDER READ ==========");
+        System.out.println("STATUS = " + intruderReadResponse.getStatusCode());
+        System.out.println("BODY   = " + intruderReadResponse.getBody());
+        System.out.println("===================================");
+
+        assertEquals(HttpStatus.BAD_REQUEST, intruderReadResponse.getStatusCode());
+
+        assertTrue(
+                toJson(intruderReadResponse.getBody())
+                        .get("message")
+                        .asText()
+                        .contains("không có quyền")
+        );
+
+
+        // ============================================================
+        // 6. Intruder cố DELETE connection
+        // => PHẢI bị từ chối
+        // ============================================================
+
         ResponseEntity<String> intruderDeleteResponse = exchange(
                 baseUrl() + "/api/connections/" + connectionId,
                 HttpMethod.DELETE,
                 new HttpEntity<>(authHeaders(intruderToken)));
+
+        System.out.println("========== INTRUDER DELETE ==========");
+        System.out.println("STATUS = " + intruderDeleteResponse.getStatusCode());
+        System.out.println("BODY   = " + intruderDeleteResponse.getBody());
+        System.out.println("=====================================");
+
         assertEquals(HttpStatus.BAD_REQUEST, intruderDeleteResponse.getStatusCode());
 
-        // Connection cua chinh chu van con nguyen (chua bi xoa nham)
+
+        // ============================================================
+        // 7. Owner đọc lại
+        // => Connection vẫn phải tồn tại
+        // => chứng minh intruder không xóa được
+        // ============================================================
+
         ResponseEntity<String> stillThereResponse = exchange(
                 baseUrl() + "/api/connections/" + connectionId,
                 HttpMethod.GET,
                 new HttpEntity<>(authHeaders(ownerToken)));
+
+        System.out.println("========== OWNER READ AFTER ATTACK ==========");
+        System.out.println("STATUS = " + stillThereResponse.getStatusCode());
+        System.out.println("BODY   = " + stillThereResponse.getBody());
+        System.out.println("=============================================");
+
         assertEquals(HttpStatus.OK, stillThereResponse.getStatusCode());
     }
 }

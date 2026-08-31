@@ -20,6 +20,14 @@ import java.util.List;
 @Builder
 public class User {
 
+    @Column(
+            name = "locked",
+            nullable = false,
+            columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    @Builder.Default
+    private boolean locked = false;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

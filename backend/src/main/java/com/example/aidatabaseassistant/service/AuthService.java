@@ -4,15 +4,19 @@ import com.example.aidatabaseassistant.dto.AuthResponse;
 import com.example.aidatabaseassistant.dto.LoginRequest;
 import com.example.aidatabaseassistant.dto.RegisterRequest;
 import com.example.aidatabaseassistant.config.JwtUtil;
+import com.example.aidatabaseassistant.entity.PasswordResetToken;
 import com.example.aidatabaseassistant.entity.Role;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -21,6 +25,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final AuthenticationManager authenticationManager;
+    private final PasswordResetTokenService passwordResetTokenService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -53,5 +58,51 @@ public class AuthService {
 
         String token = jwtUtil.generateToken(user.getUsername());
         return new AuthResponse(token, user.getUsername(), user.getRole().name());
+    }
+
+    /**
+     * Tao reset-password token cho user ung voi email (neu ton tai).
+     *
+     * QUAN TRONG: KHONG nem exception khi email khong ton tai. Neu nem loi rieng
+     * cho truong hop "email khong ton tai" (khac voi truong hop thanh cong), ke
+     * tan cong co the do tung email de biet email nao da dang ky trong he thong
+     * (user enumeration) - day la loi bao mat pho bien trong OWASP ASVS. Vi vay
+     * ca hai truong hop (email ton tai / khong ton tai) deu tra ve cung mot ket
+     * qua thanh cong tu controller.
+     */
+    public void forgotPassword(String email) {
+
+        userRepository.findByEmail(email).ifPresentOrElse(
+                user -> {
+                    String rawToken = passwordResetTokenService.createToken(user);
+
+                    System.out.println("=================================");
+                    System.out.println("PASSWORD RESET TOKEN");
+                    System.out.println("User: " + user.getUsername());
+                    System.out.println("Email: " + user.getEmail());
+                    System.out.println("Token: " + rawToken);
+                    System.out.println("=================================");
+                },
+                () -> System.out.println(
+                        "Yeu cau forgot-password cho email khong ton tai: " + email)
+        );
+    }
+
+    @Transactional
+    public void resetPassword(String rawToken, String newPassword) {
+
+        PasswordResetToken resetToken =
+                passwordResetTokenService.validateToken(rawToken);
+
+        User user = resetToken.getUser();
+
+        String newPasswordHash =
+                passwordEncoder.encode(newPassword);
+
+        user.setPasswordHash(newPasswordHash);
+
+        userRepository.save(user);
+
+        passwordResetTokenService.consumeToken(resetToken);
     }
 }

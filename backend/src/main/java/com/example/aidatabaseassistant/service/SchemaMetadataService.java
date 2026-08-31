@@ -5,6 +5,7 @@ import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.repository.ColumnMetadataRepository;
 import com.example.aidatabaseassistant.repository.TableMetadataRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
@@ -18,6 +19,7 @@ public class SchemaMetadataService {
     private final ColumnMetadataRepository columnMetadataRepository;
     private final UserRepository userRepository;
 
+    @Transactional
     public void updateTableDescription(String username, Long tableId, String description) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
@@ -31,6 +33,7 @@ public class SchemaMetadataService {
         tableMetadataRepository.save(table);
     }
 
+    @Transactional
     public void updateColumnDescription(String username, Long columnId, String description) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));

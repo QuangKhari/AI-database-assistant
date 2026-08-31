@@ -16,6 +16,7 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.Message;
 import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.ConversationRepository;
@@ -219,7 +220,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
         when(rateLimitService.tryConsume("owner")).thenReturn(false);
 
-        assertThrows(IllegalStateException.class, () -> queryService.processQuery("owner", request));
+        assertThrows(RateLimitExceededException.class,
+                () -> queryService.processQuery("owner", request));
 
         // Bi chan ngay tu dau, tuyet doi khong duoc dong cham DB hay goi AI.
         verifyNoInteractions(userRepository, connectionRepository, schemaLoaderService,
@@ -400,6 +402,88 @@ class QueryServiceTest {
         // That bai thi tuyet doi khong duoc goi AI de tom tat hay de xuat
         // chart/insight - vua sai logic, vua ton quota.
         verifyNoInteractions(llmClient, chartSuggestionService, dataInsightService);
+    }
+
+    // ===================== processQuery: AI Summary fallback (safeSummarize) =====================
+
+    @Test
+    void processQuery_shouldReturnFallbackSummary_whenLlmClientThrowsDuringSummarize() {
+        // Bao ve dung nguyen tac da de ra: AI Summary la tinh nang BO SUNG,
+        // Gemini loi/timeout luc tom tat KHONG duoc lam sap ca API /execute
+        // trong khi SQL da chay thanh cong. QueryService phai bat loi tu
+        // safeSummarize() va tra ve cau fallback, thay vi de RuntimeException
+        // tu LLMClient.generateResponse() bay thang len Controller (=> 500).
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("thang", "doanh_thu");
+        List<Map<String, Object>> rows = List.of(Map.of("thang", 1, "doanh_thu", 1000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 20L, 1, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+
+        // Mo phong dung loi thuc te cua LLMClient khi Gemini khong tra du lieu.
+        when(llmClient.generateResponse(anyString()))
+                .thenThrow(new RuntimeException("Gemini API không trả về dữ liệu"));
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        // Du Gemini loi luc tom tat, luong chinh (SQL + ket qua) van phai
+        // tra ve thanh cong nhu binh thuong.
+        assertNotNull(response);
+        assertEquals("SELECT thang, doanh_thu FROM revenue", response.getGeneratedSql());
+        assertNotNull(response.getResult());
+        assertSame(finalResult, response.getResult());
+
+        // summary phai la cau fallback, khong duoc null va cang khong duoc
+        // de exception lan ra ngoai processQuery().
+        assertEquals(
+                "Không thể tạo tóm tắt tự động cho kết quả này. Vui lòng xem bảng dữ liệu bên dưới.",
+                response.getSummary());
+    }
+
+    @Test
+    void processQuery_shouldReturnNormalSummary_whenLlmClientSucceeds() {
+        // Doi chung cho test tren: khi Gemini hoat dong binh thuong,
+        // safeSummarize() phai tra dung ve gia tri that cua LLMClient,
+        // khong duoc luon tra ve fallback.
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("thang", "doanh_thu");
+        List<Map<String, Object>> rows = List.of(Map.of("thang", 1, "doanh_thu", 1000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 20L, 1, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tháng 1 đạt 1000.");
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertEquals("Doanh thu tháng 1 đạt 1000.", response.getSummary());
     }
 
     // ===================== processQuery: tích hợp chart suggestion =====================

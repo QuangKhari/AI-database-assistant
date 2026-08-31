@@ -9,6 +9,7 @@ import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 
@@ -28,6 +29,14 @@ public class ConnectionService {
     private final SsrfProtection ssrfProtection;
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int SOCKET_TIMEOUT_MS = 10000;
+
+    // Khong khai bao "final" vi day la field duoc inject bang @Value (field
+    // injection), tach biet voi cac dependency con lai dang duoc constructor-inject
+    // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
+    // gia tri nay qua constructor -> pha vo constructor 4-tham-so hien tai dang
+    // duoc goi truc tiep trong ConnectionServiceTest.
+    @Value("${connection.max-per-user:5}")
+    private int maxConnectionsPerUser = 5;
 
     public boolean testConnection(ConnectionRequest request) {
         ssrfProtection.validateHost(request.getHost());
@@ -54,6 +63,19 @@ public class ConnectionService {
     public ConnectionResponse saveConnection(String username, ConnectionRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        // SSRF guard: truoc day chi testConnection() goi validateHost(), nen
+        // saveConnection() co the luu thang mot host noi bo (vi du 127.0.0.1,
+        // 169.254.169.254 - metadata endpoint cua cloud...) ma khong bi chan,
+        // roi sau nay reconnect()/updateConnection() van vo tu ket noi toi do.
+        ssrfProtection.validateHost(request.getHost());
+
+        long currentCount = connectionRepository.countByUserId(user.getId());
+        if (currentCount >= maxConnectionsPerUser) {
+            throw new IllegalArgumentException(
+                    "Bạn đã đạt giới hạn tối đa " + maxConnectionsPerUser + " kết nối database. "
+                            + "Vui lòng xóa bớt kết nối cũ trước khi thêm mới.");
+        }
 
         DatabaseConnection connection = DatabaseConnection.builder()
                 .user(user)
@@ -111,6 +133,13 @@ public class ConnectionService {
     public ConnectionResponse updateConnection(String username, Long connectionId, ConnectionUpdateRequest request) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
+        // Ownership check (getOwnedConnection) phai chay TRUOC de IDOR test
+        // (updateConnection_shouldThrow_whenRequestedByNonOwner_IDOR) khong bi
+        // anh huong boi loi validate host. Sau khi xac nhan la chu so huu, host
+        // moi van phai duoc kiem tra SSRF vi user co the doi host sang dia chi
+        // noi bo trong luc update.
+        ssrfProtection.validateHost(request.getHost());
+
         connection.setName(request.getName());
         connection.setHost(request.getHost());
         connection.setPort(request.getPort());
@@ -127,6 +156,9 @@ public class ConnectionService {
 
     public boolean reconnect(String username, Long connectionId) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
+
+        ssrfProtection.validateHost(connection.getHost());
+
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
         String url = buildJdbcUrl(connection.getDbType(), connection.getHost(),

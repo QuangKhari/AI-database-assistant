@@ -12,4 +12,5 @@ public class AdminUserResponse {
     private String role;
     private LocalDateTime createdAt;
     private int connectionCount;
+    private boolean locked;
 }

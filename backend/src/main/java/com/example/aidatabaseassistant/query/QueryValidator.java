@@ -15,6 +15,8 @@ import java.util.Set;
 public class QueryValidator {
 
     public void validate(String sql, DatabaseSchema schema) {
+        rejectBlockComments(sql);
+
         Statement statement = parse(sql);
         checkReadOnly(statement);
         checkSchemaMatch(statement, schema);
@@ -74,4 +76,18 @@ public class QueryValidator {
         }
     }
 
+    private void rejectBlockComments(String sql) {
+
+        if (sql == null || sql.isBlank()) {
+            throw new IllegalArgumentException(
+                    "SQL không được để trống"
+            );
+        }
+
+        if (sql.contains("/*") || sql.contains("*/")) {
+            throw new IllegalArgumentException(
+                    "SQL không được chứa block comment /* ... */"
+            );
+        }
+    }
 }
