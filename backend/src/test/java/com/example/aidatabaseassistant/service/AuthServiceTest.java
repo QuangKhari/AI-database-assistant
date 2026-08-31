@@ -4,6 +4,7 @@ import com.example.aidatabaseassistant.config.JwtUtil;
 import com.example.aidatabaseassistant.dto.AuthResponse;
 import com.example.aidatabaseassistant.dto.LoginRequest;
 import com.example.aidatabaseassistant.dto.RegisterRequest;
+import com.example.aidatabaseassistant.entity.PasswordResetToken;
 import com.example.aidatabaseassistant.entity.Role;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.UserRepository;
@@ -38,11 +39,14 @@ class AuthServiceTest {
     @Mock
     private AuthenticationManager authenticationManager;
 
+    @Mock
+    private PasswordResetTokenService passwordResetTokenService;
+
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, passwordEncoder, jwtUtil, authenticationManager);
+        authService = new AuthService(userRepository, passwordEncoder, jwtUtil, authenticationManager, passwordResetTokenService);
     }
 
     @Test
@@ -168,5 +172,140 @@ class AuthServiceTest {
         );
 
         verify(jwtUtil, never()).generateToken(any());
+    }
+
+    @Test
+    void forgotPassword_shouldCreateResetToken_whenEmailExists() {
+
+        User user = User.builder()
+                .id(8L)
+                .username("lock_test_user")
+                .email("lock_test_user@example.com")
+                .passwordHash("hashedPassword")
+                .role(Role.USER)
+                .build();
+
+        when(userRepository.findByEmail("lock_test_user@example.com"))
+                .thenReturn(Optional.of(user));
+
+        when(passwordResetTokenService.createToken(user))
+                .thenReturn("fake-reset-token");
+
+        authService.forgotPassword(
+                "lock_test_user@example.com"
+        );
+
+        verify(userRepository)
+                .findByEmail("lock_test_user@example.com");
+
+        verify(passwordResetTokenService)
+                .createToken(user);
+    }
+
+    @Test
+    void forgotPassword_shouldThrow_whenEmailDoesNotExist() {
+
+        when(userRepository.findByEmail("notfound@example.com"))
+                .thenReturn(Optional.empty());
+
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> authService.forgotPassword(
+                        "notfound@example.com"
+                )
+        );
+
+        assertEquals(
+                "Email không tồn tại",
+                ex.getMessage()
+        );
+
+        verify(passwordResetTokenService, never())
+                .createToken(any());
+    }
+
+    @Test
+    void resetPassword_shouldUpdatePasswordAndConsumeToken_whenTokenIsValid() {
+
+        User user = User.builder()
+                .id(8L)
+                .username("lock_test_user")
+                .email("lock_test_user@example.com")
+                .passwordHash("old-hash")
+                .role(Role.USER)
+                .build();
+
+        PasswordResetToken resetToken =
+                PasswordResetToken.builder()
+                        .id(2L)
+                        .user(user)
+                        .tokenHash("fake-hash")
+                        .expiresAt(
+                                java.time.LocalDateTime.now()
+                                        .plusMinutes(20)
+                        )
+                        .build();
+
+        when(passwordResetTokenService.validateToken(
+                "valid-reset-token"
+        )).thenReturn(resetToken);
+
+        when(passwordEncoder.encode(
+                "NewPassword@123"
+        )).thenReturn("new-hashed-password");
+
+        authService.resetPassword(
+                "valid-reset-token",
+                "NewPassword@123"
+        );
+
+        assertEquals(
+                "new-hashed-password",
+                user.getPasswordHash()
+        );
+
+        verify(passwordEncoder)
+                .encode("NewPassword@123");
+
+        verify(userRepository)
+                .save(user);
+
+        verify(passwordResetTokenService)
+                .consumeToken(resetToken);
+    }
+
+    @Test
+    void resetPassword_shouldNotUpdatePassword_whenTokenIsInvalid() {
+
+        when(passwordResetTokenService.validateToken(
+                "invalid-token"
+        )).thenThrow(
+                new IllegalArgumentException(
+                        "Token không hợp lệ"
+                )
+        );
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> authService.resetPassword(
+                                "invalid-token",
+                                "NewPassword@123"
+                        )
+                );
+
+        assertEquals(
+                "Token không hợp lệ",
+                ex.getMessage()
+        );
+
+        verify(passwordEncoder, never())
+                .encode(any());
+
+        verify(userRepository, never())
+                .save(any());
+
+        verify(passwordResetTokenService, never())
+                .consumeToken(any());
     }
 }
