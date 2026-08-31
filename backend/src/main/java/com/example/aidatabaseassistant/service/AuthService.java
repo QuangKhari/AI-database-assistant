@@ -60,26 +60,32 @@ public class AuthService {
         return new AuthResponse(token, user.getUsername(), user.getRole().name());
     }
 
+    /**
+     * Tao reset-password token cho user ung voi email (neu ton tai).
+     *
+     * QUAN TRONG: KHONG nem exception khi email khong ton tai. Neu nem loi rieng
+     * cho truong hop "email khong ton tai" (khac voi truong hop thanh cong), ke
+     * tan cong co the do tung email de biet email nao da dang ky trong he thong
+     * (user enumeration) - day la loi bao mat pho bien trong OWASP ASVS. Vi vay
+     * ca hai truong hop (email ton tai / khong ton tai) deu tra ve cung mot ket
+     * qua thanh cong tu controller.
+     */
     public void forgotPassword(String email) {
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Email không tồn tại"
-                        )
-                );
+        userRepository.findByEmail(email).ifPresentOrElse(
+                user -> {
+                    String rawToken = passwordResetTokenService.createToken(user);
 
-        String rawToken =
-                passwordResetTokenService.createToken(user);
-
-        // TODO(backend): chua co email service that su - day la stub tam thoi
-        // de demo/test luong reset password khi chua tich hop SMTP/email
-        // provider. Log o muc INFO (khong phai print ra console qua
-        // System.out) de nhat quan voi phan con lai cua codebase da chuyen
-        // sang SLF4J, va de co the tat log nay trong production bang cach
-        // ha logging.level xuong WARN neu can.
-        log.info("Password reset token generated for user='{}' email='{}' token='{}'",
-                user.getUsername(), user.getEmail(), rawToken);
+                    System.out.println("=================================");
+                    System.out.println("PASSWORD RESET TOKEN");
+                    System.out.println("User: " + user.getUsername());
+                    System.out.println("Email: " + user.getEmail());
+                    System.out.println("Token: " + rawToken);
+                    System.out.println("=================================");
+                },
+                () -> System.out.println(
+                        "Yeu cau forgot-password cho email khong ton tai: " + email)
+        );
     }
 
     @Transactional

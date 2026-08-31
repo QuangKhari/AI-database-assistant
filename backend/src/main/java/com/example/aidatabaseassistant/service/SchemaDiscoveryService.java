@@ -8,6 +8,7 @@ import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.SsrfProtection;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ public class SchemaDiscoveryService {
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
+    private final SsrfProtection ssrfProtection;
 
     // Schema RAG
     private final SchemaEmbeddingService schemaEmbeddingService;
@@ -71,6 +73,7 @@ public class SchemaDiscoveryService {
 
         // connectTimeout/socketTimeout: tranh treo vo thoi han neu host connection
         // khong con phan hoi (vi du DB da bi tat) trong luc quet schema.
+        ssrfProtection.validateHost(connection.getHost());
         String url =
                 "jdbc:mysql://"
                         + connection.getHost()

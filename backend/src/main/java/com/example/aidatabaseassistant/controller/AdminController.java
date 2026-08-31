@@ -31,9 +31,18 @@ public class AdminController {
     }
 
     @PatchMapping("/users/{id}/role")
-    public ResponseEntity<AdminUserResponse> updateRole(@PathVariable Long id,
-                                                        @Valid @RequestBody UpdateRoleRequest request) {
-        return ResponseEntity.ok(adminService.updateRole(id, request.getRole()));
+    public ResponseEntity<AdminUserResponse> updateRole(
+            Authentication authentication,
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateRoleRequest request) {
+
+        return ResponseEntity.ok(
+                adminService.updateRole(
+                        id,
+                        request.getRole(),
+                        authentication.getName()
+                )
+        );
     }
 
     @PatchMapping("/users/{id}/lock")

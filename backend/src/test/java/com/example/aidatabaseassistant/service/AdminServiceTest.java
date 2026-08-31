@@ -85,9 +85,11 @@ class AdminServiceTest {
     @Test
     void updateRole_shouldPromoteUserToAdmin() {
 
-        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+        when(userRepository.findById(2L))
+                .thenReturn(Optional.of(normalUser));
 
-        AdminUserResponse response = adminService.updateRole(2L, "admin");
+        AdminUserResponse response =
+                adminService.updateRole(2L, "admin", "admin-account");
 
         assertEquals("ADMIN", response.getRole());
         assertEquals(Role.ADMIN, normalUser.getRole());
@@ -99,9 +101,11 @@ class AdminServiceTest {
 
         normalUser.setRole(Role.ADMIN);
 
-        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+        when(userRepository.findById(2L))
+                .thenReturn(Optional.of(normalUser));
 
-        AdminUserResponse response = adminService.updateRole(2L, "USER");
+        AdminUserResponse response =
+                adminService.updateRole(2L, "USER", "admin-account");
 
         assertEquals("USER", response.getRole());
         assertEquals(Role.USER, normalUser.getRole());
@@ -110,11 +114,16 @@ class AdminServiceTest {
     @Test
     void updateRole_shouldThrow_whenRoleValueInvalid() {
 
-        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+        when(userRepository.findById(2L))
+                .thenReturn(Optional.of(normalUser));
 
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> adminService.updateRole(2L, "SUPERUSER")
+                () -> adminService.updateRole(
+                        2L,
+                        "SUPERUSER",
+                        "admin-account"
+                )
         );
 
         assertTrue(ex.getMessage().contains("Role không hợp lệ"));
@@ -124,12 +133,38 @@ class AdminServiceTest {
     @Test
     void updateRole_shouldThrow_whenUserNotFound() {
 
-        when(userRepository.findById(999L)).thenReturn(Optional.empty());
+        when(userRepository.findById(999L))
+                .thenReturn(Optional.empty());
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> adminService.updateRole(999L, "ADMIN")
+                () -> adminService.updateRole(
+                        999L,
+                        "ADMIN",
+                        "admin-account"
+                )
         );
+    }
+
+    @Test
+    void updateRole_shouldThrow_whenAdminChangesOwnRole() {
+
+        normalUser.setRole(Role.ADMIN);
+
+        when(userRepository.findById(2L))
+                .thenReturn(Optional.of(normalUser));
+
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> adminService.updateRole(
+                        2L,
+                        "USER",
+                        "khai"
+                )
+        );
+
+        assertTrue(ex.getMessage().contains("role"));
+        verify(userRepository, never()).save(any());
     }
 
     // ===== searchUsers =====
@@ -149,7 +184,8 @@ class AdminServiceTest {
     @Test
     void searchUsers_shouldDelegateToRepository_whenKeywordProvided() {
 
-        when(userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase("khai", "khai"))
+        when(userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+                "khai", "khai"))
                 .thenReturn(List.of(normalUser));
 
         List<AdminUserResponse> result = adminService.searchUsers("khai");
@@ -165,7 +201,8 @@ class AdminServiceTest {
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
 
-        AdminUserResponse response = adminService.lockUser(2L, "admin-account");
+        AdminUserResponse response =
+                adminService.lockUser(2L, "admin-account");
 
         assertTrue(response.isLocked());
         assertTrue(normalUser.isLocked());
@@ -190,9 +227,12 @@ class AdminServiceTest {
     void unlockUser_shouldSetLockedFalse() {
 
         normalUser.setLocked(true);
-        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
 
-        AdminUserResponse response = adminService.unlockUser(2L);
+        when(userRepository.findById(2L))
+                .thenReturn(Optional.of(normalUser));
+
+        AdminUserResponse response =
+                adminService.unlockUser(2L);
 
         assertFalse(response.isLocked());
         assertFalse(normalUser.isLocked());
@@ -214,9 +254,11 @@ class AdminServiceTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(connectionRepository.findAllWithUser()).thenReturn(List.of(connection));
+        when(connectionRepository.findAllWithUser())
+                .thenReturn(List.of(connection));
 
-        List<AdminConnectionResponse> result = adminService.getAllConnections();
+        List<AdminConnectionResponse> result =
+                adminService.getAllConnections();
 
         assertEquals(1, result.size());
         assertEquals("khai", result.get(0).getOwnerUsername());
@@ -228,9 +270,13 @@ class AdminServiceTest {
     @Test
     void deleteConnection_shouldDelete_whenExists() {
 
-        DatabaseConnection connection = DatabaseConnection.builder().id(10L).build();
+        DatabaseConnection connection =
+                DatabaseConnection.builder()
+                        .id(10L)
+                        .build();
 
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
 
         adminService.deleteConnection(10L);
 
@@ -240,7 +286,8 @@ class AdminServiceTest {
     @Test
     void deleteConnection_shouldThrow_whenNotFound() {
 
-        when(connectionRepository.findById(999L)).thenReturn(Optional.empty());
+        when(connectionRepository.findById(999L))
+                .thenReturn(Optional.empty());
 
         assertThrows(
                 IllegalArgumentException.class,

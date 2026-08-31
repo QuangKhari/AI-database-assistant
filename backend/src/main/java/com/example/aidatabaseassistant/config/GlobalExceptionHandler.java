@@ -8,6 +8,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -64,9 +65,9 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalState(
-            IllegalStateException e) {
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleRateLimit(
+            RateLimitExceededException e) {
 
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,

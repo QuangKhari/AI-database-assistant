@@ -35,8 +35,8 @@ public class ConnectionService {
     // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
     // gia tri nay qua constructor -> pha vo constructor 4-tham-so hien tai dang
     // duoc goi truc tiep trong ConnectionServiceTest.
-    @Value("${connection.max-per-user:3}")
-    private int maxConnectionsPerUser = 3;
+    @Value("${connection.max-per-user:5}")
+    private int maxConnectionsPerUser = 5;
 
     public boolean testConnection(ConnectionRequest request) {
         ssrfProtection.validateHost(request.getHost());
@@ -156,6 +156,9 @@ public class ConnectionService {
 
     public boolean reconnect(String username, Long connectionId) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
+
+        ssrfProtection.validateHost(connection.getHost());
+
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
         String url = buildJdbcUrl(connection.getDbType(), connection.getHost(),

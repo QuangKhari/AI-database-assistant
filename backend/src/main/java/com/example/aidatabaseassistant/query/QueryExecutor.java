@@ -4,6 +4,7 @@ import com.example.aidatabaseassistant.dto.QueryResultDto;
 import org.springframework.stereotype.Component;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.util.TablesNamesFinder;
+import com.example.aidatabaseassistant.security.SsrfProtection;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -21,10 +22,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 
 @Component
+@RequiredArgsConstructor
 public class QueryExecutor {
 
+    private final SsrfProtection ssrfProtection;
     private static final int MAX_ROWS = 500;
 
     // Gioi han thoi gian THUC THI cau query tren DB (giay). Neu AI sinh ra 1 cau
@@ -38,8 +42,12 @@ public class QueryExecutor {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int SOCKET_TIMEOUT_MS = 15000;
 
+
+
     public QueryResultDto executeQuery(String host, Integer port, String databaseName,
                                        String username, String password, String sql) {
+        ssrfProtection.validateHost(host);
+
         String url = "jdbc:mysql://" + host + ":" + port + "/" + databaseName
                 + "?connectTimeout=" + CONNECT_TIMEOUT_MS
                 + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
@@ -85,6 +93,8 @@ public class QueryExecutor {
      */
     public SqlOptimizationRawData collectOptimizationData(String host, Integer port, String databaseName,
                                                           String username, String password, String sql) {
+        ssrfProtection.validateHost(host);
+
         String url = "jdbc:mysql://" + host + ":" + port + "/" + databaseName
                 + "?connectTimeout=" + CONNECT_TIMEOUT_MS
                 + "&socketTimeout=" + SOCKET_TIMEOUT_MS;

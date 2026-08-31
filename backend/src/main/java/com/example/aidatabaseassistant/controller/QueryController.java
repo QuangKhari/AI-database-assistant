@@ -1,20 +1,18 @@
 package com.example.aidatabaseassistant.controller;
 
 import com.example.aidatabaseassistant.dto.*;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 import com.example.aidatabaseassistant.service.ChartSuggestionService;
 import com.example.aidatabaseassistant.service.DataInsightService;
 import com.example.aidatabaseassistant.service.QueryService;
 import com.example.aidatabaseassistant.service.RateLimitService;
 import com.example.aidatabaseassistant.service.SqlExplanationService;
+import com.example.aidatabaseassistant.service.SqlOptimizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import com.example.aidatabaseassistant.service.SqlOptimizationService;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/query")
@@ -28,53 +26,97 @@ public class QueryController {
     private final RateLimitService rateLimitService;
     private final SqlOptimizationService sqlOptimizationService;
 
-
     @PostMapping("/explain")
-    public ResponseEntity<ExplainSqlResponse> explain(Authentication authentication,
-                                                      @Valid @RequestBody ExplainSqlRequest request) {
-        return ResponseEntity.ok(sqlExplanationService.explain(authentication.getName(), request));
+    public ResponseEntity<ExplainSqlResponse> explain(
+            Authentication authentication,
+            @Valid @RequestBody ExplainSqlRequest request) {
+
+        return ResponseEntity.ok(
+                sqlExplanationService.explain(
+                        authentication.getName(),
+                        request
+                )
+        );
     }
 
     @PostMapping("/preview")
-    public ResponseEntity<PreviewResponse> preview(Authentication authentication,
-                                                   @Valid @RequestBody QueryRequest request) {
-        return ResponseEntity.ok(queryService.previewQuery(authentication.getName(), request));
+    public ResponseEntity<PreviewResponse> preview(
+            Authentication authentication,
+            @Valid @RequestBody QueryRequest request) {
+
+        return ResponseEntity.ok(
+                queryService.previewQuery(
+                        authentication.getName(),
+                        request
+                )
+        );
     }
 
     @PostMapping("/execute")
-    public ResponseEntity<QueryResponse> execute(Authentication authentication,
-                                                 @Valid @RequestBody QueryRequest request) {
-        return ResponseEntity.ok(queryService.processQuery(authentication.getName(), request));
+    public ResponseEntity<QueryResponse> execute(
+            Authentication authentication,
+            @Valid @RequestBody QueryRequest request) {
+
+        return ResponseEntity.ok(
+                queryService.processQuery(
+                        authentication.getName(),
+                        request
+                )
+        );
     }
 
     @PostMapping("/chart-suggestion")
-    public ResponseEntity<ChartSuggestionResponse> chartSuggestion(Authentication authentication,
-                                                                   @Valid @RequestBody ChartSuggestionRequest request) {
+    public ResponseEntity<ChartSuggestionResponse> chartSuggestion(
+            Authentication authentication,
+            @Valid @RequestBody ChartSuggestionRequest request) {
+
         if (!rateLimitService.tryConsume(authentication.getName())) {
-            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+            throw new RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
         }
-        return ResponseEntity.ok(chartSuggestionService.suggest(request));
+
+        return ResponseEntity.ok(
+                chartSuggestionService.suggest(request)
+        );
     }
 
-    // Dung chung ChartSuggestionRequest (columns + rows) voi endpoint
-    // chart-suggestion vi ca hai deu la tinh nang STATELESS bo sung, phan
-    // tich lai tren cung mot ket qua truy van (columns/rows) ma FE da co
-    // san, khong can luu vao DB hay gan voi mot conversation/message cu the.
+    // Dùng chung ChartSuggestionRequest (columns + rows) với endpoint
+    // chart-suggestion vì cả hai đều là tính năng STATELESS bổ sung,
+    // phân tích lại trên cùng một kết quả truy vấn (columns/rows) mà FE đã có sẵn,
+    // không cần lưu vào DB hay gắn với một conversation/message cụ thể.
     @PostMapping("/data-insight")
-    public ResponseEntity<DataInsightResponse> dataInsight(Authentication authentication,
-                                                           @Valid @RequestBody ChartSuggestionRequest request) {
+    public ResponseEntity<DataInsightResponse> dataInsight(
+            Authentication authentication,
+            @Valid @RequestBody ChartSuggestionRequest request) {
+
         if (!rateLimitService.tryConsume(authentication.getName())) {
-            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+            throw new RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
         }
-        return ResponseEntity.ok(dataInsightService.analyze(request));
+
+        return ResponseEntity.ok(
+                dataInsightService.analyze(request)
+        );
     }
 
     @PostMapping("/optimize")
-    public ResponseEntity<OptimizeSqlResponse> optimize(Authentication authentication,
-                                                        @Valid @RequestBody OptimizeSqlRequest request) {
+    public ResponseEntity<OptimizeSqlResponse> optimize(
+            Authentication authentication,
+            @Valid @RequestBody OptimizeSqlRequest request) {
+
         if (!rateLimitService.tryConsume(authentication.getName())) {
-            throw new IllegalStateException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
+            throw new RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
         }
-        return ResponseEntity.ok(sqlOptimizationService.optimize(authentication.getName(), request));
+
+        return ResponseEntity.ok(
+                sqlOptimizationService.optimize(
+                        authentication.getName(),
+                        request
+                )
+        );
     }
 }

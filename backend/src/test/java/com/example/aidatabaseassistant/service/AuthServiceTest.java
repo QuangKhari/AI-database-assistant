@@ -18,6 +18,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -46,76 +47,142 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, passwordEncoder, jwtUtil, authenticationManager, passwordResetTokenService);
+        authService = new AuthService(
+                userRepository,
+                passwordEncoder,
+                jwtUtil,
+                authenticationManager,
+                passwordResetTokenService
+        );
     }
+
+    // =========================================================
+    // REGISTER
+    // =========================================================
 
     @Test
     void register_shouldCreateUserAndReturnToken_whenUsernameAndEmailAreFree() {
+
         RegisterRequest request = new RegisterRequest();
         request.setUsername("khai");
         request.setEmail("khai@example.com");
         request.setPassword("plainPassword");
 
-        when(userRepository.existsByUsername("khai")).thenReturn(false);
-        when(userRepository.existsByEmail("khai@example.com")).thenReturn(false);
-        when(passwordEncoder.encode("plainPassword")).thenReturn("hashedPassword");
-        when(jwtUtil.generateToken("khai")).thenReturn("fake-jwt-token");
+        when(userRepository.existsByUsername("khai"))
+                .thenReturn(false);
+
+        when(userRepository.existsByEmail("khai@example.com"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("plainPassword"))
+                .thenReturn("hashedPassword");
+
+        when(jwtUtil.generateToken("khai"))
+                .thenReturn("fake-jwt-token");
 
         AuthResponse response = authService.register(request);
 
+        // Check response
+        assertNotNull(response);
         assertEquals("fake-jwt-token", response.getToken());
         assertEquals("khai", response.getUsername());
         assertEquals(Role.USER.name(), response.getRole());
 
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
+        // Check repository.save()
+        ArgumentCaptor<User> userCaptor =
+                ArgumentCaptor.forClass(User.class);
+
+        verify(userRepository)
+                .save(userCaptor.capture());
 
         User savedUser = userCaptor.getValue();
+
         assertEquals("khai", savedUser.getUsername());
         assertEquals("khai@example.com", savedUser.getEmail());
         assertEquals("hashedPassword", savedUser.getPasswordHash());
         assertEquals(Role.USER, savedUser.getRole());
+
+        // Password must be encoded
+        verify(passwordEncoder)
+                .encode("plainPassword");
+
+        // JWT must be generated
+        verify(jwtUtil)
+                .generateToken("khai");
     }
 
     @Test
     void register_shouldThrow_whenUsernameAlreadyExists() {
+
         RegisterRequest request = new RegisterRequest();
         request.setUsername("khai");
         request.setEmail("khai@example.com");
         request.setPassword("plainPassword");
 
-        when(userRepository.existsByUsername("khai")).thenReturn(true);
+        when(userRepository.existsByUsername("khai"))
+                .thenReturn(true);
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
-                () -> authService.register(request)
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> authService.register(request)
+                );
+
+        assertTrue(
+                ex.getMessage().contains("Username")
         );
 
-        assertTrue(ex.getMessage().contains("Username"));
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never())
+                .save(any());
+
+        verify(passwordEncoder, never())
+                .encode(any());
+
+        verify(jwtUtil, never())
+                .generateToken(any());
     }
 
     @Test
     void register_shouldThrow_whenEmailAlreadyExists() {
+
         RegisterRequest request = new RegisterRequest();
         request.setUsername("khai");
         request.setEmail("khai@example.com");
         request.setPassword("plainPassword");
 
-        when(userRepository.existsByUsername("khai")).thenReturn(false);
-        when(userRepository.existsByEmail("khai@example.com")).thenReturn(true);
+        when(userRepository.existsByUsername("khai"))
+                .thenReturn(false);
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
-                () -> authService.register(request)
+        when(userRepository.existsByEmail("khai@example.com"))
+                .thenReturn(true);
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> authService.register(request)
+                );
+
+        assertTrue(
+                ex.getMessage().contains("Email")
         );
 
-        assertTrue(ex.getMessage().contains("Email"));
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never())
+                .save(any());
+
+        verify(passwordEncoder, never())
+                .encode(any());
+
+        verify(jwtUtil, never())
+                .generateToken(any());
     }
+
+    // =========================================================
+    // LOGIN
+    // =========================================================
 
     @Test
     void login_shouldReturnToken_whenCredentialsAreValid() {
+
         LoginRequest request = new LoginRequest();
         request.setUsername("khai");
         request.setPassword("plainPassword");
@@ -128,51 +195,101 @@ class AuthServiceTest {
                 .role(Role.USER)
                 .build();
 
-        when(userRepository.findByUsername("khai")).thenReturn(Optional.of(user));
-        when(jwtUtil.generateToken("khai")).thenReturn("fake-jwt-token");
+        when(userRepository.findByUsername("khai"))
+                .thenReturn(Optional.of(user));
 
-        AuthResponse response = authService.login(request);
+        when(jwtUtil.generateToken("khai"))
+                .thenReturn("fake-jwt-token");
 
-        assertEquals("fake-jwt-token", response.getToken());
-        assertEquals("khai", response.getUsername());
-        assertEquals(Role.USER.name(), response.getRole());
+        AuthResponse response =
+                authService.login(request);
 
-        verify(authenticationManager).authenticate(any());
+        // Check response
+        assertNotNull(response);
+        assertEquals(
+                "fake-jwt-token",
+                response.getToken()
+        );
+
+        assertEquals(
+                "khai",
+                response.getUsername()
+        );
+
+        assertEquals(
+                Role.USER.name(),
+                response.getRole()
+        );
+
+        // Authentication must happen
+        verify(authenticationManager)
+                .authenticate(any());
+
+        // User must be loaded
+        verify(userRepository)
+                .findByUsername("khai");
+
+        // JWT must be generated
+        verify(jwtUtil)
+                .generateToken("khai");
     }
 
     @Test
     void login_shouldPropagateException_whenCredentialsAreInvalid() {
+
         LoginRequest request = new LoginRequest();
         request.setUsername("khai");
         request.setPassword("wrongPassword");
 
-        doThrow(new BadCredentialsException("Bad credentials"))
-                .when(authenticationManager).authenticate(any());
+        doThrow(
+                new BadCredentialsException("Bad credentials")
+        )
+                .when(authenticationManager)
+                .authenticate(any());
 
         assertThrows(
                 BadCredentialsException.class,
                 () -> authService.login(request)
         );
 
-        verify(userRepository, never()).findByUsername(any());
-        verify(jwtUtil, never()).generateToken(any());
+        // Authentication failed,
+        // so DB lookup must not happen
+        verify(userRepository, never())
+                .findByUsername(any());
+
+        // JWT must not be generated
+        verify(jwtUtil, never())
+                .generateToken(any());
     }
 
     @Test
     void login_shouldThrow_whenAuthenticatedButUserMissingFromDb() {
+
         LoginRequest request = new LoginRequest();
         request.setUsername("ghost");
         request.setPassword("plainPassword");
 
-        when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
+        when(userRepository.findByUsername("ghost"))
+                .thenReturn(Optional.empty());
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> authService.login(request)
         );
 
-        verify(jwtUtil, never()).generateToken(any());
+        verify(authenticationManager)
+                .authenticate(any());
+
+        verify(userRepository)
+                .findByUsername("ghost");
+
+        verify(jwtUtil, never())
+                .generateToken(any());
     }
+
+    // =========================================================
+    // FORGOT PASSWORD
+    // =========================================================
 
     @Test
     void forgotPassword_shouldCreateResetToken_whenEmailExists() {
@@ -185,10 +302,16 @@ class AuthServiceTest {
                 .role(Role.USER)
                 .build();
 
-        when(userRepository.findByEmail("lock_test_user@example.com"))
+        when(
+                userRepository.findByEmail(
+                        "lock_test_user@example.com"
+                )
+        )
                 .thenReturn(Optional.of(user));
 
-        when(passwordResetTokenService.createToken(user))
+        when(
+                passwordResetTokenService.createToken(user)
+        )
                 .thenReturn("fake-reset-token");
 
         authService.forgotPassword(
@@ -196,33 +319,31 @@ class AuthServiceTest {
         );
 
         verify(userRepository)
-                .findByEmail("lock_test_user@example.com");
+                .findByEmail(
+                        "lock_test_user@example.com"
+                );
 
         verify(passwordResetTokenService)
                 .createToken(user);
     }
 
     @Test
-    void forgotPassword_shouldThrow_whenEmailDoesNotExist() {
+    void forgotPassword_shouldNotThrow_whenEmailDoesNotExist_toPreventUserEnumeration() {
 
         when(userRepository.findByEmail("notfound@example.com"))
                 .thenReturn(Optional.empty());
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
-                () -> authService.forgotPassword(
-                        "notfound@example.com"
-                )
-        );
-
-        assertEquals(
-                "Email không tồn tại",
-                ex.getMessage()
-        );
+        // Khong duoc nem loi rieng cho truong hop email khong ton tai, neu khong
+        // ke tan cong co the do email nao da dang ky (user enumeration).
+        assertDoesNotThrow(() -> authService.forgotPassword("notfound@example.com"));
 
         verify(passwordResetTokenService, never())
                 .createToken(any());
     }
+
+    // =========================================================
+    // RESET PASSWORD
+    // =========================================================
 
     @Test
     void resetPassword_shouldUpdatePasswordAndConsumeToken_whenTokenIsValid() {
@@ -241,35 +362,45 @@ class AuthServiceTest {
                         .user(user)
                         .tokenHash("fake-hash")
                         .expiresAt(
-                                java.time.LocalDateTime.now()
+                                LocalDateTime.now()
                                         .plusMinutes(20)
                         )
                         .build();
 
-        when(passwordResetTokenService.validateToken(
-                "valid-reset-token"
-        )).thenReturn(resetToken);
+        when(
+                passwordResetTokenService.validateToken(
+                        "valid-reset-token"
+                )
+        )
+                .thenReturn(resetToken);
 
-        when(passwordEncoder.encode(
-                "NewPassword@123"
-        )).thenReturn("new-hashed-password");
+        when(
+                passwordEncoder.encode(
+                        "NewPassword@123"
+                )
+        )
+                .thenReturn("new-hashed-password");
 
         authService.resetPassword(
                 "valid-reset-token",
                 "NewPassword@123"
         );
 
+        // Password must be changed
         assertEquals(
                 "new-hashed-password",
                 user.getPasswordHash()
         );
 
+        // Password must be encoded
         verify(passwordEncoder)
                 .encode("NewPassword@123");
 
+        // User must be saved
         verify(userRepository)
                 .save(user);
 
+        // Reset token must be consumed
         verify(passwordResetTokenService)
                 .consumeToken(resetToken);
     }
@@ -277,13 +408,16 @@ class AuthServiceTest {
     @Test
     void resetPassword_shouldNotUpdatePassword_whenTokenIsInvalid() {
 
-        when(passwordResetTokenService.validateToken(
-                "invalid-token"
-        )).thenThrow(
-                new IllegalArgumentException(
-                        "Token không hợp lệ"
+        when(
+                passwordResetTokenService.validateToken(
+                        "invalid-token"
                 )
-        );
+        )
+                .thenThrow(
+                        new IllegalArgumentException(
+                                "Token không hợp lệ"
+                        )
+                );
 
         IllegalArgumentException ex =
                 assertThrows(
@@ -299,12 +433,78 @@ class AuthServiceTest {
                 ex.getMessage()
         );
 
+        // No password encoding
         verify(passwordEncoder, never())
                 .encode(any());
 
+        // No database update
         verify(userRepository, never())
                 .save(any());
 
+        // Token must not be consumed
+        verify(passwordResetTokenService, never())
+                .consumeToken(any());
+    }
+
+    @Test
+    void resetPassword_shouldRejectUsedToken() {
+
+        User user = User.builder()
+                .id(8L)
+                .username("lock_test_user")
+                .email("lock_test_user@example.com")
+                .passwordHash("old-hash")
+                .role(Role.USER)
+                .build();
+
+        PasswordResetToken resetToken =
+                PasswordResetToken.builder()
+                        .id(2L)
+                        .user(user)
+                        .tokenHash("fake-hash")
+                        .expiresAt(
+                                LocalDateTime.now()
+                                        .plusMinutes(20)
+                        )
+                        .usedAt(
+                                LocalDateTime.now()
+                        )
+                        .build();
+
+        when(
+                passwordResetTokenService.validateToken(
+                        "used-token"
+                )
+        )
+                .thenThrow(
+                        new IllegalArgumentException(
+                                "Token đã được sử dụng"
+                        )
+                );
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> authService.resetPassword(
+                                "used-token",
+                                "NewPassword@123"
+                        )
+                );
+
+        assertEquals(
+                "Token đã được sử dụng",
+                ex.getMessage()
+        );
+
+        // Password must not be encoded
+        verify(passwordEncoder, never())
+                .encode(any());
+
+        // User must not be updated
+        verify(userRepository, never())
+                .save(any());
+
+        // Token must not be consumed again
         verify(passwordResetTokenService, never())
                 .consumeToken(any());
     }

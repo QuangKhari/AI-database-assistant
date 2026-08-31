@@ -91,15 +91,29 @@ public class AdminService {
     }
 
     @Transactional
-    public AdminUserResponse updateRole(Long userId, String roleValue) {
+    public AdminUserResponse updateRole(
+            Long userId,
+            String roleValue,
+            String currentAdminUsername) {
+
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Không tìm thấy user"));
+
+        if (user.getUsername().equals(currentAdminUsername)) {
+            throw new IllegalArgumentException(
+                    "Không thể thay đổi role của chính mình"
+            );
+        }
 
         Role newRole;
+
         try {
             newRole = Role.valueOf(roleValue.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Role không hợp lệ: " + roleValue);
+            throw new IllegalArgumentException(
+                    "Role không hợp lệ: " + roleValue
+            );
         }
 
         user.setRole(newRole);
