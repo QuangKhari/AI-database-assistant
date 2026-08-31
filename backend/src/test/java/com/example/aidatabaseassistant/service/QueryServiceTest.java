@@ -16,6 +16,7 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.Message;
 import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.ConversationRepository;
@@ -219,7 +220,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
         when(rateLimitService.tryConsume("owner")).thenReturn(false);
 
-        assertThrows(IllegalStateException.class, () -> queryService.processQuery("owner", request));
+        assertThrows(RateLimitExceededException.class,
+                () -> queryService.processQuery("owner", request));
 
         // Bi chan ngay tu dau, tuyet doi khong duoc dong cham DB hay goi AI.
         verifyNoInteractions(userRepository, connectionRepository, schemaLoaderService,

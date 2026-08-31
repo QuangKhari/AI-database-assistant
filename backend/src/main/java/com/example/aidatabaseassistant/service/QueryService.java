@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 
 import java.util.List;
 
@@ -146,7 +147,7 @@ public class QueryService {
 
         if (!rateLimitService.tryConsume(username)) {
 
-            throw new IllegalStateException(
+            throw new RateLimitExceededException(
                     "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
             );
         }
