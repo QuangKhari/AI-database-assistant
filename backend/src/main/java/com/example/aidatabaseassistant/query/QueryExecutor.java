@@ -82,7 +82,7 @@ public class QueryExecutor {
 
         } catch (Exception e) {
             long executionTime = System.currentTimeMillis() - start;
-            return new QueryResultDto(List.of(), List.of(), executionTime, 0, e.getMessage());
+            return new QueryResultDto(List.of(), List.of(), executionTime, 0, buildSafeDatabaseErrorMessage(e));
         }
     }
 
@@ -184,5 +184,22 @@ public class QueryExecutor {
         }
 
         return result;
+    }
+
+    private String buildSafeDatabaseErrorMessage(Exception e) {
+
+        if (e instanceof java.sql.SQLException) {
+
+            String sqlState = ((SQLException) e).getSQLState();
+
+            if (sqlState != null && sqlState.startsWith("08")) {
+                return "Không thể kết nối tới cơ sở dữ liệu. "
+                        + "Vui lòng kiểm tra host, port hoặc trạng thái của database.";
+            }
+
+            return "Không thể thực hiện truy vấn trên cơ sở dữ liệu.";
+        }
+
+        return "Không thể thực hiện truy vấn.";
     }
 }
