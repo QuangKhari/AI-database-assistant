@@ -9,6 +9,8 @@ import java.util.List;
 public interface DatabaseConnectionRepository extends JpaRepository<DatabaseConnection, Long> {
     List<DatabaseConnection> findByUserId(Long userId);
 
+    long countByUserId(Long userId);
+
     @Query("SELECT c FROM DatabaseConnection c JOIN FETCH c.user")
     List<DatabaseConnection> findAllWithUser();
 }

@@ -189,6 +189,113 @@ class ConnectionServiceTest {
     }
 
     @Test
+    void saveConnection_shouldValidateHost_forSsrf() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("My DB");
+        request.setDbType("mysql");
+        request.setHost("169.254.169.254");
+        request.setPort(3306);
+        request.setDatabaseName("shop");
+        request.setUsername("root");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        doThrow(new IllegalArgumentException("Host không được phép"))
+                .when(ssrfProtection).validateHost("169.254.169.254");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.saveConnection("owner", request)
+        );
+
+        verify(connectionRepository, never()).save(any());
+    }
+
+    @Test
+    void saveConnection_shouldThrow_whenMaxConnectionsPerUserReached() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("4th DB");
+        request.setDbType("mysql");
+        request.setHost("db.example.com");
+        request.setPort(3306);
+        request.setDatabaseName("shop");
+        request.setUsername("root");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.countByUserId(1L)).thenReturn(3L);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.saveConnection("owner", request)
+        );
+
+        verify(connectionRepository, never()).save(any());
+    }
+
+    @Test
+    void updateConnection_shouldValidateHost_forSsrf() {
+
+        DatabaseConnection connection = sampleConnection();
+
+        ConnectionUpdateRequest request = new ConnectionUpdateRequest();
+        request.setName("Renamed DB");
+        request.setHost("127.0.0.1");
+        request.setPort(3307);
+        request.setDatabaseName("shop2");
+        request.setUsername("root2");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        doThrow(new IllegalArgumentException("Host không được phép"))
+                .when(ssrfProtection).validateHost("127.0.0.1");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.updateConnection("owner", 10L, request)
+        );
+
+        verify(connectionRepository, never()).save(any());
+    }
+
+    @Test
+    void updateConnection_shouldValidateHost_afterOwnershipCheck() {
+        // IDOR phai duoc uu tien kiem tra TRUOC validate host: neu khong
+        // phai chu so huu thi khong duoc phep biet host co bi SSRF chan
+        // hay khong (tranh ro ri thong tin qua thong bao loi khac nhau).
+
+        DatabaseConnection connection = sampleConnection();
+
+        ConnectionUpdateRequest request = new ConnectionUpdateRequest();
+        request.setName("Hacked");
+        request.setHost("evil.com");
+        request.setPort(1);
+        request.setDatabaseName("x");
+        request.setUsername("x");
+
+        when(userRepository.findByUsername("intruder"))
+                .thenReturn(Optional.of(otherUser));
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.updateConnection("intruder", 10L, request)
+        );
+
+        verify(ssrfProtection, never()).validateHost(any());
+    }
+
+    @Test
     void updateConnection_shouldReEncryptPassword_whenNewPasswordProvided() {
 
         DatabaseConnection connection = sampleConnection();

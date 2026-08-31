@@ -132,6 +132,73 @@ class AdminServiceTest {
         );
     }
 
+    // ===== searchUsers =====
+
+    @Test
+    void searchUsers_shouldReturnAllUsers_whenKeywordBlank() {
+
+        when(userRepository.findAll()).thenReturn(List.of(normalUser));
+
+        List<AdminUserResponse> result = adminService.searchUsers("   ");
+
+        assertEquals(1, result.size());
+        verify(userRepository, never())
+                .findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(any(), any());
+    }
+
+    @Test
+    void searchUsers_shouldDelegateToRepository_whenKeywordProvided() {
+
+        when(userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase("khai", "khai"))
+                .thenReturn(List.of(normalUser));
+
+        List<AdminUserResponse> result = adminService.searchUsers("khai");
+
+        assertEquals(1, result.size());
+        assertEquals("khai", result.get(0).getUsername());
+    }
+
+    // ===== lockUser / unlockUser =====
+
+    @Test
+    void lockUser_shouldSetLockedTrue() {
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+
+        AdminUserResponse response = adminService.lockUser(2L, "admin-account");
+
+        assertTrue(response.isLocked());
+        assertTrue(normalUser.isLocked());
+        verify(userRepository).save(normalUser);
+    }
+
+    @Test
+    void lockUser_shouldThrow_whenAdminTriesToLockSelf() {
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> adminService.lockUser(2L, "khai")
+        );
+
+        assertTrue(ex.getMessage().contains("tự khóa"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void unlockUser_shouldSetLockedFalse() {
+
+        normalUser.setLocked(true);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
+
+        AdminUserResponse response = adminService.unlockUser(2L);
+
+        assertFalse(response.isLocked());
+        assertFalse(normalUser.isLocked());
+        verify(userRepository).save(normalUser);
+    }
+
     // ===== getAllConnections =====
 
     @Test

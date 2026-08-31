@@ -9,12 +9,14 @@ import com.example.aidatabaseassistant.entity.Role;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -70,12 +72,14 @@ public class AuthService {
         String rawToken =
                 passwordResetTokenService.createToken(user);
 
-        System.out.println("=================================");
-        System.out.println("PASSWORD RESET TOKEN");
-        System.out.println("User: " + user.getUsername());
-        System.out.println("Email: " + user.getEmail());
-        System.out.println("Token: " + rawToken);
-        System.out.println("=================================");
+        // TODO(backend): chua co email service that su - day la stub tam thoi
+        // de demo/test luong reset password khi chua tich hop SMTP/email
+        // provider. Log o muc INFO (khong phai print ra console qua
+        // System.out) de nhat quan voi phan con lai cua codebase da chuyen
+        // sang SLF4J, va de co the tat log nay trong production bang cach
+        // ha logging.level xuong WARN neu can.
+        log.info("Password reset token generated for user='{}' email='{}' token='{}'",
+                user.getUsername(), user.getEmail(), rawToken);
     }
 
     @Transactional
