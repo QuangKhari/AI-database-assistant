@@ -10,8 +10,11 @@ import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.util.concurrent.Executor;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import java.io.IOException;
 
 import java.util.List;
 
@@ -41,6 +44,9 @@ public class QueryService {
     private final SchemaLoaderService schemaLoaderService;
     private final DataInsightService dataInsightService;
     private final SchemaRetrievalService schemaRetrievalService;
+    private final Executor sseTaskExecutor; // inject qua constructor
+
+    private static final int MAX_HISTORY_MESSAGES = 6; // 3 cặp hỏi-đáp gần nhất
 
     public PreviewResponse previewQuery(
             String username,
@@ -140,121 +146,64 @@ public class QueryService {
         }
     }
 
-    public QueryResponse processQuery(
-            String username,
-            QueryRequest request
-    ) {
+    // Method public CŨ — giữ nguyên signature cho 177 test hiện có
+    public QueryResponse processQuery(String username, QueryRequest request) {
+        return processQuery(username, request, QueryProgressListener.NOOP);
+    }
+
+    public QueryResponse processQuery(String username, QueryRequest request, QueryProgressListener listener) {
 
         if (!rateLimitService.tryConsume(username)) {
-
-            throw new RateLimitExceededException(
-                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
-            );
+            throw new RateLimitExceededException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
         }
 
-        User user =
-                userRepository.findByUsername(username)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy user"
-                                )
-                        );
+        listener.onProgress("STATUS", "Đang xác thực người dùng và kết nối...");
 
-        DatabaseConnection connection =
-                connectionRepository.findById(
-                                request.getDatabaseConnectionId()
-                        )
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy connection"
-                                )
-                        );
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
 
         if (!connection.getUser().getId().equals(user.getId())) {
-
-            throw new IllegalArgumentException(
-                    "Bạn không có quyền truy cập connection này"
-            );
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
         }
 
-        /*
-         * Load FULL schema.
-         *
-         * Đây vẫn là schema đầy đủ của database thật.
-         */
-        DatabaseSchema fullSchema =
-                schemaLoaderService.loadCompleteSchema(
-                        connection.getId()
-                );
+        listener.onProgress("STATUS", "Đang tải schema database...");
 
-        /*
-         * Schema RAG:
-         *
-         * fullSchema
-         *     ↓
-         * SchemaRetrievalService
-         *     ↓
-         * filteredSchema
-         *
-         * filteredSchema chỉ chứa các bảng liên quan
-         * để đưa vào AI prompt.
-         */
-        DatabaseSchema filteredSchema =
-                schemaRetrievalService.retrieveRelevantSchema(
-                        request.getQuestion(),
-                        fullSchema
-                );
+        DatabaseSchema fullSchema = schemaLoaderService.loadCompleteSchema(connection.getId());
+        DatabaseSchema filteredSchema = schemaRetrievalService.retrieveRelevantSchema(request.getQuestion(), fullSchema);
 
-        Conversation conversation =
-                getOrCreateConversation(
-                        user,
-                        connection,
-                        request
-                );
+        Conversation conversation = getOrCreateConversation(user, connection, request);
+        String conversationHistory =
+                request.getConversationId() != null
+                        ? buildConversationHistory(conversation.getId())
+                        : null;
 
-        Message userMessage =
-                Message.builder()
-                        .conversation(conversation)
-                        .role("user")
-                        .content(request.getQuestion())
-                        .build();
-
+        Message userMessage = Message.builder()
+                .conversation(conversation).role("user").content(request.getQuestion()).build();
         messageRepository.save(userMessage);
 
-        String rawPassword =
-                encryptionUtil.decrypt(
-                        connection.getEncryptedPassword()
-                );
+        String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
-        /*
-         * SQLCorrectionService :
-         *
-         * filteredSchema:
-         *     dùng cho AI generate/self-correct
-         *
-         * fullSchema:
-         *     dùng cho SQL validation
-         */
+        listener.onProgress("STATUS", "Đang sinh câu lệnh SQL từ AI và thực thi (tự sửa lỗi nếu cần)...");
+
+        // QUAN TRỌNG: chọn đúng overload theo việc có/không có lịch sử.
+        // Nếu luôn gọi bản 6-arg (kể cả history=null) thì các stub 5-arg
+        // trong QueryServiceTest hiện có sẽ KHÔNG match -> vỡ hàng loạt test cũ.
         SQLCorrectionService.AttemptResult result =
-                sqlCorrectionService.run(
-                        request.getQuestion(),
-                        filteredSchema,
-                        fullSchema,
-                        connection,
-                        rawPassword
-                );
+                (conversationHistory == null)
+                        ? sqlCorrectionService.run(request.getQuestion(), filteredSchema, fullSchema, connection, rawPassword)
+                        : sqlCorrectionService.run(request.getQuestion(), filteredSchema, fullSchema, connection, rawPassword, conversationHistory);
 
-        Message assistantMessage =
-                Message.builder()
-                        .conversation(conversation)
-                        .role("assistant")
-                        .content(
-                                result.isSuccess()
-                                        ? "Đã trả lời thành công"
-                                        : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
-                        )
-                        .generatedSql(result.getSql())
-                        .build();
+        Message assistantMessage = Message.builder()
+                .conversation(conversation)
+                .role("assistant")
+                .content(result.isSuccess()
+                                ? "Đã trả lời thành công"
+                                : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
+                )
+                .generatedSql(result.getSql()).build();
 
         messageRepository.save(assistantMessage);
 
@@ -264,74 +213,32 @@ public class QueryService {
 
             var log = logs.get(i);
 
-            QueryLog queryLog =
-                    QueryLog.builder()
-                            .message(assistantMessage)
-                            .attemptNumber(i + 1)
-                            .sqlText(log.getSql())
-                            .status(
-                                    log.isSuccess()
-                                            ? "SUCCESS"
-                                            : "FAILED"
-                            )
-                            .rowCount(
-                                    log.getResult() != null
-                                            ? log.getResult().getRowCount()
-                                            : null
-                            )
-                            .executionTimeMs(
-                                    log.getResult() != null
-                                            ? (int) log.getResult()
-                                            .getExecutionTimeMs()
-                                            : null
-                            )
-                            .errorMessage(
-                                    log.getResult() != null
-                                            ? log.getResult().getError()
-                                            : null
-                            )
-                            .question(request.getQuestion())
-                            .modelUsed(
-                                    extractModelName(modelUrl)
-                            )
-                            .retryCount(logs.size())
-                            .build();
+            QueryLog queryLog = QueryLog.builder()
+                    .message(assistantMessage)
+                    .attemptNumber(i + 1)
+                    .sqlText(log.getSql())
+                    .status(log.isSuccess() ? "SUCCESS" : "FAILED")
+                    .rowCount(log.getResult() != null ? log.getResult().getRowCount() : null)
+                    .executionTimeMs(log.getResult() != null ? (int) log.getResult().getExecutionTimeMs() : null)
+                    .errorMessage(log.getResult() != null ? log.getResult().getError() : null)
+                    .question(request.getQuestion())
+                    .modelUsed(extractModelName(modelUrl))
+                    .retryCount(logs.size())
+                    .build();
 
             queryLogRepository.save(queryLog);
         }
 
-        String summary =
-                result.isSuccess()
-                        ? safeSummarize(
-                        request.getQuestion(),
-                        result.getFinalResult()
-                )
-                        : null;
+        listener.onProgress("STATUS", "Đang tạo tóm tắt và gợi ý biểu đồ...");
 
-        ChartSuggestionResponse chartSuggestion =
-                result.isSuccess()
-                        ? buildChartSuggestion(
-                        result.getFinalResult()
-                )
-                        : null;
+        String summary = result.isSuccess() ? safeSummarize(request.getQuestion(), result.getFinalResult()) : null;
+        ChartSuggestionResponse chartSuggestion = result.isSuccess() ? buildChartSuggestion(result.getFinalResult()) : null;
+        DataInsightResponse dataInsight = result.isSuccess() ? buildDataInsight(result.getFinalResult()) : null;
 
-        DataInsightResponse dataInsight =
-                result.isSuccess()
-                        ? buildDataInsight(
-                        result.getFinalResult()
-                )
-                        : null;
+        listener.onProgress("STATUS", "Hoàn tất.");
 
-        return new QueryResponse(
-                conversation.getId(),
-                assistantMessage.getId(),
-                result.getSql(),
-                result.getFinalResult(),
-                summary,
-                logs.size(),
-                chartSuggestion,
-                dataInsight
-        );
+        return new QueryResponse(conversation.getId(), assistantMessage.getId(), result.getSql(),
+                result.getFinalResult(), summary, logs.size(), chartSuggestion, dataInsight);
     }
 
     private DataInsightResponse buildDataInsight(
@@ -355,16 +262,12 @@ public class QueryService {
         }
     }
 
-    private ChartSuggestionResponse buildChartSuggestion(
-            QueryResultDto finalResult
-    ) {
-
+    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
         try {
 
             return chartSuggestionService.suggest(
                     finalResult.getColumns(),
-                    finalResult.getRows()
-            );
+                    finalResult.getRows());
 
         } catch (Exception e) {
 
@@ -497,5 +400,83 @@ public class QueryService {
                 start,
                 end
         );
+    }
+
+    /**
+     * Lấy N message gần nhất của conversation, format thành text ngắn gọn
+     * để nhúng vào prompt. Chỉ áp dụng khi conversation ĐÃ tồn tại từ trước
+     * (request.getConversationId() != null) — conversation mới thì không
+     * có gì để lấy, tránh query DB thừa.
+     *
+     * Nếu lỗi (ví dụ DB tạm thời chậm), trả về null thay vì ném exception —
+     * đúng nguyên tắc kiến trúc: tính năng AI phụ trợ không được làm gãy
+     * luồng /execute chính.
+     */
+    private String buildConversationHistory(Long conversationId) {
+
+        try {
+            List<Message> allMessages =
+                    messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+
+            if (allMessages.isEmpty()) {
+                return null;
+            }
+
+            List<Message> recent =
+                    allMessages.size() > MAX_HISTORY_MESSAGES
+                            ? allMessages.subList(allMessages.size() - MAX_HISTORY_MESSAGES, allMessages.size())
+                            : allMessages;
+
+            StringBuilder sb = new StringBuilder();
+
+            for (Message m : recent) {
+                if ("user".equals(m.getRole())) {
+                    sb.append("- Người dùng hỏi: ").append(m.getContent()).append("\n");
+                } else {
+                    // assistant message: nội dung chỉ là "Đã trả lời thành công",
+                    // thứ có giá trị thật cho ngữ cảnh là SQL đã sinh ra
+                    if (m.getGeneratedSql() != null && !m.getGeneratedSql().isBlank()) {
+                        sb.append("  → SQL đã dùng: ").append(m.getGeneratedSql()).append("\n");
+                    }
+                }
+            }
+
+            return sb.toString();
+
+        } catch (Exception e) {
+            log.warn("Không lấy được lịch sử hội thoại cho conversation {}: {}", conversationId, e.toString());
+            return null;
+        }
+    }
+
+    public SseEmitter processQueryStreaming(String username, QueryRequest request) {
+
+        SseEmitter emitter = new SseEmitter(60_000L); // timeout 60s, tránh treo connection vô hạn
+
+        sseTaskExecutor.execute(() -> {
+            try {
+                QueryProgressListener listener = (stage, message) -> {
+                    try {
+                        emitter.send(SseEmitter.event().name(stage).data(message));
+                    } catch (IOException ignored) {
+                        // client đã đóng kết nối (đóng tab, mất mạng...) — bỏ qua, không throw
+                    }
+                };
+
+                QueryResponse response = processQuery(username, request, listener);
+
+                emitter.send(SseEmitter.event().name("result").data(response));
+                emitter.complete();
+
+            } catch (Exception e) {
+                try {
+                    emitter.send(SseEmitter.event().name("error")
+                            .data(e.getMessage() != null ? e.getMessage() : "Lỗi không xác định"));
+                } catch (IOException ignored) { }
+                emitter.completeWithError(e);
+            }
+        });
+
+        return emitter;
     }
 }

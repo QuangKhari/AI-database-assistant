@@ -101,15 +101,79 @@ public class PromptBuilder {
         return sb.toString();
     }
 
-    public String buildCorrectionPrompt(String previousSql, String errorMessage, DatabaseSchema schema) {
+    public String buildCorrectionPrompt(
+            String previousSql,
+            String errorMessage,
+            DatabaseSchema schema
+    ) {
         StringBuilder sb = new StringBuilder();
+
         sb.append("Câu SQL sau đây chạy bị lỗi trên MySQL. Hãy sửa lại cho đúng dựa vào schema. ");
         sb.append("Chỉ trả về câu SQL đã sửa, không giải thích, không dùng markdown code block.\n\n");
+
         sb.append("Schema:\n");
         appendSchema(sb, schema);
-        sb.append("\nSQL cũ:\n").append(previousSql).append("\n");
-        sb.append("Lỗi:\n").append(errorMessage).append("\n");
+
+        sb.append("\nSQL cũ:\n")
+                .append(previousSql)
+                .append("\n");
+
+        sb.append("Lỗi:\n")
+                .append(errorMessage)
+                .append("\n");
+
         sb.append("SQL đã sửa:");
+
+        return sb.toString();
+    }
+
+    public String buildCorrectionPrompt(
+            String previousSql,
+            String errorMessage,
+            DatabaseSchema schema,
+            String conversationHistory
+    ) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("""
+            Câu SQL sau đây chạy bị lỗi trên MySQL.
+            Hãy sửa lại cho đúng dựa vào schema và lịch sử hội thoại.
+
+            QUY TẮC BẮT BUỘC:
+            1. Chỉ trả về DUY NHẤT một câu SQL SELECT đã sửa.
+            2. Không giải thích.
+            3. Không dùng markdown hoặc ```sql.
+            4. Không dùng INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE,
+               CREATE, RENAME, USE.
+            5. Dùng đúng tên bảng và cột trong schema.
+            6. Chỉ sửa SQL dựa trên lỗi thực tế và thông tin được cung cấp.
+            7. Lịch sử hội thoại chỉ dùng để hiểu ngữ cảnh của câu hỏi hiện tại,
+               không được lặp lại câu SQL cũ nếu không cần thiết.
+
+            """);
+
+        if (conversationHistory != null && !conversationHistory.isBlank()) {
+            sb.append("""
+                LỊCH SỬ HỘI THOẠI GẦN NHẤT:
+                """);
+            sb.append(conversationHistory);
+
+            sb.append("""
+
+                """);
+        }
+
+        sb.append("SCHEMA:\n");
+        appendSchema(sb, schema);
+
+        sb.append("\nSQL CŨ:\n");
+        sb.append(previousSql);
+
+        sb.append("\n\nLỖI:\n");
+        sb.append(errorMessage);
+
+        sb.append("\n\nSQL ĐÃ SỬA:");
+
         return sb.toString();
     }
 
@@ -371,6 +435,68 @@ public class PromptBuilder {
     4. CHỈ trả về một JSON array of string, KHÔNG markdown, KHÔNG giải thích thêm.
        Ví dụ định dạng đúng: ["Có bao nhiêu khách hàng?", "Top 5 sản phẩm bán chạy nhất là gì?"]
     """.formatted(maxQuestions));
+
+        return sb.toString();
+    }
+
+    // ===== THÊM MỚI: overload có lịch sử hội thoại =====
+    public String buildGenerationPrompt(String question, DatabaseSchema schema, String conversationHistory) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("""
+    Bạn là chuyên gia MySQL và Text-to-SQL.
+
+    Nhiệm vụ:
+    Chuyển câu hỏi tiếng Việt thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
+    """);
+
+        // Chỉ chèn block lịch sử nếu thực sự có (tránh phình prompt vô ích
+        // ở lượt hỏi đầu tiên của conversation).
+        if (conversationHistory != null && !conversationHistory.isBlank()) {
+            sb.append("""
+
+        LỊCH SỬ HỘI THOẠI GẦN NHẤT (để hiểu ngữ cảnh câu hỏi nối tiếp,
+        ví dụ "so sánh nó với tháng 2", "còn năm ngoái thì sao"):
+        """);
+            sb.append(conversationHistory);
+            sb.append("""
+
+        LƯU Ý: câu hỏi hiện tại có thể tham chiếu ngầm tới câu hỏi/SQL
+        phía trên (đại từ "nó", "đó", "cái đó"...). Hãy suy luận đúng
+        ý định dựa trên lịch sử, nhưng CHỈ generate SQL cho câu hỏi
+        HIỆN TẠI, không lặp lại SQL cũ.
+        """);
+        }
+
+        sb.append("""
+
+    QUY TẮC BẮT BUỘC:
+    1. Chỉ trả về SQL, không giải thích.
+    2. Không dùng markdown hoặc ```sql.
+    3. Chỉ sử dụng SELECT.
+    4. Tuyệt đối KHÔNG dùng INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, RENAME, USE.
+    5. KHÔNG dùng SELECT * nếu câu hỏi không yêu cầu toàn bộ thông tin.
+    6. Chỉ SELECT đúng những cột được nhắc tới trong câu hỏi.
+    7. Nếu hỏi:
+       - "tên khách hàng" -> chỉ lấy full_name
+       - "tên sản phẩm" -> chỉ lấy name
+       - "tên và giá" -> lấy name, price
+       - "5 khách gần đây" -> full_name, created_at
+       - "bao nhiêu" -> dùng COUNT(*) AS total
+       - "tổng doanh thu" -> SUM(...) AS total
+    8. Dùng đúng tên bảng và cột trong schema.
+    9. Nếu cần JOIN thì dùng khóa ngoại trong schema.
+    10. Luôn ưu tiên SQL ngắn gọn và chính xác.
+    11. Nếu câu hỏi hỏi "đơn hàng nào", "khách hàng nào", "sản phẩm nào" mà yêu cầu toàn bộ thông tin thì phải trả về SELECT *.
+    12. Chỉ chọn một vài cột khi câu hỏi nêu rõ các cột cần lấy (ví dụ: tên, giá, email...).
+    13. KHÔNG được tự ý dùng DISTINCT. Chỉ dùng DISTINCT khi câu hỏi có từ: không trùng, duy nhất, distinct.
+    14. Không dịch giá trị enum sang tiếng Việt.
+    """);
+
+        sb.append("SCHEMA:\n");
+        appendSchema(sb, schema);
+
+        sb.append("\nCÂU HỎI HIỆN TẠI: ").append(question).append("\nSQL:");
 
         return sb.toString();
     }

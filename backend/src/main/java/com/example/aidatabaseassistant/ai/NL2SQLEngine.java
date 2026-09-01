@@ -80,22 +80,63 @@ public class NL2SQLEngine {
         );
     }
 
+    public String generateSQL(String question, DatabaseSchema schema, String conversationHistory) {
+
+        if (conversationHistory == null || conversationHistory.isBlank()) {
+            return generateSQL(question, schema); // fallback đúng path cũ, không tạo prompt mới
+        }
+
+        if (containsWriteOperation(question)) {
+            return """
+                SELECT 'Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database' AS message
+                """.trim();
+        }
+
+        String prompt = promptBuilder.buildGenerationPrompt(question, schema, conversationHistory);
+
+        return extractSql(llmClient.generateResponse(prompt));
+    }
+
     public String selfCorrect(
             String previousSql,
             String errorMessage,
             DatabaseSchema schema
     ) {
 
-        /*
-         * Self-correction chỉ được dùng cho các lỗi SQL thông thường.
-         *
-         * Việc chặn READ-ONLY thực sự vẫn do QueryValidator đảm nhiệm.
-         */
-        String prompt = promptBuilder.buildCorrectionPrompt(
+        return selfCorrect(
                 previousSql,
                 errorMessage,
-                schema
+                schema,
+                null
         );
+    }
+
+    public String selfCorrect(
+            String previousSql,
+            String errorMessage,
+            DatabaseSchema schema,
+            String conversationHistory
+    ) {
+
+        String prompt;
+
+        if (conversationHistory == null || conversationHistory.isBlank()) {
+
+            prompt = promptBuilder.buildCorrectionPrompt(
+                    previousSql,
+                    errorMessage,
+                    schema
+            );
+
+        } else {
+
+            prompt = promptBuilder.buildCorrectionPrompt(
+                    previousSql,
+                    errorMessage,
+                    schema,
+                    conversationHistory
+            );
+        }
 
         return extractSql(
                 llmClient.generateResponse(prompt)

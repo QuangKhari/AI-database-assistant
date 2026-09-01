@@ -70,4 +70,39 @@ class NL2SQLEngineTest {
         assertTrue(sql.contains("Không được phép"));
         verifyNoInteractions(llmClient);
     }
+
+    @Test
+    void generateSQL_withHistory_shouldUseThreeArgPromptBuilder() {
+        when(promptBuilder.buildGenerationPrompt(anyString(), any(), anyString()))
+                .thenReturn("prompt-with-history");
+        when(llmClient.generateResponse("prompt-with-history"))
+                .thenReturn("SELECT * FROM orders WHERE month = 2");
+
+        String sql = engine.generateSQL("So sánh với tháng 2", emptySchema(), "lịch sử giả lập");
+
+        assertEquals("SELECT * FROM orders WHERE month = 2", sql);
+        verify(promptBuilder).buildGenerationPrompt(eq("So sánh với tháng 2"), any(), eq("lịch sử giả lập"));
+        verify(promptBuilder, never()).buildGenerationPrompt(anyString(), any()); // KHÔNG được gọi bản 2-arg
+    }
+
+    @Test
+    void generateSQL_withNullHistory_shouldFallBackToTwoArgOverload() {
+        when(promptBuilder.buildGenerationPrompt(anyString(), any()))
+                .thenReturn("prompt-no-history");
+        when(llmClient.generateResponse("prompt-no-history"))
+                .thenReturn("SELECT * FROM orders");
+
+        String sql = engine.generateSQL("Doanh thu tháng 1", emptySchema(), null);
+
+        assertEquals("SELECT * FROM orders", sql);
+        verify(promptBuilder, never()).buildGenerationPrompt(anyString(), any(), anyString());
+    }
+
+    @Test
+    void generateSQL_withHistory_shouldStillBlockWriteOperation() {
+        String sql = engine.generateSQL("đổi mật khẩu admin", emptySchema(), "lịch sử");
+
+        assertTrue(sql.contains("Không được phép"));
+        verifyNoInteractions(llmClient);
+    }
 }

@@ -201,4 +201,104 @@ class SQLCorrectionServiceTest {
         verify(nl2SQLEngine, never())
                 .selfCorrect(anyString(), anyString(), eq(filteredSchema));
     }
+
+    @Test
+    void run_withConversationHistory_shouldPassHistoryToNl2SqlEngine() {
+
+        when(nl2SQLEngine.generateSQL(
+                eq("so sánh với tháng trước"),
+                eq(schema),
+                eq("lịch sử hội thoại giả lập")))
+                .thenReturn("SELECT * FROM orders");
+
+        QueryResultDto okResult =
+                new QueryResultDto(
+                        List.of("id"),
+                        List.of(Map.of("id", 1)),
+                        10,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT * FROM orders"))
+                .thenReturn(okResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "so sánh với tháng trước",
+                        schema,
+                        schema,
+                        connection,
+                        "pwd",
+                        "lịch sử hội thoại giả lập"
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals("SELECT * FROM orders", result.getSql());
+        assertSame(okResult, result.getFinalResult());
+
+        verify(nl2SQLEngine).generateSQL(
+                eq("so sánh với tháng trước"),
+                eq(schema),
+                eq("lịch sử hội thoại giả lập")
+        );
+    }
+
+    @Test
+    void run_withoutHistoryOverload_shouldStillCallTwoArgGenerateSQL_backwardCompatible() {
+
+        when(nl2SQLEngine.generateSQL(
+                eq("câu hỏi cũ"),
+                eq(schema)))
+                .thenReturn("SELECT * FROM orders");
+
+        QueryResultDto okResult =
+                new QueryResultDto(
+                        List.of("id"),
+                        List.of(Map.of("id", 1)),
+                        10,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT * FROM orders"))
+                .thenReturn(okResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "câu hỏi cũ",
+                        schema,
+                        schema,
+                        connection,
+                        "pwd"
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals("SELECT * FROM orders", result.getSql());
+        assertSame(okResult, result.getFinalResult());
+
+        verify(nl2SQLEngine).generateSQL(
+                eq("câu hỏi cũ"),
+                eq(schema)
+        );
+
+        verify(nl2SQLEngine, never())
+                .generateSQL(
+                        anyString(),
+                        any(),
+                        anyString()
+                );
+    }
 }

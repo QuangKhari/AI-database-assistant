@@ -8,6 +8,8 @@ import com.example.aidatabaseassistant.service.QueryService;
 import com.example.aidatabaseassistant.service.RateLimitService;
 import com.example.aidatabaseassistant.service.SqlExplanationService;
 import com.example.aidatabaseassistant.service.SqlOptimizationService;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.http.MediaType;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -118,5 +120,10 @@ public class QueryController {
                         request
                 )
         );
+    }
+
+    @PostMapping(value = "/execute/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter executeStream(Authentication authentication, @Valid @RequestBody QueryRequest request) {
+        return queryService.processQueryStreaming(authentication.getName(), request);
     }
 }
