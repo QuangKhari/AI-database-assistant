@@ -79,7 +79,7 @@ public class QueryController {
         }
 
         return ResponseEntity.ok(
-                chartSuggestionService.suggest(request)
+                chartSuggestionService.suggest(authentication.getName(), request)
         );
     }
 
@@ -99,7 +99,7 @@ public class QueryController {
         }
 
         return ResponseEntity.ok(
-                dataInsightService.analyze(request)
+                dataInsightService.analyze(authentication.getName(), request)
         );
     }
 

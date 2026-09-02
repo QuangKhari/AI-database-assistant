@@ -17,4 +17,10 @@ public class ChartSuggestionRequest {
 
     @NotNull
     private List<Map<String, Object>> rows;
+
+    // TUY CHON - khi FE truyen kem connectionId cua ket qua truy van nay,
+    // backend se doi chieu schema THAT (PK/FK) de loai cot khoa khoi measure
+    // chinh xac hon, thay vi chi doan theo ten cot. Khong truyen van hoat
+    // dong binh thuong nhu truoc (fallback ve doan ten).
+    private Long connectionId;
 }

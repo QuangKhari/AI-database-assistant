@@ -232,8 +232,8 @@ public class QueryService {
         listener.onProgress("STATUS", "Đang tạo tóm tắt và gợi ý biểu đồ...");
 
         String summary = result.isSuccess() ? safeSummarize(request.getQuestion(), result.getFinalResult()) : null;
-        ChartSuggestionResponse chartSuggestion = result.isSuccess() ? buildChartSuggestion(result.getFinalResult()) : null;
-        DataInsightResponse dataInsight = result.isSuccess() ? buildDataInsight(result.getFinalResult()) : null;
+        ChartSuggestionResponse chartSuggestion = result.isSuccess() ? buildChartSuggestion(result.getFinalResult(), fullSchema) : null;
+        DataInsightResponse dataInsight = result.isSuccess() ? buildDataInsight(result.getFinalResult(), fullSchema) : null;
 
         listener.onProgress("STATUS", "Hoàn tất.");
 
@@ -242,7 +242,8 @@ public class QueryService {
     }
 
     private DataInsightResponse buildDataInsight(
-            QueryResultDto finalResult
+            QueryResultDto finalResult,
+            DatabaseSchema fullSchema
     ) {
 
         // Giong buildChartSuggestion: day la tinh nang BO SUNG, tuyet doi
@@ -253,7 +254,8 @@ public class QueryService {
 
             return dataInsightService.analyze(
                     finalResult.getColumns(),
-                    finalResult.getRows()
+                    finalResult.getRows(),
+                    SchemaDiscoveryService.buildKeyColumnMap(fullSchema)
             );
 
         } catch (Exception e) {
@@ -262,12 +264,13 @@ public class QueryService {
         }
     }
 
-    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult) {
+    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult, DatabaseSchema fullSchema) {
         try {
 
             return chartSuggestionService.suggest(
                     finalResult.getColumns(),
-                    finalResult.getRows());
+                    finalResult.getRows(),
+                    SchemaDiscoveryService.buildKeyColumnMap(fullSchema));
 
         } catch (Exception e) {
 

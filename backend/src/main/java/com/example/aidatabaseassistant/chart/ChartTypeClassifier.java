@@ -26,6 +26,19 @@ public class ChartTypeClassifier {
     );
 
     public ChartClassificationResult classify(List<String> columns, List<Map<String, Object>> rows) {
+        return classify(columns, rows, Map.of());
+    }
+
+    /**
+     * @param schemaKeyColumns ten cot (viet thuong) -> co phai PK/FK THAT
+     *                         theo schema da luu hay khong. RONG (Map.of())
+     *                         nghia la khong co schema de doi chieu - luc do
+     *                         100% dua vao heuristic doan ten nhu truoc gio.
+     *                         Cot KHONG co trong map nay (vi du alias/cot
+     *                         tinh toan tu SUM/COUNT) van fallback ve doan ten.
+     */
+    public ChartClassificationResult classify(List<String> columns, List<Map<String, Object>> rows,
+                                              Map<String, Boolean> schemaKeyColumns) {
         if (columns == null || columns.isEmpty() || rows == null || rows.isEmpty()) {
             return ChartClassificationResult.table("Không có dữ liệu để vẽ biểu đồ");
         }
@@ -40,7 +53,7 @@ public class ChartTypeClassifier {
 
         for (String column : columns) {
             if (isNumericColumn(column, rows)) {
-                if (isIdLikeColumn(column)) {
+                if (isKeyColumn(column, schemaKeyColumns)) {
                     // Cot la khoa chinh/khoa ngoai (id, customer_id, order_id...)
                     // - KHONG duoc coi la so lieu (measure) du kieu du lieu la
                     // so nguyen. Cong/trung binh/so sanh cac ID khong co y
@@ -166,6 +179,25 @@ public class ChartTypeClassifier {
         }
         return values;
     }
+
+    /**
+     * Uu tien schema THAT (neu co) hon heuristic doan ten - vi schema la
+     * nguon su that (ground truth), con doan ten chi la fallback khi khong
+     * co gi khac de dua vao (vi du client cu chua truyen connectionId, hoac
+     * cot la ket qua tinh toan/alias khong ton tai trong schema goc).
+     */
+    private boolean isKeyColumn(String column, Map<String, Boolean> schemaKeyColumns) {
+        if (schemaKeyColumns != null) {
+            Boolean knownFromSchema = schemaKeyColumns.get(column.toLowerCase(Locale.ROOT));
+            if (knownFromSchema != null) {
+                return knownFromSchema;
+            }
+        }
+        return isIdLikeColumn(column);
+    }
+
+    /**
+     * Nhan dien cot la khoa chinh/khoa ngoai dua tren TEN cot: "id",
 
     /**
      * Nhan dien cot la khoa chinh/khoa ngoai dua tren TEN cot: "id",

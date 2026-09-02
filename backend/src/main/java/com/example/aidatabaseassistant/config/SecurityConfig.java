@@ -3,6 +3,7 @@ package com.example.aidatabaseassistant.config;
 import com.example.aidatabaseassistant.security.CustomUserDetailsService;
 import com.example.aidatabaseassistant.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -34,6 +35,16 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    // Truoc day danh sach nay bi hard-code "http://localhost:3000,5173",
+    // khien bien moi truong CORS_ALLOWED_ORIGINS trong docker-compose.yml /
+    // application-docker.properties (app.cors.allowed-origins) hoan toan vo
+    // tac dung - khi deploy that voi domain khac localhost, frontend se bi
+    // trinh duyet chan boi CORS du backend chay dung. Gia tri mac dinh o day
+    // (khi khong co profile "docker") van giu 2 origin dev cu de khong pha
+    // vo luong lam viec hien tai cua IntelliJ/Vite.
+    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    private String allowedOrigins;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -61,10 +72,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         config.setAllowedOrigins(
-                List.of(
-                        "http://localhost:3000",
-                        "http://localhost:5173"
-                )
+                List.of(allowedOrigins.split("\\s*,\\s*"))
         );
 
         config.setAllowedMethods(
@@ -159,6 +167,16 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth ->
                         auth
                                 .requestMatchers("/api/auth/**").permitAll()
+                                // BẮT BUỘC public: Docker HEALTHCHECK / docker-compose
+                                // "condition: service_healthy" gọi endpoint này bằng
+                                // curl thuần, KHÔNG kèm JWT. Nếu endpoint này yêu cầu
+                                // auth, container sẽ bị Docker đánh dấu "unhealthy"
+                                // vĩnh viễn dù backend chạy hoàn toàn bình thường.
+                                // Không rò rỉ thông tin nhạy cảm vì
+                                // management.endpoint.health.show-details=never
+                                // (xem application-docker.properties) chỉ trả về
+                                // {"status":"UP"} chứ không chi tiết DB/disk/...
+                                .requestMatchers("/actuator/health").permitAll()
                                 .requestMatchers("/api/admin/**").hasRole("ADMIN")   // MỚI — defense in depth
                                 .anyRequest().authenticated()
                 )

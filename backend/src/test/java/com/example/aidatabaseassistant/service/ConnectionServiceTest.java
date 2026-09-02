@@ -10,6 +10,7 @@ import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import com.example.aidatabaseassistant.security.SsrfProtection;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +41,9 @@ class ConnectionServiceTest {
     @Mock
     private SsrfProtection ssrfProtection;
 
+    @Mock
+    private TargetDatabaseClient targetDatabaseClient;
+
     private ConnectionService connectionService;
 
     private User owner;
@@ -52,7 +56,8 @@ class ConnectionServiceTest {
                 connectionRepository,
                 userRepository,
                 encryptionUtil,
-                ssrfProtection
+                ssrfProtection,
+                targetDatabaseClient
         );
 
         ReflectionTestUtils.setField(
@@ -483,8 +488,14 @@ class ConnectionServiceTest {
     }
 
     @Test
-    void testConnection_shouldReturnFalse_whenUnsupportedDbType() {
+    void testConnection_shouldPropagateException_whenUnsupportedDbType() {
 
+        // Validate dbType (mysql/postgres/...) gio nam trong
+        // TargetDatabaseClient.buildJdbcUrl(), khong con o ConnectionService
+        // nua. ConnectionService.testConnection() chi delegate nguyen si -
+        // nen test nay stub mock de mo phong dung hanh vi that cua
+        // TargetDatabaseClient khi gap dbType chua ho tro, roi kiem tra
+        // ConnectionService co truyen dung tham so va khong nuot exception.
         ConnectionRequest request =
                 new ConnectionRequest();
 
@@ -495,6 +506,10 @@ class ConnectionServiceTest {
         request.setDatabaseName("x");
         request.setUsername("x");
         request.setPassword("x");
+
+        when(targetDatabaseClient.testConnection(
+                "postgres", "localhost", 5432, "x", "x", "x"
+        )).thenThrow(new IllegalArgumentException("Loại database chưa được hỗ trợ: postgres"));
 
         assertThrows(
                 IllegalArgumentException.class,

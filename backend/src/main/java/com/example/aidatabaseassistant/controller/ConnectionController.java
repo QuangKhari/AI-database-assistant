@@ -23,6 +23,7 @@ public class ConnectionController {
     private final ConnectionService connectionService;
     private final SchemaDiscoveryService schemaDiscoveryService;
     private final SuggestedQuestionService suggestedQuestionService;
+    private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
 //    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
 //
 //    @GetMapping("/test-ai")
@@ -93,6 +94,15 @@ public class ConnectionController {
             Authentication authentication,
             @PathVariable Long id,
             @RequestParam(defaultValue = "false") boolean refresh) {
+
+        // Dong bo voi cac endpoint goi Gemini khac trong QueryController -
+        // truoc day endpoint nay khong co rate limit, cho phep spam
+        // refresh=true de dot quota/chi phi Gemini khong gioi han.
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new com.example.aidatabaseassistant.exception.RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
 
         return ResponseEntity.ok(
                 suggestedQuestionService.getSuggestions(authentication.getName(), id, refresh)

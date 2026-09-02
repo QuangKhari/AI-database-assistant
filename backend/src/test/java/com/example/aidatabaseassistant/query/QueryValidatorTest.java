@@ -78,6 +78,18 @@ class QueryValidatorTest {
         );
     }
 
+    @Test
+    void shouldAllowSubquery() {
+
+        String sql = """
+                SELECT full_name FROM customers
+                WHERE id IN (SELECT customer_id FROM orders WHERE id > 10)
+                """;
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
 
     // =========================================================
     // CASE VARIATION
@@ -356,6 +368,90 @@ class QueryValidatorTest {
         );
     }
 
+    // =========================================================
+    // FILE ACCESS PROTECTION (INTO OUTFILE / DUMPFILE / LOAD_FILE)
+    // =========================================================
+
+    @Test
+    void shouldRejectSelectIntoOutfile() {
+
+        String sql =
+                "SELECT * FROM customers INTO OUTFILE '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectSelectIntoOutfileRegardlessOfCase() {
+
+        String sql =
+                "select * from customers into outfile '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectSelectIntoDumpfile() {
+
+        String sql =
+                "SELECT * FROM customers INTO DUMPFILE '/tmp/dump.bin'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoadFileFunction() {
+
+        String sql =
+                "SELECT LOAD_FILE('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // OTHER DDL / SESSION STATEMENTS
+    // =========================================================
+
+    @Test
+    void shouldRejectCreateTable() {
+
+        String sql =
+                "CREATE TABLE hacked (id INT)";
+
+        assertThrows(
+                ReadOnlyViolationException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectUnionBasedInjectionAgainstUnknownTable() {
+
+        String sql =
+                "SELECT full_name FROM customers UNION SELECT password FROM users";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
 
     // =========================================================
     // SCHEMA SECURITY

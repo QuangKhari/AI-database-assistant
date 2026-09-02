@@ -16,6 +16,7 @@ public class QueryValidator {
 
     public void validate(String sql, DatabaseSchema schema) {
         rejectBlockComments(sql);
+        rejectFileAccessAttempts(sql);
 
         Statement statement = parse(sql);
         checkReadOnly(statement);
@@ -87,6 +88,41 @@ public class QueryValidator {
         if (sql.contains("/*") || sql.contains("*/")) {
             throw new IllegalArgumentException(
                     "SQL không được chứa block comment /* ... */"
+            );
+        }
+    }
+
+    /**
+     * CHỐNG GHI/ĐỌC FILE TRÊN SERVER MYSQL (P0):
+     *
+     * "SELECT ... INTO OUTFILE '/path'" và "SELECT ... INTO DUMPFILE '/path'"
+     * VẪN LÀ 1 câu lệnh kiểu SELECT trong JSqlParser, nên checkReadOnly()
+     * (chỉ kiểm tra statement instanceof Select) KHÔNG chặn được - nếu tài
+     * khoản DB đang dùng có quyền FILE, AI có thể bị dẫn dụ (qua câu hỏi
+     * tự nhiên hoặc prompt injection trong dữ liệu) sinh ra câu SQL ghi 1
+     * file bất kỳ lên ổ đĩa server (ví dụ ghi webshell). Tương tự,
+     * "LOAD_FILE('/etc/passwd')" là 1 hàm dùng được ngay bên trong SELECT
+     * để ĐỌC file bất kỳ trên server, cũng không phải DDL/DML nên không
+     * bị checkReadOnly() chặn.
+     *
+     * Chặn bằng kiểm tra chuỗi (case-insensitive, cho phép khoảng trắng/
+     * xuống dòng linh hoạt giữa các từ khóa) TRƯỚC khi parse, cùng cách
+     * tiếp cận với rejectBlockComments() ở trên - đơn giản, không phụ
+     * thuộc phiên bản JSqlParser cụ thể, và không có lý do hợp lệ nào để
+     * 1 câu hỏi NL2SQL cần dùng các cú pháp này.
+     */
+    private static final java.util.regex.Pattern FILE_ACCESS_PATTERN =
+            java.util.regex.Pattern.compile(
+                    "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bLOAD_FILE\\s*\\(",
+                    java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+
+    private void rejectFileAccessAttempts(String sql) {
+
+        if (FILE_ACCESS_PATTERN.matcher(sql).find()) {
+            throw new IllegalArgumentException(
+                    "SQL không được chứa lệnh đọc/ghi file trên server "
+                            + "(INTO OUTFILE, INTO DUMPFILE, LOAD_FILE)"
             );
         }
     }

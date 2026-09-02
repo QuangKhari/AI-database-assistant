@@ -8,7 +8,7 @@ import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
-import com.example.aidatabaseassistant.security.SsrfProtection;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -37,11 +36,78 @@ public class SchemaDiscoveryService {
     private static final Logger log =
             LoggerFactory.getLogger(SchemaDiscoveryService.class);
 
+    /**
+     * Tra ve map "ten cot (viet thuong) -> co phai PK/FK hay khong" tu
+     * schema DA LUU (khong tu ket noi lai DB - dung schema cache trong
+     * database_schemas/table_metadata/column_metadata). Dung cho
+     * ChartTypeClassifier/DataInsightAnalyzer de loai PK/FK khoi measure
+     * chinh xac hon thay vi chi doan ten (xem Muc 2).
+     *
+     * Neu connectionId la null (client cu chua truyen) -> tra ve Map rong,
+     * ChartTypeClassifier se tu fallback ve doan ten nhu truoc gio.
+     *
+     * Van kiem tra quyen so huu connection nhu discoverSchema() o tren -
+     * TUYET DOI khong duoc bo qua, neu khong se thanh IDOR (user A do
+     * duoc list cot cua connection user B qua endpoint chart-suggestion).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Boolean> resolveKeyColumnMap(String username, Long connectionId) {
+        if (connectionId == null) {
+            return Map.of();
+        }
+
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        DatabaseConnection connection = connectionRepository.findById(connectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+
+        if (!connection.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
+        }
+
+        return schemaRepository.findByConnectionId(connectionId)
+                .map(SchemaDiscoveryService::buildKeyColumnMap)
+                .orElse(Map.of());
+    }
+
+    /**
+     * Tach rieng thanh method static de QueryService co the tai su dung
+     * TRUC TIEP voi fullSchema DA CO SAN TRONG BO NHO (khong query lai DB,
+     * khong check quyen so huu lai lan nua vi processQuery() da check roi
+     * o buoc load connection/schema ban dau) - xem Phan 2.9.
+     */
+    public static Map<String, Boolean> buildKeyColumnMap(DatabaseSchema schema) {
+        if (schema == null || schema.getTables() == null) {
+            return Map.of();
+        }
+        Map<String, Boolean> keyColumns = new HashMap<>();
+        for (TableMetadata table : schema.getTables()) {
+            for (ColumnMetadata column : table.getColumns()) {
+                boolean isKey = Boolean.TRUE.equals(column.getPrimaryKey())
+                        || Boolean.TRUE.equals(column.getForeignKey());
+                // Neu cung 1 ten cot xuat hien o nhieu bang (vi du "id" o ca
+                // 2 bang khac nhau) va CHI 1 trong so do la key -> van uu
+                // tien coi la key (an toan hon, giu dung triet ly cu cua
+                // isIdLikeColumn: tha bo sot con hon nhan nham).
+                keyColumns.merge(column.getName().toLowerCase(Locale.ROOT), isKey,
+                        (existing, incoming) -> existing || incoming);
+            }
+        }
+        return keyColumns;
+    }
+
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
-    private final SsrfProtection ssrfProtection;
+    // TRUOC DAY: tu goi ssrfProtection.validateHost() + tu build JDBC URL +
+    // tu goi DriverManager.getConnection() ngay trong class nay. BAY GIO:
+    // gom qua TargetDatabaseClient - noi DUY NHAT mo ket noi JDBC toi DB
+    // cua user (SSRF check van duoc ap dung, nam ben trong openConnection()).
+    private final TargetDatabaseClient targetDatabaseClient;
+
+    // Schema RAG
 
     // Schema RAG
     private final SchemaEmbeddingService schemaEmbeddingService;
@@ -70,18 +136,6 @@ public class SchemaDiscoveryService {
                     "Bạn không có quyền truy cập connection này"
             );
         }
-
-        // connectTimeout/socketTimeout: tranh treo vo thoi han neu host connection
-        // khong con phan hoi (vi du DB da bi tat) trong luc quet schema.
-        ssrfProtection.validateHost(connection.getHost());
-        String url =
-                "jdbc:mysql://"
-                        + connection.getHost()
-                        + ":"
-                        + connection.getPort()
-                        + "/"
-                        + connection.getDatabaseName()
-                        + "?connectTimeout=5000&socketTimeout=15000";
 
         String rawPassword =
                 encryptionUtil.decrypt(
@@ -218,8 +272,11 @@ public class SchemaDiscoveryService {
         tables.clear();
 
         try (Connection conn =
-                     DriverManager.getConnection(
-                             url,
+                     targetDatabaseClient.openConnection(
+                             connection.getDbType(),
+                             connection.getHost(),
+                             connection.getPort(),
+                             connection.getDatabaseName(),
                              connection.getUsername(),
                              rawPassword
                      )) {

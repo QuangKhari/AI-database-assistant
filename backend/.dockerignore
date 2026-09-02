@@ -1,0 +1,27 @@
+# Khong bao gio dua secret THAT vao build context / image. LUU Y:
+# src/main/resources/application.properties trong repo nay CHI chua
+# placeholder dang ${TEN_BIEN} (khong co secret that), va app CAN file
+# nay de co config nen (schema.rag.*, logging, UTF-8...) truoc khi
+# application-docker.properties de len tren - vi vay KHONG duoc liet ke
+# "application.properties" o day, nguoc lai voi truc giac ban dau.
+.env
+.env.*
+application-local.properties
+
+# Build artifacts - se duoc tao lai trong container o build stage
+target/
+*.class
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Docs khong can trong image
+*.md
+docs/

@@ -4,7 +4,7 @@ import com.example.aidatabaseassistant.dto.QueryResultDto;
 import org.springframework.stereotype.Component;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.util.TablesNamesFinder;
-import com.example.aidatabaseassistant.security.SsrfProtection;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -14,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
@@ -28,7 +27,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class QueryExecutor {
 
-    private final SsrfProtection ssrfProtection;
+    // TRUOC DAY: tu goi ssrfProtection.validateHost() + tu build JDBC URL +
+    // tu goi DriverManager.getConnection() ngay trong class nay (trung lap
+    // voi ConnectionService/SchemaDiscoveryService). BAY GIO: gom qua
+    // TargetDatabaseClient - noi DUY NHAT mo ket noi JDBC toi DB cua user.
+    private final TargetDatabaseClient targetDatabaseClient;
     private static final int MAX_ROWS = 500;
 
     // Gioi han thoi gian THUC THI cau query tren DB (giay). Neu AI sinh ra 1 cau
@@ -36,24 +39,13 @@ public class QueryExecutor {
     // noi se khong bi treo vo thoi han - JDBC driver se huy query va nem loi ro rang.
     private static final int QUERY_TIMEOUT_SECONDS = 10;
 
-    // Gioi han thoi gian THIET LAP ket noi va thoi gian CHO PHAN HOI tu socket
-    // (mili giay). Neu host/port khong phan hoi (vi du connection string sai,
-    // firewall chan), tranh treo vo thoi han o buoc ket noi.
-    private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int SOCKET_TIMEOUT_MS = 15000;
-
 
 
     public QueryResultDto executeQuery(String host, Integer port, String databaseName,
                                        String username, String password, String sql) {
-        ssrfProtection.validateHost(host);
-
-        String url = "jdbc:mysql://" + host + ":" + port + "/" + databaseName
-                + "?connectTimeout=" + CONNECT_TIMEOUT_MS
-                + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
         long start = System.currentTimeMillis();
 
-        try (Connection conn = DriverManager.getConnection(url, username, password);
+        try (Connection conn = targetDatabaseClient.openConnection(host, port, databaseName, username, password);
              Statement stmt = conn.createStatement()) {
 
             stmt.setMaxRows(MAX_ROWS);
@@ -93,13 +85,8 @@ public class QueryExecutor {
      */
     public SqlOptimizationRawData collectOptimizationData(String host, Integer port, String databaseName,
                                                           String username, String password, String sql) {
-        ssrfProtection.validateHost(host);
 
-        String url = "jdbc:mysql://" + host + ":" + port + "/" + databaseName
-                + "?connectTimeout=" + CONNECT_TIMEOUT_MS
-                + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
-
-        try (Connection conn = DriverManager.getConnection(url, username, password)) {
+        try (Connection conn = targetDatabaseClient.openConnection(host, port, databaseName, username, password)) {
 
             List<Map<String, Object>> explainRows = runExplain(conn, sql);
 

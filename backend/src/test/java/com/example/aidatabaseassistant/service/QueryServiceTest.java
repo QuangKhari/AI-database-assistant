@@ -299,7 +299,7 @@ class QueryServiceTest {
                 .thenReturn(attemptResult);
 
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(chartSuggestionService.suggest(finalResult.getColumns(), finalResult.getRows()))
+        when(chartSuggestionService.suggest(eq(finalResult.getColumns()), eq(finalResult.getRows()), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.BAR, List.of(ChartType.LINE),
                         "thang", List.of("1"), List.of(), "vì lý do gì đó"));
 
@@ -334,7 +334,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "Không có dữ liệu"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -368,7 +368,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -520,12 +520,12 @@ class QueryServiceTest {
         ChartSuggestionResponse expectedChart = new ChartSuggestionResponse(
                 ChartType.LINE, List.of(ChartType.BAR), "thang", List.of("1", "2"),
                 List.of(), "cột 'thang' mang tính thời gian nên phù hợp Line");
-        when(chartSuggestionService.suggest(columns, rows)).thenReturn(expectedChart);
+        when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenReturn(expectedChart);
 
         QueryResponse response = queryService.processQuery("owner", request);
 
         assertSame(expectedChart, response.getChartSuggestion());
-        verify(chartSuggestionService).suggest(columns, rows);
+        verify(chartSuggestionService).suggest(eq(columns), eq(rows), anyMap());
     }
 
     @Test
@@ -580,8 +580,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(chartSuggestionService.suggest(columns, rows))
-                .thenThrow(new RuntimeException("Loi bat ngo trong chart suggestion"));
+        when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong chart suggestion"));
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -623,12 +622,12 @@ class QueryServiceTest {
                 "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
                 100.0, TrendDirection.INCREASING, "1", "2", null, null, List.of(),
                 "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
-        when(dataInsightService.analyze(columns, rows)).thenReturn(expectedInsight);
+        when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenReturn(expectedInsight);
 
         QueryResponse response = queryService.processQuery("owner", request);
 
         assertSame(expectedInsight, response.getDataInsight());
-        verify(dataInsightService).analyze(columns, rows);
+        verify(dataInsightService).analyze(eq(columns), eq(rows), anyMap());
     }
 
     @Test
@@ -683,8 +682,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(dataInsightService.analyze(columns, rows))
-                .thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
+        when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -725,7 +723,7 @@ class QueryServiceTest {
                 eq("plain-pass"), contains("Doanh thu tháng 1 là bao nhiêu?")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "..."));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -755,7 +753,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
 
         queryService.processQuery("owner", request);

@@ -12,10 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,9 +24,12 @@ public class ConnectionService {
     private final DatabaseConnectionRepository connectionRepository;
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
+    // Van giu ssrfProtection rieng: saveConnection()/updateConnection() can
+    // validate host TRUOC khi luu vao DB (chua he mo ket noi that o buoc
+    // do). Viec MO ket noi that (testConnection/reconnect) gio di qua
+    // targetDatabaseClient - noi DUY NHAT mo JDBC Connection toi DB user.
     private final SsrfProtection ssrfProtection;
-    private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int SOCKET_TIMEOUT_MS = 10000;
+    private final TargetDatabaseClient targetDatabaseClient;
 
     // Khong khai bao "final" vi day la field duoc inject bang @Value (field
     // injection), tach biet voi cac dependency con lai dang duoc constructor-inject
@@ -39,25 +40,14 @@ public class ConnectionService {
     private int maxConnectionsPerUser = 5;
 
     public boolean testConnection(ConnectionRequest request) {
-        ssrfProtection.validateHost(request.getHost());
-
-        String url = buildJdbcUrl(
+        return targetDatabaseClient.testConnection(
                 request.getDbType(),
                 request.getHost(),
                 request.getPort(),
-                request.getDatabaseName()
-        );
-
-        try (Connection conn = DriverManager.getConnection(
-                url,
+                request.getDatabaseName(),
                 request.getUsername(),
-                request.getPassword())) {
-
-            return conn.isValid(3);
-
-        } catch (SQLException e) {
-            return false;
-        }
+                request.getPassword()
+        );
     }
 
     public ConnectionResponse saveConnection(String username, ConnectionRequest request) {
@@ -104,15 +94,6 @@ public class ConnectionService {
 
 
 
-    private String buildJdbcUrl(String dbType, String host, Integer port, String databaseName) {
-        if ("mysql".equalsIgnoreCase(dbType)) {
-            return "jdbc:mysql://" + host + ":" + port + "/" + databaseName
-                    + "?connectTimeout=" + CONNECT_TIMEOUT_MS
-                    + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
-        }
-        throw new IllegalArgumentException("Loại database chưa được hỗ trợ: " + dbType);
-    }
-
     private ConnectionResponse toResponse(DatabaseConnection connection) {
         return new ConnectionResponse(
                 connection.getId(),
@@ -157,18 +138,16 @@ public class ConnectionService {
     public boolean reconnect(String username, Long connectionId) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
-        ssrfProtection.validateHost(connection.getHost());
-
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
-        String url = buildJdbcUrl(connection.getDbType(), connection.getHost(),
-                connection.getPort(), connection.getDatabaseName());
-
-        try (Connection conn = DriverManager.getConnection(url, connection.getUsername(), rawPassword)) {
-            return conn.isValid(3);
-        } catch (SQLException e) {
-            return false;
-        }
+        return targetDatabaseClient.testConnection(
+                connection.getDbType(),
+                connection.getHost(),
+                connection.getPort(),
+                connection.getDatabaseName(),
+                connection.getUsername(),
+                rawPassword
+        );
     }
 
     public void disconnect(String username, Long connectionId) {

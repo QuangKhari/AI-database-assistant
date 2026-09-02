@@ -32,13 +32,30 @@ public class DataInsightService {
     private final DataInsightAnalyzer analyzer;
     private final PromptBuilder promptBuilder;
     private final LLMClient llmClient;
+    private final SchemaDiscoveryService schemaDiscoveryService;
 
+    // Giu lai overload cu (khong username) de tuong thich nguoc - bat buoc,
+    // vi DataInsightServiceTest.analyze_withChartSuggestionRequestOverload_...
+    // dang goi truc tiep ban 1-tham-so nay (khong sua thi test se KHONG BIEN
+    // DICH DUOC, khong chi la fail runtime).
     public DataInsightResponse analyze(ChartSuggestionRequest request) {
         return analyze(request.getColumns(), request.getRows());
     }
 
+    public DataInsightResponse analyze(String username, ChartSuggestionRequest request) {
+        Map<String, Boolean> schemaKeyColumns =
+                schemaDiscoveryService.resolveKeyColumnMap(username, request.getConnectionId());
+
+        return analyze(request.getColumns(), request.getRows(), schemaKeyColumns);
+    }
+
     public DataInsightResponse analyze(List<String> columns, List<Map<String, Object>> rows) {
-        DataInsightFacts facts = analyzer.analyze(columns, rows);
+        return analyze(columns, rows, Map.of());
+    }
+
+    public DataInsightResponse analyze(List<String> columns, List<Map<String, Object>> rows,
+                                       Map<String, Boolean> schemaKeyColumns) {
+        DataInsightFacts facts = analyzer.analyze(columns, rows, schemaKeyColumns);
         if (facts == null) {
             // Khong du dieu kien (vd khong xac dinh duoc cot so lieu ro rang)
             // - tra ve null de QueryService fallback ve summary cu, TUYET
