@@ -117,6 +117,7 @@ public class SQLCorrectionService {
 
                 QueryResultDto queryResult =
                         queryExecutor.executeQuery(
+                                connection.getDbType(),
                                 connection.getHost(),
                                 connection.getPort(),
                                 connection.getDatabaseName(),

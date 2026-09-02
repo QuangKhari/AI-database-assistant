@@ -9,6 +9,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -72,6 +74,26 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
                 e.getMessage()
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingServletRequestParameter(
+            MissingServletRequestParameterException e) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Thiếu tham số bắt buộc: " + e.getParameterName()
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingServletRequestPart(
+            MissingServletRequestPartException e) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Thiếu file bắt buộc: " + e.getRequestPartName()
         );
     }
 

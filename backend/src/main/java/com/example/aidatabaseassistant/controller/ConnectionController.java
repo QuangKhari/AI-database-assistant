@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.example.aidatabaseassistant.dto.SchemaResponse;
 import com.example.aidatabaseassistant.service.SchemaDiscoveryService;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -59,6 +60,15 @@ public class ConnectionController {
     public ResponseEntity<ConnectionResponse> saveConnection(Authentication authentication,
                                                              @Valid @RequestBody ConnectionRequest request) {
         return ResponseEntity.ok(connectionService.saveConnection(authentication.getName(), request));
+    }
+
+    @PostMapping(value = "/excel", consumes = "multipart/form-data")
+    public ResponseEntity<ConnectionResponse> uploadExcelConnection(
+            Authentication authentication,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("name") String name) {
+        return ResponseEntity.ok(
+                connectionService.saveExcelConnection(authentication.getName(), file, name));
     }
 
     @GetMapping

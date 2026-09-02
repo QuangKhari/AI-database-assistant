@@ -30,7 +30,7 @@ public class ConnectionService {
     // targetDatabaseClient - noi DUY NHAT mo JDBC Connection toi DB user.
     private final SsrfProtection ssrfProtection;
     private final TargetDatabaseClient targetDatabaseClient;
-
+    private final ExcelIngestionService excelIngestionService;
     // Khong khai bao "final" vi day la field duoc inject bang @Value (field
     // injection), tach biet voi cac dependency con lai dang duoc constructor-inject
     // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
@@ -76,6 +76,45 @@ public class ConnectionService {
                 .databaseName(request.getDatabaseName())
                 .username(request.getUsername())
                 .encryptedPassword(encryptionUtil.encrypt(request.getPassword()))
+                .build();
+
+        connectionRepository.save(connection);
+        return toResponse(connection);
+    }
+
+    /**
+     * Tao 1 DatabaseConnection tu file Excel upload len. Khac voi
+     * saveConnection() (nhan ConnectionRequest voi host/port/username/
+     * password bat buoc), o day KHONG co cac gia tri do - dung placeholder
+     * co dinh, va cot databaseName duoc tai su dung de luu DUONG DAN file
+     * .duckdb (xem TargetDatabaseClient.buildJdbcUrl).
+     */
+    public ConnectionResponse saveExcelConnection(
+            String username,
+            org.springframework.web.multipart.MultipartFile file,
+            String name) {
+
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        long currentCount = connectionRepository.countByUserId(user.getId());
+        if (currentCount >= maxConnectionsPerUser) {
+            throw new IllegalArgumentException(
+                    "Bạn đã đạt giới hạn tối đa " + maxConnectionsPerUser + " kết nối database. "
+                            + "Vui lòng xóa bớt kết nối cũ trước khi thêm mới.");
+        }
+
+        String duckDbFilePath = excelIngestionService.ingest(file, user.getId());
+
+        DatabaseConnection connection = DatabaseConnection.builder()
+                .user(user)
+                .name(name)
+                .dbType("excel")
+                .host("local-file")
+                .port(0)
+                .databaseName(duckDbFilePath)
+                .username("excel-file")
+                .encryptedPassword(encryptionUtil.encrypt("-"))
                 .build();
 
         connectionRepository.save(connection);
@@ -151,7 +190,15 @@ public class ConnectionService {
     }
 
     public void disconnect(String username, Long connectionId) {
-        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+        DatabaseConnection connection =
+                getOwnedConnection(username, connectionId);
+
+        if ("excel".equalsIgnoreCase(connection.getDbType())) {
+            excelIngestionService.deleteDuckDbFile(
+                    connection.getDatabaseName()
+            );
+        }
+
         connectionRepository.delete(connection);
     }
 

@@ -41,11 +41,15 @@ public class QueryExecutor {
 
 
 
-    public QueryResultDto executeQuery(String host, Integer port, String databaseName,
+    /**
+     * Overload MOI co dbType - dung cho luong /execute chinh (goi tu
+     * SQLCorrectionService) de ho tro ca MySQL lan Excel/DuckDB.
+     */
+    public QueryResultDto executeQuery(String dbType, String host, Integer port, String databaseName,
                                        String username, String password, String sql) {
         long start = System.currentTimeMillis();
 
-        try (Connection conn = targetDatabaseClient.openConnection(host, port, databaseName, username, password);
+        try (Connection conn = targetDatabaseClient.openConnection(dbType, host, port, databaseName, username, password);
              Statement stmt = conn.createStatement()) {
 
             stmt.setMaxRows(MAX_ROWS);
@@ -76,6 +80,16 @@ public class QueryExecutor {
             long executionTime = System.currentTimeMillis() - start;
             return new QueryResultDto(List.of(), List.of(), executionTime, 0, buildSafeDatabaseErrorMessage(e));
         }
+    }
+
+    /**
+     * Overload CU (khong co dbType) - GIU NGUYEN, mac dinh mysql, de khong
+     * pha vo BenchmarkService/SqlOptimizationService/cac test hien co dang
+     * goi ban 6-tham-so nay.
+     */
+    public QueryResultDto executeQuery(String host, Integer port, String databaseName,
+                                       String username, String password, String sql) {
+        return executeQuery("mysql", host, port, databaseName, username, password, sql);
     }
 
     /**

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -44,6 +45,9 @@ class ConnectionServiceTest {
     @Mock
     private TargetDatabaseClient targetDatabaseClient;
 
+    @Mock
+    private ExcelIngestionService excelIngestionService;
+
     private ConnectionService connectionService;
 
     private User owner;
@@ -57,7 +61,8 @@ class ConnectionServiceTest {
                 userRepository,
                 encryptionUtil,
                 ssrfProtection,
-                targetDatabaseClient
+                targetDatabaseClient,
+                excelIngestionService
         );
 
         ReflectionTestUtils.setField(
@@ -242,7 +247,8 @@ class ConnectionServiceTest {
         when(userRepository.findByUsername("owner"))
                 .thenReturn(Optional.of(owner));
 
-        when(connectionRepository.countByUserId(1L)).thenReturn(5L);
+        when(connectionRepository.countByUserId(1L))
+                .thenReturn(5L);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -266,6 +272,7 @@ class ConnectionServiceTest {
 
         when(userRepository.findByUsername("owner"))
                 .thenReturn(Optional.of(owner));
+
         when(connectionRepository.findById(10L))
                 .thenReturn(Optional.of(connection));
 
@@ -274,7 +281,11 @@ class ConnectionServiceTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connectionService.updateConnection("owner", 10L, request)
+                () -> connectionService.updateConnection(
+                        "owner",
+                        10L,
+                        request
+                )
         );
 
         verify(connectionRepository, never()).save(any());
@@ -282,9 +293,10 @@ class ConnectionServiceTest {
 
     @Test
     void updateConnection_shouldValidateHost_afterOwnershipCheck() {
-        // IDOR phai duoc uu tien kiem tra TRUOC validate host: neu khong
-        // phai chu so huu thi khong duoc phep biet host co bi SSRF chan
-        // hay khong (tranh ro ri thong tin qua thong bao loi khac nhau).
+
+        // IDOR phải được ưu tiên kiểm tra TRƯỚC validate host:
+        // nếu không phải chủ sở hữu thì không được phép biết host
+        // có bị SSRF chặn hay không.
 
         DatabaseConnection connection = sampleConnection();
 
@@ -297,15 +309,23 @@ class ConnectionServiceTest {
 
         when(userRepository.findByUsername("intruder"))
                 .thenReturn(Optional.of(otherUser));
+
         when(connectionRepository.findById(10L))
                 .thenReturn(Optional.of(connection));
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connectionService.updateConnection("intruder", 10L, request)
+                () -> connectionService.updateConnection(
+                        "intruder",
+                        10L,
+                        request
+                )
         );
 
-        verify(ssrfProtection, never()).validateHost(any());
+        verify(
+                ssrfProtection,
+                never()
+        ).validateHost(any());
     }
 
     @Test
@@ -384,7 +404,10 @@ class ConnectionServiceTest {
                 connection.getEncryptedPassword()
         );
 
-        verify(encryptionUtil, never()).encrypt(any());
+        verify(
+                encryptionUtil,
+                never()
+        ).encrypt(any());
     }
 
     @Test
@@ -416,7 +439,10 @@ class ConnectionServiceTest {
                 )
         );
 
-        verify(connectionRepository, never()).save(any());
+        verify(
+                connectionRepository,
+                never()
+        ).save(any());
     }
 
     @Test
@@ -432,28 +458,50 @@ class ConnectionServiceTest {
 
         connectionService.disconnect("owner", 10L);
 
-        verify(connectionRepository).delete(connection);
+        verify(connectionRepository)
+                .delete(connection);
     }
 
     @Test
     void disconnect_shouldThrowAndNotDelete_whenRequestedByNonOwner_IDOR() {
 
-        DatabaseConnection connection = sampleConnection();
+        DatabaseConnection connection =
+                DatabaseConnection.builder()
+                        .id(20L)
+                        .user(owner)
+                        .name("Sales")
+                        .dbType("excel")
+                        .host("local-file")
+                        .port(0)
+                        .databaseName(
+                                "/data/excel-dbs/user_1/sales.duckdb"
+                        )
+                        .username("excel-file")
+                        .encryptedPassword("encrypted")
+                        .build();
 
         when(userRepository.findByUsername("intruder"))
                 .thenReturn(Optional.of(otherUser));
 
-        when(connectionRepository.findById(10L))
+        when(connectionRepository.findById(20L))
                 .thenReturn(Optional.of(connection));
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> connectionService.disconnect(
                         "intruder",
-                        10L
+                        20L
                 )
         );
 
+        // User không sở hữu connection Excel
+        // thì tuyệt đối không được xóa file DuckDB.
+        verify(
+                excelIngestionService,
+                never()
+        ).deleteDuckDbFile(anyString());
+
+        // Đồng thời cũng không được xóa connection.
         verify(
                 connectionRepository,
                 never()
@@ -490,12 +538,14 @@ class ConnectionServiceTest {
     @Test
     void testConnection_shouldPropagateException_whenUnsupportedDbType() {
 
-        // Validate dbType (mysql/postgres/...) gio nam trong
-        // TargetDatabaseClient.buildJdbcUrl(), khong con o ConnectionService
-        // nua. ConnectionService.testConnection() chi delegate nguyen si -
-        // nen test nay stub mock de mo phong dung hanh vi that cua
-        // TargetDatabaseClient khi gap dbType chua ho tro, roi kiem tra
-        // ConnectionService co truyen dung tham so va khong nuot exception.
+        // Validate dbType (mysql/postgres/...) giờ nằm trong
+        // TargetDatabaseClient.buildJdbcUrl(), không còn ở
+        // ConnectionService nữa.
+        //
+        // ConnectionService.testConnection() chỉ delegate nguyên si,
+        // nên test này mock TargetDatabaseClient để mô phỏng hành vi
+        // khi gặp dbType chưa được hỗ trợ.
+
         ConnectionRequest request =
                 new ConnectionRequest();
 
@@ -508,8 +558,17 @@ class ConnectionServiceTest {
         request.setPassword("x");
 
         when(targetDatabaseClient.testConnection(
-                "postgres", "localhost", 5432, "x", "x", "x"
-        )).thenThrow(new IllegalArgumentException("Loại database chưa được hỗ trợ: postgres"));
+                "postgres",
+                "localhost",
+                5432,
+                "x",
+                "x",
+                "x"
+        )).thenThrow(
+                new IllegalArgumentException(
+                        "Loại database chưa được hỗ trợ: postgres"
+                )
+        );
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -545,7 +604,10 @@ class ConnectionServiceTest {
 
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> connectionService.saveConnection("khai", request)
+                () -> connectionService.saveConnection(
+                        "khai",
+                        request
+                )
         );
 
         assertEquals(
@@ -554,11 +616,15 @@ class ConnectionServiceTest {
                 ex.getMessage()
         );
 
-        verify(connectionRepository, never())
-                .save(any());
+        verify(
+                connectionRepository,
+                never()
+        ).save(any());
 
-        verify(encryptionUtil, never())
-                .encrypt(any());
+        verify(
+                encryptionUtil,
+                never()
+        ).encrypt(any());
     }
 
     @Test
@@ -603,11 +669,15 @@ class ConnectionServiceTest {
                         .encryptedPassword("encrypted-password")
                         .build();
 
-        when(connectionRepository.save(any(DatabaseConnection.class)))
-                .thenReturn(savedConnection);
+        when(connectionRepository.save(
+                any(DatabaseConnection.class)
+        )).thenReturn(savedConnection);
 
         ConnectionResponse response =
-                connectionService.saveConnection("khai", request);
+                connectionService.saveConnection(
+                        "khai",
+                        request
+                );
 
         assertNotNull(response);
 
@@ -616,5 +686,139 @@ class ConnectionServiceTest {
 
         verify(encryptionUtil)
                 .encrypt("password");
+    }
+
+    @Test
+    void saveExcelConnection_shouldCreateExcelConnection() {
+
+        MockMultipartFile file =
+                new MockMultipartFile(
+                        "file",
+                        "sales.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        new byte[]{1, 2, 3}
+                );
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.countByUserId(owner.getId()))
+                .thenReturn(0L);
+
+        when(excelIngestionService.ingest(
+                same(file),
+                eq(owner.getId())
+        )).thenReturn(
+                "/data/excel-dbs/user_1/sales.duckdb"
+        );
+
+        when(encryptionUtil.encrypt("-"))
+                .thenReturn("encrypted-placeholder");
+
+        DatabaseConnection saved =
+                DatabaseConnection.builder()
+                        .id(10L)
+                        .user(owner)
+                        .name("Sales")
+                        .dbType("excel")
+                        .host("local-file")
+                        .port(0)
+                        .databaseName(
+                                "/data/excel-dbs/user_1/sales.duckdb"
+                        )
+                        .username("excel-file")
+                        .encryptedPassword(
+                                "encrypted-placeholder"
+                        )
+                        .build();
+
+        when(connectionRepository.save(
+                any(DatabaseConnection.class)
+        )).thenReturn(saved);
+
+        ConnectionResponse response =
+                connectionService.saveExcelConnection(
+                        "owner",
+                        file,
+                        "Sales"
+                );
+
+        assertNotNull(response);
+
+        assertEquals(
+                "Sales",
+                response.getName()
+        );
+
+        assertEquals(
+                "excel",
+                response.getDbType()
+        );
+
+        verify(excelIngestionService)
+                .ingest(
+                        same(file),
+                        eq(owner.getId())
+                );
+
+        verify(connectionRepository)
+                .save(any(DatabaseConnection.class));
+    }
+
+    @Test
+    void disconnect_shouldDeleteDuckDbFile_whenConnectionIsExcel() {
+
+        DatabaseConnection connection =
+                DatabaseConnection.builder()
+                        .id(20L)
+                        .user(owner)
+                        .name("Sales")
+                        .dbType("excel")
+                        .host("local-file")
+                        .port(0)
+                        .databaseName(
+                                "/data/excel-dbs/user_1/sales.duckdb"
+                        )
+                        .username("excel-file")
+                        .encryptedPassword("encrypted")
+                        .build();
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.findById(20L))
+                .thenReturn(Optional.of(connection));
+
+        connectionService.disconnect("owner", 20L);
+
+        verify(excelIngestionService)
+                .deleteDuckDbFile(
+                        "/data/excel-dbs/user_1/sales.duckdb"
+                );
+
+        verify(connectionRepository)
+                .delete(connection);
+    }
+
+    @Test
+    void disconnect_shouldNotDeleteDuckDbFile_whenConnectionIsMySql() {
+
+        DatabaseConnection connection = sampleConnection();
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        connectionService.disconnect("owner", 10L);
+
+        verify(
+                excelIngestionService,
+                never()
+        ).deleteDuckDbFile(anyString());
+
+        verify(connectionRepository)
+                .delete(connection);
     }
 }

@@ -37,9 +37,17 @@ class SQLCorrectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        sqlCorrectionService = new SQLCorrectionService(nl2SQLEngine, queryValidator, queryExecutor);
+        sqlCorrectionService =
+                new SQLCorrectionService(
+                        nl2SQLEngine,
+                        queryValidator,
+                        queryExecutor
+                );
 
-        schema = DatabaseSchema.builder().databaseName("shop").build();
+        schema = DatabaseSchema.builder()
+                .databaseName("shop")
+                .build();
+
         connection = DatabaseConnection.builder()
                 .host("localhost")
                 .port(3306)
@@ -50,166 +58,86 @@ class SQLCorrectionServiceTest {
 
     @Test
     void run_shouldSucceedOnFirstAttempt_whenSqlIsValidAndExecutesCleanly() {
-        when(nl2SQLEngine.generateSQL(eq("dem so khach hang"), eq(schema)))
-                .thenReturn("SELECT COUNT(*) FROM customers");
 
-        QueryResultDto okResult = new QueryResultDto(List.of("count"), List.of(Map.of("count", 5)), 20, 1, null);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "pwd",
-                "SELECT COUNT(*) FROM customers")).thenReturn(okResult);
-
-        // filteredSchema == fullSchema == schema -> khong co RAG, hanh vi nhu cu
-        SQLCorrectionService.AttemptResult result =
-                sqlCorrectionService.run("dem so khach hang", schema, schema, connection, "pwd");
-
-        assertTrue(result.isSuccess());
-        assertEquals("SELECT COUNT(*) FROM customers", result.getSql());
-        assertEquals(1, result.getAttemptLogs().size());
-        assertSame(okResult, result.getFinalResult());
-
-        verify(nl2SQLEngine, never()).selfCorrect(anyString(), anyString(), any());
-    }
-
-    @Test
-    void run_shouldRetryAndEventuallySucceed_whenFirstAttemptsAreInvalidSql() {
-        when(nl2SQLEngine.generateSQL(anyString(), eq(schema))).thenReturn("SELECT * FROM ghost_table");
-        when(nl2SQLEngine.selfCorrect(eq("SELECT * FROM ghost_table"), anyString(), eq(schema)))
-                .thenReturn("SELECT * FROM customers");
-
-        doThrow(new IllegalArgumentException("Bảng không tồn tại trong schema: ghost_table"))
-                .when(queryValidator).validate("SELECT * FROM ghost_table", schema);
-
-        QueryResultDto okResult = new QueryResultDto(List.of("id"), List.of(Map.of("id", 1)), 10, 1, null);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "pwd",
-                "SELECT * FROM customers")).thenReturn(okResult);
-
-        SQLCorrectionService.AttemptResult result =
-                sqlCorrectionService.run("lay khach hang", schema, schema, connection, "pwd");
-
-        assertTrue(result.isSuccess());
-        assertEquals("SELECT * FROM customers", result.getSql());
-        assertEquals(2, result.getAttemptLogs().size());
-        assertFalse(result.getAttemptLogs().get(0).isSuccess());
-        assertTrue(result.getAttemptLogs().get(1).isSuccess());
-
-        verify(nl2SQLEngine, times(1)).selfCorrect(anyString(), anyString(), eq(schema));
-    }
-
-    @Test
-    void run_shouldFailAfterMaxRetries_whenValidationAlwaysFails() {
-        when(nl2SQLEngine.generateSQL(anyString(), eq(schema))).thenReturn("SELECT * FROM ghost_table");
-        when(nl2SQLEngine.selfCorrect(anyString(), anyString(), eq(schema))).thenReturn("SELECT * FROM ghost_table");
-
-        doThrow(new IllegalArgumentException("Bảng không tồn tại trong schema: ghost_table"))
-                .when(queryValidator).validate("SELECT * FROM ghost_table", schema);
-
-        SQLCorrectionService.AttemptResult result =
-                sqlCorrectionService.run("lay khach hang", schema, schema, connection, "pwd");
-
-        assertFalse(result.isSuccess());
-        // MAX_RETRIES = 3
-        assertEquals(3, result.getAttemptLogs().size());
-        assertTrue(result.getAttemptLogs().stream().noneMatch(SQLCorrectionService.AttemptLog::isSuccess));
-        assertNotNull(result.getFinalResult().getError());
-
-        // selfCorrect chi duoc goi giua cac lan thu, khong goi sau lan cuoi cung
-        verify(nl2SQLEngine, times(2)).selfCorrect(anyString(), anyString(), eq(schema));
-        verify(queryExecutor, never()).executeQuery(any(), any(), any(), any(), any(), any());
-    }
-
-    @Test
-    void run_shouldTreatExecutionErrorAsFailedAttempt_andRetry() {
-        when(nl2SQLEngine.generateSQL(anyString(), eq(schema))).thenReturn("SELECT * FROM customers");
-        when(nl2SQLEngine.selfCorrect(anyString(), anyString(), eq(schema))).thenReturn("SELECT id FROM customers");
-
-        // SQL hop le cu phap nhung DB tra loi loi (vi du sai ten cot)
-        QueryResultDto dbErrorResult = new QueryResultDto(List.of(), List.of(), 5, 0, "Unknown column 'x'");
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "pwd",
-                "SELECT * FROM customers")).thenReturn(dbErrorResult);
-
-        QueryResultDto okResult = new QueryResultDto(List.of("id"), List.of(Map.of("id", 1)), 8, 1, null);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "pwd",
-                "SELECT id FROM customers")).thenReturn(okResult);
-
-        SQLCorrectionService.AttemptResult result =
-                sqlCorrectionService.run("lay khach hang", schema, schema, connection, "pwd");
-
-        assertTrue(result.isSuccess());
-        assertEquals(2, result.getAttemptLogs().size());
-        assertEquals("Unknown column 'x'", result.getAttemptLogs().get(0).getResult().getError());
-    }
-
-    /*
-     * =========================================================
-     * TEST MỚI: escalation sang fullSchema khi RAG bỏ sót bảng
-     * =========================================================
-     *
-     * Đây là test cho chính bug đã phát hiện: filteredSchema (RAG)
-     * và fullSchema là 2 object khác nhau. Lần generate đầu tiên
-     * dùng filteredSchema và sinh sai (bảng không có trong RAG
-     * subset). Sau khi thất bại, selfCorrect() ở lần kế tiếp PHẢI
-     * được gọi với fullSchema, không phải filteredSchema cũ.
-     */
-    @Test
-    void run_shouldEscalateToFullSchemaForSelfCorrect_whenFirstAttemptFails() {
-
-        DatabaseSchema filteredSchema =
-                DatabaseSchema.builder().databaseName("shop").build();
-
-        DatabaseSchema fullSchema =
-                DatabaseSchema.builder().databaseName("shop").build();
-
-        when(nl2SQLEngine.generateSQL("lay don hang cua khach hang", filteredSchema))
-                .thenReturn("SELECT * FROM ghost_table");
-
-        // Validator luon dung fullSchema -> phat hien "ghost_table"
-        // khong ton tai (vi du: bang that la "orders" nhung RAG
-        // khong dua "orders" vao filteredSchema nen AI doan sai ten).
-        doThrow(new IllegalArgumentException("Bảng không tồn tại trong schema: ghost_table"))
-                .when(queryValidator).validate("SELECT * FROM ghost_table", fullSchema);
-
-        when(nl2SQLEngine.selfCorrect(
-                eq("SELECT * FROM ghost_table"),
-                anyString(),
-                eq(fullSchema)))
-                .thenReturn("SELECT * FROM orders");
+        when(nl2SQLEngine.generateSQL(
+                eq("dem so khach hang"),
+                eq(schema)
+        )).thenReturn("SELECT COUNT(*) FROM customers");
 
         QueryResultDto okResult =
-                new QueryResultDto(List.of("id"), List.of(Map.of("id", 1)), 10, 1, null);
+                new QueryResultDto(
+                        List.of("count"),
+                        List.of(Map.of("count", 5)),
+                        20,
+                        1,
+                        null
+                );
 
         when(queryExecutor.executeQuery(
-                "localhost", 3306, "shop", "root", "pwd",
-                "SELECT * FROM orders"))
-                .thenReturn(okResult);
+                null,
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT COUNT(*) FROM customers"
+        )).thenReturn(okResult);
 
+        // filteredSchema == fullSchema == schema -> khong co RAG,
+        // hanh vi nhu cu
         SQLCorrectionService.AttemptResult result =
                 sqlCorrectionService.run(
-                        "lay don hang cua khach hang",
-                        filteredSchema,
-                        fullSchema,
+                        "dem so khach hang",
+                        schema,
+                        schema,
                         connection,
                         "pwd"
                 );
 
         assertTrue(result.isSuccess());
-        assertEquals("SELECT * FROM orders", result.getSql());
+        assertEquals(
+                "SELECT COUNT(*) FROM customers",
+                result.getSql()
+        );
+        assertEquals(
+                1,
+                result.getAttemptLogs().size()
+        );
+        assertSame(
+                okResult,
+                result.getFinalResult()
+        );
 
-        // selfCorrect() phai duoc goi voi fullSchema...
-        verify(nl2SQLEngine, times(1))
-                .selfCorrect(anyString(), anyString(), eq(fullSchema));
-
-        // ...va KHONG duoc goi voi filteredSchema (bug cu).
         verify(nl2SQLEngine, never())
-                .selfCorrect(anyString(), anyString(), eq(filteredSchema));
+                .selfCorrect(
+                        anyString(),
+                        anyString(),
+                        any()
+                );
     }
 
     @Test
-    void run_withConversationHistory_shouldPassHistoryToNl2SqlEngine() {
+    void run_shouldRetryAndEventuallySucceed_whenFirstAttemptsAreInvalidSql() {
 
         when(nl2SQLEngine.generateSQL(
-                eq("so sánh với tháng trước"),
-                eq(schema),
-                eq("lịch sử hội thoại giả lập")))
-                .thenReturn("SELECT * FROM orders");
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT * FROM ghost_table");
+
+        when(nl2SQLEngine.selfCorrect(
+                eq("SELECT * FROM ghost_table"),
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT * FROM customers");
+
+        doThrow(
+                new IllegalArgumentException(
+                        "Bảng không tồn tại trong schema: ghost_table"
+                )
+        ).when(queryValidator).validate(
+                "SELECT * FROM ghost_table",
+                schema
+        );
 
         QueryResultDto okResult =
                 new QueryResultDto(
@@ -221,13 +149,321 @@ class SQLCorrectionServiceTest {
                 );
 
         when(queryExecutor.executeQuery(
+                null,
                 "localhost",
                 3306,
                 "shop",
                 "root",
                 "pwd",
-                "SELECT * FROM orders"))
-                .thenReturn(okResult);
+                "SELECT * FROM customers"
+        )).thenReturn(okResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "lay khach hang",
+                        schema,
+                        schema,
+                        connection,
+                        "pwd"
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals(
+                "SELECT * FROM customers",
+                result.getSql()
+        );
+        assertEquals(
+                2,
+                result.getAttemptLogs().size()
+        );
+        assertFalse(
+                result.getAttemptLogs().get(0).isSuccess()
+        );
+        assertTrue(
+                result.getAttemptLogs().get(1).isSuccess()
+        );
+
+        verify(nl2SQLEngine, times(1))
+                .selfCorrect(
+                        anyString(),
+                        anyString(),
+                        eq(schema)
+                );
+    }
+
+    @Test
+    void run_shouldFailAfterMaxRetries_whenValidationAlwaysFails() {
+
+        when(nl2SQLEngine.generateSQL(
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT * FROM ghost_table");
+
+        when(nl2SQLEngine.selfCorrect(
+                anyString(),
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT * FROM ghost_table");
+
+        doThrow(
+                new IllegalArgumentException(
+                        "Bảng không tồn tại trong schema: ghost_table"
+                )
+        ).when(queryValidator).validate(
+                "SELECT * FROM ghost_table",
+                schema
+        );
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "lay khach hang",
+                        schema,
+                        schema,
+                        connection,
+                        "pwd"
+                );
+
+        assertFalse(result.isSuccess());
+
+        // MAX_RETRIES = 3
+        assertEquals(
+                3,
+                result.getAttemptLogs().size()
+        );
+
+        assertTrue(
+                result.getAttemptLogs()
+                        .stream()
+                        .noneMatch(
+                                SQLCorrectionService.AttemptLog::isSuccess
+                        )
+        );
+
+        assertNotNull(
+                result.getFinalResult().getError()
+        );
+
+        // selfCorrect chi duoc goi giua cac lan thu,
+        // khong goi sau lan cuoi cung
+        verify(nl2SQLEngine, times(2))
+                .selfCorrect(
+                        anyString(),
+                        anyString(),
+                        eq(schema)
+                );
+
+        verify(queryExecutor, never())
+                .executeQuery(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+    }
+
+    @Test
+    void run_shouldTreatExecutionErrorAsFailedAttempt_andRetry() {
+
+        when(nl2SQLEngine.generateSQL(
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT * FROM customers");
+
+        when(nl2SQLEngine.selfCorrect(
+                anyString(),
+                anyString(),
+                eq(schema)
+        )).thenReturn("SELECT id FROM customers");
+
+        // SQL hop le cu phap nhung DB tra loi loi
+        // (vi du sai ten cot)
+        QueryResultDto dbErrorResult =
+                new QueryResultDto(
+                        List.of(),
+                        List.of(),
+                        5,
+                        0,
+                        "Unknown column 'x'"
+                );
+
+        when(queryExecutor.executeQuery(
+                null,
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT * FROM customers"
+        )).thenReturn(dbErrorResult);
+
+        QueryResultDto okResult =
+                new QueryResultDto(
+                        List.of("id"),
+                        List.of(Map.of("id", 1)),
+                        8,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                null,
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT id FROM customers"
+        )).thenReturn(okResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "lay khach hang",
+                        schema,
+                        schema,
+                        connection,
+                        "pwd"
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals(
+                2,
+                result.getAttemptLogs().size()
+        );
+        assertEquals(
+                "Unknown column 'x'",
+                result.getAttemptLogs()
+                        .get(0)
+                        .getResult()
+                        .getError()
+        );
+    }
+
+    /*
+     * =========================================================
+     * TEST MỚI: escalation sang fullSchema khi RAG bỏ sót bảng
+     * =========================================================
+     *
+     * Đây là test cho chính bug đã phát hiện: filteredSchema
+     * (RAG) và fullSchema là 2 object khác nhau. Lần generate
+     * đầu tiên dùng filteredSchema và sinh sai. Sau khi thất bại,
+     * selfCorrect() ở lần kế tiếp PHẢI được gọi với fullSchema.
+     */
+    @Test
+    void run_shouldEscalateToFullSchemaForSelfCorrect_whenFirstAttemptFails() {
+
+        DatabaseSchema filteredSchema =
+                DatabaseSchema.builder()
+                        .databaseName("shop")
+                        .build();
+
+        DatabaseSchema fullSchema =
+                DatabaseSchema.builder()
+                        .databaseName("shop")
+                        .build();
+
+        when(nl2SQLEngine.generateSQL(
+                "lay don hang cua khach hang",
+                filteredSchema
+        )).thenReturn("SELECT * FROM ghost_table");
+
+        // Validator luon dung fullSchema -> phat hien
+        // "ghost_table" khong ton tai.
+        doThrow(
+                new IllegalArgumentException(
+                        "Bảng không tồn tại trong schema: ghost_table"
+                )
+        ).when(queryValidator).validate(
+                "SELECT * FROM ghost_table",
+                fullSchema
+        );
+
+        when(nl2SQLEngine.selfCorrect(
+                eq("SELECT * FROM ghost_table"),
+                anyString(),
+                eq(fullSchema)
+        )).thenReturn("SELECT * FROM orders");
+
+        QueryResultDto okResult =
+                new QueryResultDto(
+                        List.of("id"),
+                        List.of(Map.of("id", 1)),
+                        10,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                null,
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT * FROM orders"
+        )).thenReturn(okResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.run(
+                        "lay don hang cua khach hang",
+                        filteredSchema,
+                        fullSchema,
+                        connection,
+                        "pwd"
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals(
+                "SELECT * FROM orders",
+                result.getSql()
+        );
+
+        // selfCorrect() phai duoc goi voi fullSchema...
+        verify(nl2SQLEngine, times(1))
+                .selfCorrect(
+                        anyString(),
+                        anyString(),
+                        eq(fullSchema)
+                );
+
+        // ...va KHONG duoc goi voi filteredSchema
+        verify(nl2SQLEngine, never())
+                .selfCorrect(
+                        anyString(),
+                        anyString(),
+                        eq(filteredSchema)
+                );
+    }
+
+    @Test
+    void run_withConversationHistory_shouldPassHistoryToNl2SqlEngine() {
+
+        when(nl2SQLEngine.generateSQL(
+                eq("so sánh với tháng trước"),
+                eq(schema),
+                eq("lịch sử hội thoại giả lập")
+        )).thenReturn("SELECT * FROM orders");
+
+        QueryResultDto okResult =
+                new QueryResultDto(
+                        List.of("id"),
+                        List.of(Map.of("id", 1)),
+                        10,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                null,
+                "localhost",
+                3306,
+                "shop",
+                "root",
+                "pwd",
+                "SELECT * FROM orders"
+        )).thenReturn(okResult);
 
         SQLCorrectionService.AttemptResult result =
                 sqlCorrectionService.run(
@@ -240,8 +476,14 @@ class SQLCorrectionServiceTest {
                 );
 
         assertTrue(result.isSuccess());
-        assertEquals("SELECT * FROM orders", result.getSql());
-        assertSame(okResult, result.getFinalResult());
+        assertEquals(
+                "SELECT * FROM orders",
+                result.getSql()
+        );
+        assertSame(
+                okResult,
+                result.getFinalResult()
+        );
 
         verify(nl2SQLEngine).generateSQL(
                 eq("so sánh với tháng trước"),
@@ -255,8 +497,8 @@ class SQLCorrectionServiceTest {
 
         when(nl2SQLEngine.generateSQL(
                 eq("câu hỏi cũ"),
-                eq(schema)))
-                .thenReturn("SELECT * FROM orders");
+                eq(schema)
+        )).thenReturn("SELECT * FROM orders");
 
         QueryResultDto okResult =
                 new QueryResultDto(
@@ -268,13 +510,14 @@ class SQLCorrectionServiceTest {
                 );
 
         when(queryExecutor.executeQuery(
+                null,
                 "localhost",
                 3306,
                 "shop",
                 "root",
                 "pwd",
-                "SELECT * FROM orders"))
-                .thenReturn(okResult);
+                "SELECT * FROM orders"
+        )).thenReturn(okResult);
 
         SQLCorrectionService.AttemptResult result =
                 sqlCorrectionService.run(
@@ -286,8 +529,14 @@ class SQLCorrectionServiceTest {
                 );
 
         assertTrue(result.isSuccess());
-        assertEquals("SELECT * FROM orders", result.getSql());
-        assertSame(okResult, result.getFinalResult());
+        assertEquals(
+                "SELECT * FROM orders",
+                result.getSql()
+        );
+        assertSame(
+                okResult,
+                result.getFinalResult()
+        );
 
         verify(nl2SQLEngine).generateSQL(
                 eq("câu hỏi cũ"),

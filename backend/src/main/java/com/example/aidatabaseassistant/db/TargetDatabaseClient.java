@@ -47,6 +47,12 @@ public class TargetDatabaseClient {
      * them 1 nhanh if/else o day, khong phai sua lai nhieu noi khac.
      */
     public String buildJdbcUrl(String dbType, String host, Integer port, String databaseName) {
+        if ("excel".equalsIgnoreCase(dbType)) {
+            // "databaseName" o day thuc chat la DUONG DAN toi file .duckdb
+            // da duoc ExcelIngestionService tao san luc upload - khong
+            // phai ten database that, khong lien quan host/port.
+            return "jdbc:duckdb:" + databaseName;
+        }
         if (!"mysql".equalsIgnoreCase(dbType)) {
             throw new IllegalArgumentException("Loại database chưa được hỗ trợ: " + dbType);
         }
@@ -79,8 +85,15 @@ public class TargetDatabaseClient {
     public Connection openConnection(String dbType, String host, Integer port,
                                      String databaseName, String username, String password)
             throws SQLException {
-        ssrfProtection.validateHost(host);
         String url = buildJdbcUrl(dbType, host, port, databaseName);
+
+        if ("excel".equalsIgnoreCase(dbType)) {
+            // File local, khong co host that -> khong co gi de SSRF-check.
+            // DuckDB khong dung username/password.
+            return DriverManager.getConnection(url);
+        }
+
+        ssrfProtection.validateHost(host);
         return DriverManager.getConnection(url, username, password);
     }
 
