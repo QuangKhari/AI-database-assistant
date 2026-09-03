@@ -99,8 +99,16 @@ public class BenchmarkService {
                     queryValidator.validate(generatedSql, schema);
                     queryValidator.validate(question.getExpectedSql(), schema);
 
-                    // Chỉ execute sau khi cả 2 đều hợp lệ
+                    // Chỉ execute sau khi cả 2 đều hợp lệ.
+                    //
+                    // QUAN TRỌNG: phải truyền connection.getDbType() - nếu
+                    // dùng overload 6-tham-số (không có dbType) thì
+                    // QueryExecutor sẽ MẶC ĐỊNH mở connection theo MySQL bất
+                    // kể connection thực tế là PostgreSQL/Excel, khiến
+                    // benchmark chạy sai driver và luôn lỗi trên các
+                    // connection không phải MySQL.
                     generatedResult = queryExecutor.executeQuery(
+                            connection.getDbType(),
                             connection.getHost(),
                             connection.getPort(),
                             connection.getDatabaseName(),
@@ -110,6 +118,7 @@ public class BenchmarkService {
                     );
 
                     QueryResultDto expectedResult = queryExecutor.executeQuery(
+                            connection.getDbType(),
                             connection.getHost(),
                             connection.getPort(),
                             connection.getDatabaseName(),

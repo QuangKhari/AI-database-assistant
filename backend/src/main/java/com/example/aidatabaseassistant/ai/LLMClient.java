@@ -160,7 +160,7 @@ public class LLMClient {
                 )
         );
 
-        String url = apiUrl;
+        String url = embeddingApiUrl;
 
         log.info(
                 "Gọi Gemini Embedding API, model={}, độ dài text={} ký tự",
@@ -174,7 +174,7 @@ public class LLMClient {
 
         ResponseEntity<Map> response =
                 callWithRetry("generateEmbedding",
-                        () -> restTemplate.postForEntity(url, entity, Map.class));
+                        () -> restTemplate.postForEntity(embeddingApiUrl, entity, Map.class));
 
         Map<String, Object> responseBody = response.getBody();
 

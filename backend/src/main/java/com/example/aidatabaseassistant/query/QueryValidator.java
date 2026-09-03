@@ -93,17 +93,46 @@ public class QueryValidator {
     }
 
     /**
-     * CHỐNG GHI/ĐỌC FILE TRÊN SERVER MYSQL (P0):
+     * CHỐNG GHI/ĐỌC FILE TRÊN SERVER DATABASE (P0):
      *
-     * "SELECT ... INTO OUTFILE '/path'" và "SELECT ... INTO DUMPFILE '/path'"
-     * VẪN LÀ 1 câu lệnh kiểu SELECT trong JSqlParser, nên checkReadOnly()
-     * (chỉ kiểm tra statement instanceof Select) KHÔNG chặn được - nếu tài
-     * khoản DB đang dùng có quyền FILE, AI có thể bị dẫn dụ (qua câu hỏi
-     * tự nhiên hoặc prompt injection trong dữ liệu) sinh ra câu SQL ghi 1
-     * file bất kỳ lên ổ đĩa server (ví dụ ghi webshell). Tương tự,
-     * "LOAD_FILE('/etc/passwd')" là 1 hàm dùng được ngay bên trong SELECT
-     * để ĐỌC file bất kỳ trên server, cũng không phải DDL/DML nên không
-     * bị checkReadOnly() chặn.
+     * MySQL:
+     *
+     *     "SELECT ... INTO OUTFILE '/path'" và "SELECT ... INTO DUMPFILE
+     *     '/path'" VẪN LÀ 1 câu lệnh kiểu SELECT trong JSqlParser, nên
+     *     checkReadOnly() (chỉ kiểm tra statement instanceof Select) KHÔNG
+     *     chặn được - nếu tài khoản DB đang dùng có quyền FILE, AI có thể
+     *     bị dẫn dụ (qua câu hỏi tự nhiên hoặc prompt injection trong dữ
+     *     liệu) sinh ra câu SQL ghi 1 file bất kỳ lên ổ đĩa server (ví dụ
+     *     ghi webshell). Tương tự, "LOAD_FILE('/etc/passwd')" là 1 hàm
+     *     dùng được ngay bên trong SELECT để ĐỌC file bất kỳ trên server.
+     *
+     * PostgreSQL (bổ sung sau khi thêm hỗ trợ multi-DB):
+     *
+     *     Có nhóm hàm/cú pháp tương đương LOAD_FILE/INTO OUTFILE của MySQL
+     *     nhưng KHÔNG bị pattern MySQL ở trên chặn:
+     *
+     *         - pg_read_file(...) / pg_read_binary_file(...): đọc file bất
+     *           kỳ trên server (mặc định cần quyền pg_read_server_files
+     *           hoặc superuser, nhưng vẫn phải chặn ở mức validator theo
+     *           đúng nguyên tắc "mọi câu SQL AI sinh ra phải qua whitelist
+     *           read-only", không dựa vào quyền DB user).
+     *         - pg_ls_dir(...): liệt kê thư mục trên server.
+     *         - lo_export(oid, path) / lo_import(path): ghi/đọc file qua
+     *           Large Object.
+     *         - COPY ... TO/FROM: ghi/đọc file; "COPY ... TO PROGRAM" còn
+     *           có thể THỰC THI LỆNH HỆ ĐIỀU HÀNH trên server (RCE-class).
+     *           COPY luôn là 1 câu lệnh Ở ĐẦU statement (không dùng được
+     *           như biểu thức con bên trong SELECT), nên kiểm tra riêng
+     *           bằng cách xem statement có BẮT ĐẦU bằng "COPY" hay không -
+     *           tránh việc regex khớp nhầm 1 cột/bảng tên trùng "copy"
+     *           (ví dụ "SELECT copy FROM orders") nếu chỉ dò từ khóa TO/
+     *           FROM xuất hiện ở đâu đó phía sau trong chuỗi.
+     *
+     *     Tất cả các hàm trên (trừ COPY) đều dùng được ngay bên trong 1
+     *     câu SELECT hợp lệ về cú pháp và KHÔNG có FROM/bảng nào, nên vừa
+     *     lọt qua checkReadOnly() (vẫn là Select) vừa lọt qua
+     *     checkSchemaMatch() (TablesNamesFinder trả về rỗng -> không có
+     *     gì để đối chiếu với schema).
      *
      * Chặn bằng kiểm tra chuỗi (case-insensitive, cho phép khoảng trắng/
      * xuống dòng linh hoạt giữa các từ khóa) TRƯỚC khi parse, cùng cách
@@ -113,16 +142,40 @@ public class QueryValidator {
      */
     private static final java.util.regex.Pattern FILE_ACCESS_PATTERN =
             java.util.regex.Pattern.compile(
-                    "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b|\\bLOAD_FILE\\s*\\(",
+                    "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b"
+                            + "|\\bLOAD_FILE\\s*\\("
+                            + "|\\bpg_read_file\\s*\\("
+                            + "|\\bpg_read_binary_file\\s*\\("
+                            + "|\\bpg_ls_dir\\s*\\("
+                            + "|\\blo_export\\s*\\("
+                            + "|\\blo_import\\s*\\("
+                            + "|\\bTO\\s+PROGRAM\\b",
+                    java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+
+    /**
+     * COPY chỉ nguy hiểm khi là LỆNH Ở ĐẦU statement (Postgres không cho
+     * dùng COPY như 1 biểu thức con lồng trong SELECT), nên khớp riêng ở
+     * đầu chuỗi (bỏ qua khoảng trắng đầu) thay vì tìm "COPY" ở bất kỳ đâu -
+     * tránh chặn nhầm câu SELECT hợp lệ có cột/bảng tên là "copy".
+     */
+    private static final java.util.regex.Pattern COPY_STATEMENT_PATTERN =
+            java.util.regex.Pattern.compile(
+                    "^\\s*COPY\\b",
                     java.util.regex.Pattern.CASE_INSENSITIVE
             );
 
     private void rejectFileAccessAttempts(String sql) {
 
-        if (FILE_ACCESS_PATTERN.matcher(sql).find()) {
+        if (FILE_ACCESS_PATTERN.matcher(sql).find()
+                || COPY_STATEMENT_PATTERN.matcher(sql).find()) {
+
             throw new IllegalArgumentException(
-                    "SQL không được chứa lệnh đọc/ghi file trên server "
-                            + "(INTO OUTFILE, INTO DUMPFILE, LOAD_FILE)"
+                    "SQL không được chứa lệnh đọc/ghi file hoặc thực thi "
+                            + "lệnh hệ thống trên server database "
+                            + "(INTO OUTFILE/DUMPFILE, LOAD_FILE, "
+                            + "pg_read_file, pg_ls_dir, lo_export/lo_import, "
+                            + "COPY, TO PROGRAM)"
             );
         }
     }

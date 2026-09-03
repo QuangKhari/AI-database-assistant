@@ -137,6 +137,108 @@ class ConnectionServiceTest {
         );
     }
 
+    // =========================================================
+    // MULTI-DB: saveConnection() phải chấp nhận postgres/postgresql
+    // và chặn SỚM (trước khi lưu DB) các dbType không được hỗ trợ.
+    // =========================================================
+
+    @Test
+    void saveConnection_shouldAcceptPostgresDbType() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("Postgres DB");
+        request.setDbType("postgres");
+        request.setHost("localhost");
+        request.setPort(5432);
+        request.setDatabaseName("shop");
+        request.setUsername("postgres");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(encryptionUtil.encrypt("plain-secret"))
+                .thenReturn("encrypted-secret");
+
+        ConnectionResponse response =
+                connectionService.saveConnection("owner", request);
+
+        assertEquals("postgres", response.getDbType());
+        verify(connectionRepository).save(any());
+    }
+
+    @Test
+    void saveConnection_shouldAcceptPostgresqlAliasDbType() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("Postgres DB");
+        request.setDbType("postgresql");
+        request.setHost("localhost");
+        request.setPort(5432);
+        request.setDatabaseName("shop");
+        request.setUsername("postgres");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(encryptionUtil.encrypt("plain-secret"))
+                .thenReturn("encrypted-secret");
+
+        ConnectionResponse response =
+                connectionService.saveConnection("owner", request);
+
+        assertEquals("postgresql", response.getDbType());
+    }
+
+    @Test
+    void saveConnection_shouldRejectUnsupportedDbType_beforeTouchingDb() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("Oracle DB");
+        request.setDbType("oracle");
+        request.setHost("localhost");
+        request.setPort(1521);
+        request.setDatabaseName("shop");
+        request.setUsername("root");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.saveConnection("owner", request)
+        );
+
+        // Bị chặn SỚM: không được đi tiếp tới bước validate SSRF hay lưu DB.
+        verify(ssrfProtection, never()).validateHost(any());
+        verify(connectionRepository, never()).save(any());
+    }
+
+    @Test
+    void saveConnection_shouldRejectBlankDbType() {
+
+        ConnectionRequest request = new ConnectionRequest();
+        request.setName("No type DB");
+        request.setDbType("");
+        request.setHost("localhost");
+        request.setPort(3306);
+        request.setDatabaseName("shop");
+        request.setUsername("root");
+        request.setPassword("plain-secret");
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> connectionService.saveConnection("owner", request)
+        );
+
+        verify(connectionRepository, never()).save(any());
+    }
+
     @Test
     void getConnectionsByUser_shouldReturnOnlyConnectionsOfThatUser() {
 

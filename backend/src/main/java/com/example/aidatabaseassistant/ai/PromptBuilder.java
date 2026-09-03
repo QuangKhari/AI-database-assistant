@@ -16,11 +16,71 @@ import java.util.Locale;
 @Component
 public class PromptBuilder {
 
+    // =========================================================
+    // DIALECT HELPERS (Multi-DB: MySQL / PostgreSQL)
+    // =========================================================
+    //
+    // PromptBuilder truoc day LUON gia dinh dialect la MySQL (chuoi
+    // "Ban la chuyen gia MySQL..." hardcode), du connection thuc te
+    // co the la PostgreSQL. Dieu nay khien Gemini de sinh ra ham/cu
+    // phap chi MySQL moi co (IFNULL, GROUP_CONCAT, DATE_FORMAT,
+    // backtick `...`) roi that bai khi chay tren PostgreSQL.
+    //
+    // 3 method duoi day suy ra dialect TRUC TIEP tu
+    // DatabaseSchema.getDbType() (da co san, khong can doi signature
+    // cua cac ham build...Prompt) va chi bo sung 1 doan luu y cu phap
+    // khi dialect la PostgreSQL. Mac dinh (schema null, dbType null,
+    // dbType = "mysql"/"excel") van la "MySQL" nhu code cu -> KHONG
+    // lam thay doi hanh vi hien tai cho MySQL/Excel.
+
+    private static final String DEFAULT_DIALECT_LABEL = "MySQL";
+
+    private boolean isPostgres(String dbType) {
+        return "postgres".equalsIgnoreCase(dbType)
+                || "postgresql".equalsIgnoreCase(dbType);
+    }
+
+    private String resolveDialectLabel(DatabaseSchema schema) {
+        if (schema != null && isPostgres(schema.getDbType())) {
+            return "PostgreSQL";
+        }
+        return DEFAULT_DIALECT_LABEL;
+    }
+
+    /**
+     * Ghi chu cac diem khac biet cu phap quan trong nhat giua MySQL
+     * va PostgreSQL, chi chen vao prompt khi dialect la PostgreSQL
+     * (voi MySQL/Excel giu nguyen prompt nhu cu, khong them gi ca).
+     */
+    private String dialectSyntaxNote(String dialectLabel) {
+        if (!"PostgreSQL".equals(dialectLabel)) {
+            return "";
+        }
+
+        return """
+
+        LƯU Ý CÚ PHÁP POSTGRESQL (khác MySQL, PHẢI tuân theo):
+        - Nếu cần quote tên bảng/cột, dùng dấu ngoặc kép "..." (KHÔNG dùng
+          backtick `...` như MySQL).
+        - Dùng COALESCE(...) thay vì IFNULL(...).
+        - Dùng STRING_AGG(cột, ', ') thay vì GROUP_CONCAT(cột).
+        - Dùng TO_CHAR(cột_ngày, 'YYYY-MM-DD') thay vì DATE_FORMAT(...).
+        - So sánh chuỗi PHÂN BIỆT HOA/THƯỜNG theo mặc định; dùng ILIKE thay
+          vì LIKE nếu câu hỏi cần so khớp không phân biệt hoa/thường.
+        - LIMIT n vẫn dùng bình thường như MySQL.
+        """;
+    }
+
     public String buildGenerationPrompt(String question, DatabaseSchema schema) {
         StringBuilder sb = new StringBuilder();
 
+        String dialectLabel = resolveDialectLabel(schema);
+
+        sb.append("Bạn là chuyên gia ")
+                .append(dialectLabel)
+                .append(" và Text-to-SQL.\n");
+
         sb.append("""
-        Bạn là chuyên gia MySQL và Text-to-SQL.
 
         Nhiệm vụ:
         Chuyển câu hỏi tiếng Việt thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
@@ -53,6 +113,8 @@ public class PromptBuilder {
         14. Không dịch giá trị enum sang tiếng Việt.
         
         """);
+
+        sb.append(dialectSyntaxNote(dialectLabel));
 
         sb.append("SCHEMA:\n");
         appendSchema(sb, schema);
@@ -108,8 +170,13 @@ public class PromptBuilder {
     ) {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("Câu SQL sau đây chạy bị lỗi trên MySQL. Hãy sửa lại cho đúng dựa vào schema. ");
+        String dialectLabel = resolveDialectLabel(schema);
+
+        sb.append("Câu SQL sau đây chạy bị lỗi trên ").append(dialectLabel)
+                .append(". Hãy sửa lại cho đúng dựa vào schema. ");
         sb.append("Chỉ trả về câu SQL đã sửa, không giải thích, không dùng markdown code block.\n\n");
+
+        sb.append(dialectSyntaxNote(dialectLabel));
 
         sb.append("Schema:\n");
         appendSchema(sb, schema);
@@ -135,8 +202,11 @@ public class PromptBuilder {
     ) {
         StringBuilder sb = new StringBuilder();
 
+        String dialectLabel = resolveDialectLabel(schema);
+
+        sb.append("Câu SQL sau đây chạy bị lỗi trên ").append(dialectLabel).append(".\n");
+
         sb.append("""
-            Câu SQL sau đây chạy bị lỗi trên MySQL.
             Hãy sửa lại cho đúng dựa vào schema và lịch sử hội thoại.
 
             QUY TẮC BẮT BUỘC:
@@ -151,6 +221,8 @@ public class PromptBuilder {
                không được lặp lại câu SQL cũ nếu không cần thiết.
 
             """);
+
+        sb.append(dialectSyntaxNote(dialectLabel));
 
         if (conversationHistory != null && !conversationHistory.isBlank()) {
             sb.append("""
@@ -180,8 +252,12 @@ public class PromptBuilder {
     public String buildExplanationPrompt(String sql, DatabaseSchema schema) {
         StringBuilder sb = new StringBuilder();
 
+        String dialectLabel = resolveDialectLabel(schema);
+
+        sb.append("Bạn là chuyên gia ").append(dialectLabel).append(". ");
+
         sb.append("""
-        Bạn là chuyên gia MySQL. Nhiệm vụ của bạn là giải thích câu SQL dưới
+        Nhiệm vụ của bạn là giải thích câu SQL dưới
         đây bằng tiếng Việt, đơn giản để người không rành kỹ thuật cũng hiểu.
 
         CHIA GIẢI THÍCH THEO TỪNG MỆNH ĐỀ xuất hiện trong câu SQL (ví dụ:
@@ -443,8 +519,11 @@ public class PromptBuilder {
     public String buildGenerationPrompt(String question, DatabaseSchema schema, String conversationHistory) {
         StringBuilder sb = new StringBuilder();
 
+        String dialectLabel = resolveDialectLabel(schema);
+
+        sb.append("Bạn là chuyên gia ").append(dialectLabel).append(" và Text-to-SQL.\n");
+
         sb.append("""
-    Bạn là chuyên gia MySQL và Text-to-SQL.
 
     Nhiệm vụ:
     Chuyển câu hỏi tiếng Việt thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
@@ -489,9 +568,11 @@ public class PromptBuilder {
     10. Luôn ưu tiên SQL ngắn gọn và chính xác.
     11. Nếu câu hỏi hỏi "đơn hàng nào", "khách hàng nào", "sản phẩm nào" mà yêu cầu toàn bộ thông tin thì phải trả về SELECT *.
     12. Chỉ chọn một vài cột khi câu hỏi nêu rõ các cột cần lấy (ví dụ: tên, giá, email...).
-    13. KHÔNG được tự ý dùng DISTINCT. Chỉ dùng DISTINCT khi câu hỏi có từ: không trùng, duy nhất, distinct.
+        13. KHÔNG được tự ý dùng DISTINCT. Chỉ dùng DISTINCT khi câu hỏi có từ: không trùng, duy nhất, distinct.
     14. Không dịch giá trị enum sang tiếng Việt.
     """);
+
+        sb.append(dialectSyntaxNote(dialectLabel));
 
         sb.append("SCHEMA:\n");
         appendSchema(sb, schema);

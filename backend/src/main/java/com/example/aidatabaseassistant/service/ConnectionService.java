@@ -8,6 +8,7 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -36,8 +37,21 @@ public class ConnectionService {
     // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
     // gia tri nay qua constructor -> pha vo constructor 4-tham-so hien tai dang
     // duoc goi truc tiep trong ConnectionServiceTest.
-    @Value("${connection.max-per-user:5}")
-    private int maxConnectionsPerUser = 5;
+    @Value("${connection.max-per-user:20}")
+    private int maxConnectionsPerUser = 20;
+
+    @PostConstruct
+    public void debugConfig() {
+        System.out.println(
+                ">>> maxConnectionsPerUser = "
+                        + maxConnectionsPerUser
+        );
+    }
+    // Danh sach dbType duoc JdbcUrlBuilder ho tro cho connection nhap tay
+    // (KHONG bao gom "excel" - excel di qua saveExcelConnection() rieng,
+    // khong nhan dbType tu request).
+    private static final List<String> SUPPORTED_MANUAL_DB_TYPES =
+            List.of("mysql", "postgres", "postgresql");
 
     public boolean testConnection(ConnectionRequest request) {
         return targetDatabaseClient.testConnection(
@@ -50,9 +64,32 @@ public class ConnectionService {
         );
     }
 
+    /**
+     * Validate dbType SỚM, ngay khi lưu connection.
+     *
+     * Trước đây saveConnection() lưu thẳng dbType từ request mà không
+     * kiểm tra gì - nếu người dùng gõ nhầm ("postgress", "oracle"...),
+     * lỗi "Loại database chưa được hỗ trợ" chỉ lộ ra SAU đó, ở bước
+     * discoverSchema()/testConnection()/query, gây khó hiểu vì connection
+     * đã "lưu thành công" nhưng dùng không được.
+     */
+    private void validateDbType(String dbType) {
+        if (dbType == null
+                || SUPPORTED_MANUAL_DB_TYPES.stream()
+                .noneMatch(dbType::equalsIgnoreCase)) {
+
+            throw new IllegalArgumentException(
+                    "Loại database chưa được hỗ trợ: " + dbType
+                            + ". Chỉ hỗ trợ: mysql, postgres/postgresql."
+            );
+        }
+    }
+
     public ConnectionResponse saveConnection(String username, ConnectionRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        validateDbType(request.getDbType());
 
         // SSRF guard: truoc day chi testConnection() goi validateHost(), nen
         // saveConnection() co the luu thang mot host noi bo (vi du 127.0.0.1,
