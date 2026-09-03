@@ -8,14 +8,13 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,43 +25,71 @@ public class ConnectionService {
     private final DatabaseConnectionRepository connectionRepository;
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
+    // Van giu ssrfProtection rieng: saveConnection()/updateConnection() can
+    // validate host TRUOC khi luu vao DB (chua he mo ket noi that o buoc
+    // do). Viec MO ket noi that (testConnection/reconnect) gio di qua
+    // targetDatabaseClient - noi DUY NHAT mo JDBC Connection toi DB user.
     private final SsrfProtection ssrfProtection;
-    private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int SOCKET_TIMEOUT_MS = 10000;
-
+    private final TargetDatabaseClient targetDatabaseClient;
+    private final ExcelIngestionService excelIngestionService;
     // Khong khai bao "final" vi day la field duoc inject bang @Value (field
     // injection), tach biet voi cac dependency con lai dang duoc constructor-inject
     // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
     // gia tri nay qua constructor -> pha vo constructor 4-tham-so hien tai dang
     // duoc goi truc tiep trong ConnectionServiceTest.
-    @Value("${connection.max-per-user:5}")
-    private int maxConnectionsPerUser = 5;
+    @Value("${connection.max-per-user:20}")
+    private int maxConnectionsPerUser = 20;
+
+    @PostConstruct
+    public void debugConfig() {
+        System.out.println(
+                ">>> maxConnectionsPerUser = "
+                        + maxConnectionsPerUser
+        );
+    }
+    // Danh sach dbType duoc JdbcUrlBuilder ho tro cho connection nhap tay
+    // (KHONG bao gom "excel" - excel di qua saveExcelConnection() rieng,
+    // khong nhan dbType tu request).
+    private static final List<String> SUPPORTED_MANUAL_DB_TYPES =
+            List.of("mysql", "postgres", "postgresql");
 
     public boolean testConnection(ConnectionRequest request) {
-        ssrfProtection.validateHost(request.getHost());
-
-        String url = buildJdbcUrl(
+        return targetDatabaseClient.testConnection(
                 request.getDbType(),
                 request.getHost(),
                 request.getPort(),
-                request.getDatabaseName()
-        );
-
-        try (Connection conn = DriverManager.getConnection(
-                url,
+                request.getDatabaseName(),
                 request.getUsername(),
-                request.getPassword())) {
+                request.getPassword()
+        );
+    }
 
-            return conn.isValid(3);
+    /**
+     * Validate dbType SỚM, ngay khi lưu connection.
+     *
+     * Trước đây saveConnection() lưu thẳng dbType từ request mà không
+     * kiểm tra gì - nếu người dùng gõ nhầm ("postgress", "oracle"...),
+     * lỗi "Loại database chưa được hỗ trợ" chỉ lộ ra SAU đó, ở bước
+     * discoverSchema()/testConnection()/query, gây khó hiểu vì connection
+     * đã "lưu thành công" nhưng dùng không được.
+     */
+    private void validateDbType(String dbType) {
+        if (dbType == null
+                || SUPPORTED_MANUAL_DB_TYPES.stream()
+                .noneMatch(dbType::equalsIgnoreCase)) {
 
-        } catch (SQLException e) {
-            return false;
+            throw new IllegalArgumentException(
+                    "Loại database chưa được hỗ trợ: " + dbType
+                            + ". Chỉ hỗ trợ: mysql, postgres/postgresql."
+            );
         }
     }
 
     public ConnectionResponse saveConnection(String username, ConnectionRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        validateDbType(request.getDbType());
 
         // SSRF guard: truoc day chi testConnection() goi validateHost(), nen
         // saveConnection() co the luu thang mot host noi bo (vi du 127.0.0.1,
@@ -92,6 +119,45 @@ public class ConnectionService {
         return toResponse(connection);
     }
 
+    /**
+     * Tao 1 DatabaseConnection tu file Excel upload len. Khac voi
+     * saveConnection() (nhan ConnectionRequest voi host/port/username/
+     * password bat buoc), o day KHONG co cac gia tri do - dung placeholder
+     * co dinh, va cot databaseName duoc tai su dung de luu DUONG DAN file
+     * .duckdb (xem TargetDatabaseClient.buildJdbcUrl).
+     */
+    public ConnectionResponse saveExcelConnection(
+            String username,
+            org.springframework.web.multipart.MultipartFile file,
+            String name) {
+
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        long currentCount = connectionRepository.countByUserId(user.getId());
+        if (currentCount >= maxConnectionsPerUser) {
+            throw new IllegalArgumentException(
+                    "Bạn đã đạt giới hạn tối đa " + maxConnectionsPerUser + " kết nối database. "
+                            + "Vui lòng xóa bớt kết nối cũ trước khi thêm mới.");
+        }
+
+        String duckDbFilePath = excelIngestionService.ingest(file, user.getId());
+
+        DatabaseConnection connection = DatabaseConnection.builder()
+                .user(user)
+                .name(name)
+                .dbType("excel")
+                .host("local-file")
+                .port(0)
+                .databaseName(duckDbFilePath)
+                .username("excel-file")
+                .encryptedPassword(encryptionUtil.encrypt("-"))
+                .build();
+
+        connectionRepository.save(connection);
+        return toResponse(connection);
+    }
+
     public List<ConnectionResponse> getConnectionsByUser(String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
@@ -103,15 +169,6 @@ public class ConnectionService {
     }
 
 
-
-    private String buildJdbcUrl(String dbType, String host, Integer port, String databaseName) {
-        if ("mysql".equalsIgnoreCase(dbType)) {
-            return "jdbc:mysql://" + host + ":" + port + "/" + databaseName
-                    + "?connectTimeout=" + CONNECT_TIMEOUT_MS
-                    + "&socketTimeout=" + SOCKET_TIMEOUT_MS;
-        }
-        throw new IllegalArgumentException("Loại database chưa được hỗ trợ: " + dbType);
-    }
 
     private ConnectionResponse toResponse(DatabaseConnection connection) {
         return new ConnectionResponse(
@@ -157,22 +214,28 @@ public class ConnectionService {
     public boolean reconnect(String username, Long connectionId) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
-        ssrfProtection.validateHost(connection.getHost());
-
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
-        String url = buildJdbcUrl(connection.getDbType(), connection.getHost(),
-                connection.getPort(), connection.getDatabaseName());
-
-        try (Connection conn = DriverManager.getConnection(url, connection.getUsername(), rawPassword)) {
-            return conn.isValid(3);
-        } catch (SQLException e) {
-            return false;
-        }
+        return targetDatabaseClient.testConnection(
+                connection.getDbType(),
+                connection.getHost(),
+                connection.getPort(),
+                connection.getDatabaseName(),
+                connection.getUsername(),
+                rawPassword
+        );
     }
 
     public void disconnect(String username, Long connectionId) {
-        DatabaseConnection connection = getOwnedConnection(username, connectionId);
+        DatabaseConnection connection =
+                getOwnedConnection(username, connectionId);
+
+        if ("excel".equalsIgnoreCase(connection.getDbType())) {
+            excelIngestionService.deleteDuckDbFile(
+                    connection.getDatabaseName()
+            );
+        }
+
         connectionRepository.delete(connection);
     }
 

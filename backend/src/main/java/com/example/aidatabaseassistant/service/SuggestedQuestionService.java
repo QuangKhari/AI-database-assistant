@@ -129,13 +129,32 @@ public class SuggestedQuestionService {
         return cleaned;
     }
 
-    @SuppressWarnings("unchecked")
     private List<String> parseJsonArray(String json) {
         try {
             if (json == null || json.isBlank()) return List.of();
-            return objectMapper.readValue(json, List.class);
+
+            // Doc tuong minh thanh List<String> bang TypeReference thay vi
+            // List.class tho (raw type) - truoc day neu Gemini tra ve JSON
+            // hop le nhung SAI HINH DANG (vd [{"question":"..."}] thay vi
+            // ["..."]) thi code cu se KHONG bao gio bao loi, lang le nhet
+            // LinkedHashMap vao field khai bao la List<String>, roi Jackson
+            // serialize ra ngoai theo runtime type that -> FE nhan mang
+            // object long nhau nhung van thay source:"ai" nhu thanh cong.
+            List<String> parsed = objectMapper.readValue(
+                    json, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+
+            // Loai bo phan tu rong/blank cho chac, giu nguyen thu tu.
+            return parsed.stream()
+                    .filter(q -> q != null && !q.isBlank())
+                    .toList();
+
         } catch (Exception e) {
-            log.warn("Không parse được JSON gợi ý câu hỏi: {}", e.getMessage());
+            // TypeReference<List<String>> se tu throw MismatchedInputException
+            // ngay tai day neu phan tu khong phai String (vi du la object),
+            // roi roi vao nhanh nay -> coi nhu parse that bai, dung template
+            // fallback nhu cac truong hop loi khac, KHONG bao gio de lot du
+            // lieu sai hinh dang ra ngoai.
+            log.warn("Không parse được JSON gợi ý câu hỏi (sai định dạng hoặc sai kiểu phần tử): {}", e.getMessage());
             return List.of();
         }
     }

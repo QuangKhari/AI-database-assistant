@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.example.aidatabaseassistant.dto.SchemaResponse;
 import com.example.aidatabaseassistant.service.SchemaDiscoveryService;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -23,6 +24,7 @@ public class ConnectionController {
     private final ConnectionService connectionService;
     private final SchemaDiscoveryService schemaDiscoveryService;
     private final SuggestedQuestionService suggestedQuestionService;
+    private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
 //    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
 //
 //    @GetMapping("/test-ai")
@@ -60,6 +62,15 @@ public class ConnectionController {
         return ResponseEntity.ok(connectionService.saveConnection(authentication.getName(), request));
     }
 
+    @PostMapping(value = "/excel", consumes = "multipart/form-data")
+    public ResponseEntity<ConnectionResponse> uploadExcelConnection(
+            Authentication authentication,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("name") String name) {
+        return ResponseEntity.ok(
+                connectionService.saveExcelConnection(authentication.getName(), file, name));
+    }
+
     @GetMapping
     public ResponseEntity<List<ConnectionResponse>> getConnections(Authentication authentication) {
         return ResponseEntity.ok(connectionService.getConnectionsByUser(authentication.getName()));
@@ -93,6 +104,15 @@ public class ConnectionController {
             Authentication authentication,
             @PathVariable Long id,
             @RequestParam(defaultValue = "false") boolean refresh) {
+
+        // Dong bo voi cac endpoint goi Gemini khac trong QueryController -
+        // truoc day endpoint nay khong co rate limit, cho phep spam
+        // refresh=true de dot quota/chi phi Gemini khong gioi han.
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new com.example.aidatabaseassistant.exception.RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
 
         return ResponseEntity.ok(
                 suggestedQuestionService.getSuggestions(authentication.getName(), id, refresh)

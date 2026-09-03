@@ -37,7 +37,12 @@ public class DataInsightAnalyzer {
     private final ChartTypeClassifier classifier;
 
     public DataInsightFacts analyze(List<String> columns, List<Map<String, Object>> rows) {
-        ChartClassificationResult classification = classifier.classify(columns, rows);
+        return analyze(columns, rows, Map.of());
+    }
+
+    public DataInsightFacts analyze(List<String> columns, List<Map<String, Object>> rows,
+                                    Map<String, Boolean> schemaKeyColumns) {
+        ChartClassificationResult classification = classifier.classify(columns, rows, schemaKeyColumns);
 
         // TABLE nghia la khong tim duoc cap dimension + numeric ro rang -> khong
         // du co so de dua ra insight dang tin cay, tra ve null de QueryService

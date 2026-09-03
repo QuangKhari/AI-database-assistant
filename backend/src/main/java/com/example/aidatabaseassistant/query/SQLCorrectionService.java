@@ -21,12 +21,18 @@ public class SQLCorrectionService {
     private final QueryValidator queryValidator;
     private final QueryExecutor queryExecutor;
 
+    public AttemptResult run(String question, DatabaseSchema filteredSchema, DatabaseSchema fullSchema,
+                             DatabaseConnection connection, String rawPassword) {
+        return run(question, filteredSchema, fullSchema, connection, rawPassword, null); // hành vi cũ
+    }
+
     public AttemptResult run(
             String question,
             DatabaseSchema filteredSchema,
             DatabaseSchema fullSchema,
             DatabaseConnection connection,
-            String rawPassword
+            String rawPassword,
+            String conversationHistory
     ) {
 
         AttemptResult attemptResult = new AttemptResult();
@@ -61,9 +67,10 @@ public class SQLCorrectionService {
         try {
 
             currentSql =
-                    nl2SQLEngine.generateSQL(
+                    generate(
                             question,
-                            schemaForGeneration
+                            schemaForGeneration,
+                            conversationHistory
                     );
 
         } catch (ReadOnlyViolationException e) {
@@ -110,6 +117,7 @@ public class SQLCorrectionService {
 
                 QueryResultDto queryResult =
                         queryExecutor.executeQuery(
+                                connection.getDbType(),
                                 connection.getHost(),
                                 connection.getPort(),
                                 connection.getDatabaseName(),
@@ -217,10 +225,11 @@ public class SQLCorrectionService {
             if (attempt < MAX_RETRIES) {
 
                 currentSql =
-                        nl2SQLEngine.selfCorrect(
+                        selfCorrect(
                                 currentSql,
                                 lastError,
-                                schemaForGeneration
+                                schemaForGeneration,
+                                conversationHistory
                         );
             }
         }
@@ -238,6 +247,28 @@ public class SQLCorrectionService {
                 );
 
         return attemptResult;
+    }
+
+    private String generate(String question, DatabaseSchema schema, String conversationHistory) {
+        return (conversationHistory == null || conversationHistory.isBlank())
+                ? nl2SQLEngine.generateSQL(question, schema)                 // đúng y hệt lời gọi cũ
+                : nl2SQLEngine.generateSQL(question, schema, conversationHistory);
+    }
+
+    private String selfCorrect(
+            String currentSql,
+            String lastError,
+            DatabaseSchema schema,
+            String conversationHistory
+    ) {
+        return (conversationHistory == null || conversationHistory.isBlank())
+                ? nl2SQLEngine.selfCorrect(currentSql, lastError, schema)
+                : nl2SQLEngine.selfCorrect(
+                currentSql,
+                lastError,
+                schema,
+                conversationHistory
+        );
     }
 
     @Getter

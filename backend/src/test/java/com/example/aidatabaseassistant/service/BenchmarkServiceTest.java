@@ -180,9 +180,9 @@ class BenchmarkServiceTest {
 
         QueryResultDto sameResult = new QueryResultDto(
                 List.of("total"), List.of(Map.of("total", 42)), 15, 1, null);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "plain-secret", generatedSql))
+        when(queryExecutor.executeQuery("mysql", "localhost", 3306, "shop", "root", "plain-secret", generatedSql))
                 .thenReturn(sameResult);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "plain-secret", question.getExpectedSql()))
+        when(queryExecutor.executeQuery("mysql", "localhost", 3306, "shop", "root", "plain-secret", question.getExpectedSql()))
                 .thenReturn(sameResult);
 
         when(benchmarkResultRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -225,9 +225,9 @@ class BenchmarkServiceTest {
         QueryResultDto expectedResult = new QueryResultDto(
                 List.of("id"), List.of(Map.of("id", 1)), 12, 1, null);
 
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "plain-secret", generatedSql))
+        when(queryExecutor.executeQuery("mysql", "localhost", 3306, "shop", "root", "plain-secret", generatedSql))
                 .thenReturn(generatedResult);
-        when(queryExecutor.executeQuery("localhost", 3306, "shop", "root", "plain-secret", question.getExpectedSql()))
+        when(queryExecutor.executeQuery("mysql", "localhost", 3306, "shop", "root", "plain-secret", question.getExpectedSql()))
                 .thenReturn(expectedResult);
 
         when(benchmarkResultRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -312,6 +312,7 @@ class BenchmarkServiceTest {
         verify(queryValidator).validate(generatedSql, schema);
 
         verify(queryExecutor, never()).executeQuery(
+                anyString(),
                 anyString(),
                 anyInt(),
                 anyString(),

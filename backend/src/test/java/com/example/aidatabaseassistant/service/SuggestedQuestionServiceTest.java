@@ -196,6 +196,23 @@ class SuggestedQuestionServiceTest {
     }
 
     @Test
+    void getSuggestions_shouldFallbackToTemplate_whenGeminiReturnsWrongShape() {
+        stubOwnedConnectionAndSchema();
+        // JSON hop le VE MAT CU PHAP nhung la mang OBJECT chu khong phai
+        // mang STRING - day la case truoc day bi lot ra ngoai FE ma khong
+        // ai biet, gio phai fallback ve template giong nhu JSON loi hoan toan.
+        when(llmClient.generateResponse(anyString()))
+                .thenReturn("[{\"question\": \"Co bao nhieu don hang?\"}]");
+
+        SuggestedQuestionsResponse response = suggestedQuestionService.getSuggestions("owner", 10L, false);
+
+        assertEquals("template", response.getSource());
+        assertFalse(response.getQuestions().isEmpty());
+
+        response.getQuestions().forEach(q -> assertInstanceOf(String.class, q));
+    }
+
+    @Test
     void getSuggestions_shouldUseTableDescription_inTemplateFallback_whenAvailable() {
 
         // Ghi đè description cho bảng để verify template ưu tiên description hơn tên bảng

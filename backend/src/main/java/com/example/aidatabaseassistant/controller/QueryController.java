@@ -8,10 +8,14 @@ import com.example.aidatabaseassistant.service.QueryService;
 import com.example.aidatabaseassistant.service.RateLimitService;
 import com.example.aidatabaseassistant.service.SqlExplanationService;
 import com.example.aidatabaseassistant.service.SqlOptimizationService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.http.MediaType;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import com.example.aidatabaseassistant.service.ExcelExportService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,6 +29,7 @@ public class QueryController {
     private final DataInsightService dataInsightService;
     private final RateLimitService rateLimitService;
     private final SqlOptimizationService sqlOptimizationService;
+    private final ExcelExportService excelExportService;
 
     @PostMapping("/explain")
     public ResponseEntity<ExplainSqlResponse> explain(
@@ -77,7 +82,7 @@ public class QueryController {
         }
 
         return ResponseEntity.ok(
-                chartSuggestionService.suggest(request)
+                chartSuggestionService.suggest(authentication.getName(), request)
         );
     }
 
@@ -97,8 +102,33 @@ public class QueryController {
         }
 
         return ResponseEntity.ok(
-                dataInsightService.analyze(request)
+                dataInsightService.analyze(authentication.getName(), request)
         );
+    }
+
+    @PostMapping(
+            value = "/export/excel",
+            produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    public ResponseEntity<byte[]> exportExcel(
+            Authentication authentication,
+            @Valid @RequestBody ExcelExportRequest request) {
+
+        byte[] file =
+                excelExportService.export(request);
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaType.parseMediaType(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                )
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"query-result.xlsx\""
+                )
+                .contentLength(file.length)
+                .body(file);
     }
 
     @PostMapping("/optimize")
@@ -118,5 +148,10 @@ public class QueryController {
                         request
                 )
         );
+    }
+
+    @PostMapping(value = "/execute/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter executeStream(Authentication authentication, @Valid @RequestBody QueryRequest request) {
+        return queryService.processQueryStreaming(authentication.getName(), request);
     }
 }

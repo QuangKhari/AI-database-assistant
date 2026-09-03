@@ -28,6 +28,8 @@ class DataInsightServiceTest {
     private PromptBuilder promptBuilder;
     @Mock
     private LLMClient llmClient;
+    @Mock
+    private SchemaDiscoveryService schemaDiscoveryService;
 
     private DataInsightService dataInsightService;
 
@@ -36,8 +38,12 @@ class DataInsightServiceTest {
         // Dung DataInsightAnalyzer (va ChartTypeClassifier ben trong) THAT,
         // khong mock, vi day la thuat toan thuan - chi mock phan phu thuoc
         // AI/network, giong tinh than ChartSuggestionServiceTest.
+        // schemaDiscoveryService chi mock cho du tham so constructor - cac
+        // test hien co deu goi overload analyze(columns, rows) hoac
+        // analyze(request) (khong co username) nen KHONG dung toi mock nay,
+        // khong can stub gi ca.
         dataInsightService = new DataInsightService(
-                new DataInsightAnalyzer(new ChartTypeClassifier()), promptBuilder, llmClient);
+                new DataInsightAnalyzer(new ChartTypeClassifier()), promptBuilder, llmClient, schemaDiscoveryService);
     }
 
     private Map<String, Object> row(Object... kv) {

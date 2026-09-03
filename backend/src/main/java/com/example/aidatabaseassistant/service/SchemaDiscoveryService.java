@@ -1,34 +1,33 @@
 package com.example.aidatabaseassistant.service;
 
 import com.example.aidatabaseassistant.config.EncryptionUtil;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.entity.ColumnMetadata;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
+import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
-import com.example.aidatabaseassistant.security.SsrfProtection;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import com.example.aidatabaseassistant.entity.User;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -41,28 +40,211 @@ public class SchemaDiscoveryService {
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
-    private final SsrfProtection ssrfProtection;
 
-    // Schema RAG
+    /*
+     * Điểm duy nhất mở JDBC connection tới database
+     * của user.
+     *
+     * TargetDatabaseClient chịu trách nhiệm:
+     *
+     * - SSRF protection
+     * - build JDBC URL
+     * - DriverManager.getConnection()
+     * - hỗ trợ MySQL / PostgreSQL / DuckDB
+     */
+    private final TargetDatabaseClient targetDatabaseClient;
+
+    /*
+     * Schema RAG.
+     *
+     * Embedding lỗi không được làm discovery schema thất bại.
+     */
     private final SchemaEmbeddingService schemaEmbeddingService;
 
-    @Transactional
-    public DatabaseSchema discoverSchema(
-            String username,
-            Long connectionId) {
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Không tìm thấy user"
-                        ));
+    // =========================================================
+    // 1. RESOLVE KEY COLUMN MAP
+    // =========================================================
+
+    /**
+     * Trả về map:
+     *
+     *     columnName -> có phải PK/FK hay không
+     *
+     * Dữ liệu lấy từ schema đã lưu trong application database.
+     *
+     * Không kết nối lại database đích.
+     *
+     * Dùng cho ChartTypeClassifier / DataInsightAnalyzer.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Boolean> resolveKeyColumnMap(
+            String username,
+            Long connectionId
+    ) {
+
+        if (connectionId == null) {
+            return Map.of();
+        }
+
+        User user =
+                userRepository.findByUsername(username)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Không tìm thấy user"
+                                )
+                        );
 
         DatabaseConnection connection =
                 connectionRepository.findById(connectionId)
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Không tìm thấy connection"
-                                ));
+                                )
+                        );
+
+        /*
+         * Ownership check.
+         *
+         * Không được bỏ qua.
+         *
+         * Nếu bỏ qua sẽ tạo IDOR:
+         *
+         * user A có thể đọc schema metadata
+         * của connection user B.
+         */
+        if (!connection.getUser().getId().equals(user.getId())) {
+
+            throw new IllegalArgumentException(
+                    "Bạn không có quyền truy cập connection này"
+            );
+        }
+
+        return schemaRepository
+                .findByConnectionId(connectionId)
+                .map(SchemaDiscoveryService::buildKeyColumnMap)
+                .orElse(Map.of());
+    }
+
+
+    // =========================================================
+    // 2. BUILD KEY COLUMN MAP
+    // =========================================================
+
+    /**
+     * Tách riêng thành static method để QueryService
+     * có thể tái sử dụng trực tiếp với fullSchema
+     * đã có sẵn trong bộ nhớ.
+     *
+     * Không query database.
+     * Không kiểm tra ownership.
+     */
+    public static Map<String, Boolean> buildKeyColumnMap(
+            DatabaseSchema schema
+    ) {
+
+        if (schema == null
+                || schema.getTables() == null) {
+
+            return Map.of();
+        }
+
+        Map<String, Boolean> keyColumns =
+                new HashMap<>();
+
+        for (TableMetadata table :
+                schema.getTables()) {
+
+            if (table == null
+                    || table.getColumns() == null) {
+
+                continue;
+            }
+
+            for (ColumnMetadata column :
+                    table.getColumns()) {
+
+                if (column == null
+                        || column.getName() == null
+                        || column.getName().isBlank()) {
+
+                    continue;
+                }
+
+                boolean isKey =
+                        Boolean.TRUE.equals(
+                                column.getPrimaryKey()
+                        )
+                                ||
+                                Boolean.TRUE.equals(
+                                        column.getForeignKey()
+                                );
+
+                /*
+                 * Nếu cùng một column name xuất hiện
+                 * ở nhiều table:
+                 *
+                 *     users.id
+                 *     orders.id
+                 *
+                 * và chỉ một cái là key,
+                 * vẫn ưu tiên true.
+                 *
+                 * An toàn hơn cho chart classification.
+                 */
+                keyColumns.merge(
+                        column.getName()
+                                .toLowerCase(Locale.ROOT),
+                        isKey,
+                        (existing, incoming) ->
+                                existing || incoming
+                );
+            }
+        }
+
+        return keyColumns;
+    }
+
+
+    // =========================================================
+    // 3. DISCOVER SCHEMA
+    // =========================================================
+
+    @Transactional
+    public DatabaseSchema discoverSchema(
+            String username,
+            Long connectionId
+    ) {
+
+        // -----------------------------------------------------
+        // 3.1 Load user
+        // -----------------------------------------------------
+
+        User user =
+                userRepository.findByUsername(username)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Không tìm thấy user"
+                                )
+                        );
+
+
+        // -----------------------------------------------------
+        // 3.2 Load connection
+        // -----------------------------------------------------
+
+        DatabaseConnection connection =
+                connectionRepository.findById(connectionId)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Không tìm thấy connection"
+                                )
+                        );
+
+
+        // -----------------------------------------------------
+        // 3.3 Ownership check
+        // -----------------------------------------------------
 
         if (!connection.getUser().getId().equals(user.getId())) {
 
@@ -71,22 +253,20 @@ public class SchemaDiscoveryService {
             );
         }
 
-        // connectTimeout/socketTimeout: tranh treo vo thoi han neu host connection
-        // khong con phan hoi (vi du DB da bi tat) trong luc quet schema.
-        ssrfProtection.validateHost(connection.getHost());
-        String url =
-                "jdbc:mysql://"
-                        + connection.getHost()
-                        + ":"
-                        + connection.getPort()
-                        + "/"
-                        + connection.getDatabaseName()
-                        + "?connectTimeout=5000&socketTimeout=15000";
+
+        // -----------------------------------------------------
+        // 3.4 Decrypt password
+        // -----------------------------------------------------
 
         String rawPassword =
                 encryptionUtil.decrypt(
                         connection.getEncryptedPassword()
                 );
+
+
+        // -----------------------------------------------------
+        // 3.5 Load existing schema
+        // -----------------------------------------------------
 
         DatabaseSchema schema =
                 schemaRepository
@@ -103,35 +283,29 @@ public class SchemaDiscoveryService {
                                         .build()
                         );
 
-        /*
-         * =========================================================
-         * BẢO TOÀN APPLICATION METADATA TRƯỚC KHI DISCOVERY
-         * =========================================================
-         *
-         * Schema discovery tạo lại TableMetadata / ColumnMetadata
-         * sau mỗi lần refresh.
-         *
-         * Nếu chỉ gọi:
-         *
-         *     tables.clear()
-         *
-         * rồi tạo object mới từ DatabaseMetaData:
-         *
-         *     description = REMARKS
-         *
-         * thì description do user nhập qua SchemaMetadataService
-         * có thể bị mất.
-         *
-         * Vì vậy cần lưu description cũ trước khi clear().
-         *
-         * Key table:
-         *
-         *     tableName
-         *
-         * Key column:
-         *
-         *     tableName.columnName
-         */
+
+        // =====================================================
+        // 3.6 BACKUP APPLICATION METADATA
+        // =====================================================
+        //
+        // Discovery sẽ tạo lại TableMetadata /
+        // ColumnMetadata.
+        //
+        // Nếu clear() trước khi backup:
+        //
+        //     description của user sẽ bị mất.
+        //
+        // Vì vậy phải lưu description trước.
+        //
+        // Table:
+        //
+        //     tableName
+        //
+        // Column:
+        //
+        //     tableName.columnName
+        // =====================================================
+
         Map<String, String> existingTableDescriptions =
                 new HashMap<>();
 
@@ -153,9 +327,11 @@ public class SchemaDiscoveryService {
                     continue;
                 }
 
-                /*
-                 * Chỉ lưu description có giá trị.
-                 */
+
+                // -------------------------------------------------
+                // Backup table description
+                // -------------------------------------------------
+
                 if (existingTable.getDescription() != null
                         && !existingTable
                         .getDescription()
@@ -169,9 +345,11 @@ public class SchemaDiscoveryService {
                     );
                 }
 
-                /*
-                 * Lưu description của từng column.
-                 */
+
+                // -------------------------------------------------
+                // Backup column descriptions
+                // -------------------------------------------------
+
                 if (existingTable.getColumns() == null) {
                     continue;
                 }
@@ -203,23 +381,34 @@ public class SchemaDiscoveryService {
             }
         }
 
-        /*
-         * =========================================================
-         * XÓA METADATA CŨ
-         * =========================================================
-         *
-         * Sau khi description đã được backup:
-         *
-         *     có thể clear() để discovery lại schema mới.
-         */
+
+        // =====================================================
+        // 3.7 CLEAR OLD TABLE METADATA
+        // =====================================================
+
         List<TableMetadata> tables =
                 schema.getTables();
 
+        if (tables == null) {
+
+            tables = new ArrayList<>();
+
+            schema.setTables(tables);
+        }
+
         tables.clear();
 
+
+        // =====================================================
+        // 3.8 OPEN TARGET DATABASE CONNECTION
+        // =====================================================
+
         try (Connection conn =
-                     DriverManager.getConnection(
-                             url,
+                     targetDatabaseClient.openConnection(
+                             connection.getDbType(),
+                             connection.getHost(),
+                             connection.getPort(),
+                             connection.getDatabaseName(),
                              connection.getUsername(),
                              rawPassword
                      )) {
@@ -227,10 +416,42 @@ public class SchemaDiscoveryService {
             DatabaseMetaData metaData =
                     conn.getMetaData();
 
+
+            // =================================================
+            // 3.9 XÁC ĐỊNH CATALOG / SCHEMA
+            // =================================================
+            //
+            // MySQL:
+            //
+            //     catalog = databaseName
+            //     schema  = null
+            //
+            // PostgreSQL:
+            //
+            //     catalog = null
+            //     schema  = public
+            //
+            // DuckDB:
+            //
+            //     thường không cần chỉ định catalog/schema
+            //     như MySQL/PostgreSQL.
+            // =================================================
+
+            String catalog =
+                    getCatalog(connection);
+
+            String schemaPattern =
+                    getSchemaPattern(connection);
+
+
+            // =================================================
+            // 3.10 DISCOVER TABLES
+            // =================================================
+
             try (ResultSet tableRs =
                          metaData.getTables(
-                                 connection.getDatabaseName(),
-                                 null,
+                                 catalog,
+                                 schemaPattern,
                                  "%",
                                  new String[]{"TABLE"}
                          )) {
@@ -238,31 +459,42 @@ public class SchemaDiscoveryService {
                 while (tableRs.next()) {
 
                     String tableName =
-                            tableRs.getString("TABLE_NAME");
+                            tableRs.getString(
+                                    "TABLE_NAME"
+                            );
 
-                    /*
-                     * Description từ database.
-                     *
-                     * MySQL có thể trả null / blank nếu table
-                     * không có COMMENT.
-                     */
+                    if (tableName == null
+                            || tableName.isBlank()) {
+
+                        continue;
+                    }
+
+
+                    // -----------------------------------------
+                    // Description từ database
+                    // -----------------------------------------
+
                     String databaseDescription =
-                            tableRs.getString("REMARKS");
+                            tableRs.getString(
+                                    "REMARKS"
+                            );
 
-                    /*
-                     * Ưu tiên description do application/user
-                     * đã lưu trước đó.
-                     *
-                     * Nếu chưa có:
-                     *
-                     *     dùng REMARKS từ database.
-                     */
+
+                    // -----------------------------------------
+                    // Ưu tiên description application
+                    // -----------------------------------------
+
                     String description =
                             getPreservedDescription(
                                     existingTableDescriptions,
                                     normalizeName(tableName),
                                     databaseDescription
                             );
+
+
+                    // -----------------------------------------
+                    // Tạo TableMetadata
+                    // -----------------------------------------
 
                     TableMetadata table =
                             TableMetadata.builder()
@@ -271,43 +503,58 @@ public class SchemaDiscoveryService {
                                     .description(description)
                                     .build();
 
+
+                    // -----------------------------------------
+                    // Discover columns + PK + FK
+                    // -----------------------------------------
+
                     table.setColumns(
                             discoverColumns(
                                     metaData,
-                                    connection.getDatabaseName(),
+                                    connection,
                                     tableName,
                                     table,
                                     existingColumnDescriptions
                             )
                     );
 
+
                     tables.add(table);
                 }
             }
+
+
+            // =================================================
+            // 3.11 UPDATE SYNC TIME
+            // =================================================
 
             schema.setLastSyncedAt(
                     LocalDateTime.now()
             );
 
-            /*
-             * Lưu schema trước để đảm bảo schema.id đã tồn tại.
-             *
-             * TableEmbedding sử dụng:
-             *     (schema_id, table_name)
-             *
-             * thay vì table_id vì TableMetadata có thể bị xoá/tạo lại
-             * trong mỗi lần discoverSchema().
-             */
+
+            // =================================================
+            // 3.12 SAVE SCHEMA
+            // =================================================
+            //
+            // Lưu trước để đảm bảo schema.id tồn tại.
+            //
+            // TableEmbedding dùng:
+            //
+            //     schema_id
+            //     table_name
+            //
+            // thay vì table_id.
+            // =================================================
+
             DatabaseSchema savedSchema =
                     schemaRepository.save(schema);
 
-            /*
-             * Schema discovery là chức năng chính.
-             * Embedding chỉ là chức năng bổ sung cho RAG.
-             *
-             * Nếu Gemini Embedding API lỗi, discovery schema
-             * vẫn phải thành công.
-             */
+
+            // =================================================
+            // 3.13 SCHEMA RAG EMBEDDING
+            // =================================================
+
             try {
 
                 schemaEmbeddingService.ensureEmbeddings(
@@ -316,6 +563,12 @@ public class SchemaDiscoveryService {
 
             } catch (Exception e) {
 
+                /*
+                 * Embedding là chức năng bổ sung.
+                 *
+                 * Gemini/API lỗi không được làm
+                 * Schema Discovery thất bại.
+                 */
                 log.warn(
                         "Không thể tạo schema embeddings cho schema {}: {}",
                         savedSchema.getId(),
@@ -327,6 +580,7 @@ public class SchemaDiscoveryService {
                         e
                 );
             }
+
 
             return savedSchema;
 
@@ -340,9 +594,33 @@ public class SchemaDiscoveryService {
         }
     }
 
+
+    // =========================================================
+    // 4. DISCOVER COLUMNS
+    // =========================================================
+
+    /**
+     * Discover:
+     *
+     * - columns
+     * - data type
+     * - nullable
+     * - primary key
+     * - foreign key
+     * - referenced table
+     * - referenced column
+     * - description
+     *
+     * Quan trọng:
+     *
+     * Không còn sử dụng dbName.
+     *
+     * Catalog/schema được xác định từ DatabaseConnection
+     * để hỗ trợ cả MySQL và PostgreSQL.
+     */
     private List<ColumnMetadata> discoverColumns(
             DatabaseMetaData metaData,
-            String dbName,
+            DatabaseConnection connection,
             String tableName,
             TableMetadata table,
             Map<String, String> existingColumnDescriptions
@@ -351,31 +629,60 @@ public class SchemaDiscoveryService {
         List<ColumnMetadata> columns =
                 new ArrayList<>();
 
+
+        // -----------------------------------------------------
+        // Xác định catalog/schema
+        // -----------------------------------------------------
+
+        String catalog =
+                getCatalog(connection);
+
+        String schemaPattern =
+                getSchemaPattern(connection);
+
+
+        // =====================================================
+        // 4.1 PRIMARY KEYS
+        // =====================================================
+
         Set<String> primaryKeys =
                 new HashSet<>();
 
         try (ResultSet pkRs =
                      metaData.getPrimaryKeys(
-                             dbName,
-                             null,
+                             catalog,
+                             schemaPattern,
                              tableName
                      )) {
 
             while (pkRs.next()) {
 
-                primaryKeys.add(
-                        pkRs.getString("COLUMN_NAME")
-                );
+                String columnName =
+                        pkRs.getString(
+                                "COLUMN_NAME"
+                        );
+
+                if (columnName != null) {
+
+                    primaryKeys.add(
+                            columnName
+                    );
+                }
             }
         }
+
+
+        // =====================================================
+        // 4.2 FOREIGN KEYS
+        // =====================================================
 
         Map<String, String[]> foreignKeys =
                 new HashMap<>();
 
         try (ResultSet fkRs =
                      metaData.getImportedKeys(
-                             dbName,
-                             null,
+                             catalog,
+                             schemaPattern,
                              tableName
                      )) {
 
@@ -396,6 +703,10 @@ public class SchemaDiscoveryService {
                                 "PKCOLUMN_NAME"
                         );
 
+                if (fkColumn == null) {
+                    continue;
+                }
+
                 foreignKeys.put(
                         fkColumn,
                         new String[]{
@@ -406,10 +717,15 @@ public class SchemaDiscoveryService {
             }
         }
 
+
+        // =====================================================
+        // 4.3 COLUMNS
+        // =====================================================
+
         try (ResultSet colRs =
                      metaData.getColumns(
-                             dbName,
-                             null,
+                             catalog,
+                             schemaPattern,
                              tableName,
                              "%"
                      )) {
@@ -421,25 +737,37 @@ public class SchemaDiscoveryService {
                                 "COLUMN_NAME"
                         );
 
+                if (columnName == null
+                        || columnName.isBlank()) {
+
+                    continue;
+                }
+
+
+                // ---------------------------------------------
+                // Foreign key target
+                // ---------------------------------------------
+
                 String[] fkTarget =
                         foreignKeys.get(
                                 columnName
                         );
 
-                /*
-                 * Description từ database.
-                 */
-                String databaseDescription =
-                        colRs.getString("REMARKS");
 
-                /*
-                 * Ưu tiên description do user/application
-                 * đã lưu trước đó.
-                 *
-                 * Nếu chưa có:
-                 *
-                 *     dùng REMARKS từ database.
-                 */
+                // ---------------------------------------------
+                // Description từ database
+                // ---------------------------------------------
+
+                String databaseDescription =
+                        colRs.getString(
+                                "REMARKS"
+                        );
+
+
+                // ---------------------------------------------
+                // Description application ưu tiên hơn
+                // ---------------------------------------------
+
                 String description =
                         getPreservedDescription(
                                 existingColumnDescriptions,
@@ -449,6 +777,11 @@ public class SchemaDiscoveryService {
                                 ),
                                 databaseDescription
                         );
+
+
+                // ---------------------------------------------
+                // Build ColumnMetadata
+                // ---------------------------------------------
 
                 ColumnMetadata column =
                         ColumnMetadata.builder()
@@ -463,8 +796,9 @@ public class SchemaDiscoveryService {
                                         colRs.getInt(
                                                 "NULLABLE"
                                         )
-                                                == DatabaseMetaData
-                                                .columnNullable
+                                                ==
+                                                DatabaseMetaData
+                                                        .columnNullable
                                 )
                                 .primaryKey(
                                         primaryKeys.contains(
@@ -484,8 +818,11 @@ public class SchemaDiscoveryService {
                                                 ? fkTarget[1]
                                                 : null
                                 )
-                                .description(description)
+                                .description(
+                                        description
+                                )
                                 .build();
+
 
                 columns.add(column);
             }
@@ -494,15 +831,17 @@ public class SchemaDiscoveryService {
         return columns;
     }
 
+
+    // =========================================================
+    // 5. PRESERVE DESCRIPTION
+    // =========================================================
+
     /**
-     * Lấy description ưu tiên theo thứ tự:
+     * Priority:
      *
-     * 1. Description đã được user/application lưu.
-     * 2. Description từ DatabaseMetaData.REMARKS.
-     * 3. null.
-     *
-     * Điều này giúp schema refresh không làm mất
-     * metadata mà user đã nhập cho AI.
+     * 1. Description đã lưu trong application
+     * 2. DatabaseMetaData.REMARKS
+     * 3. null
      */
     private String getPreservedDescription(
             Map<String, String> existingDescriptions,
@@ -528,13 +867,19 @@ public class SchemaDiscoveryService {
         return null;
     }
 
+
+    // =========================================================
+    // 6. BUILD COLUMN KEY
+    // =========================================================
+
     /**
-     * Tạo key duy nhất cho column:
+     * Tạo key:
      *
      *     tableName.columnName
      *
-     * Dùng normalized name để tránh lỗi khác
-     * chữ hoa / chữ thường.
+     * Ví dụ:
+     *
+     *     users.email
      */
     private String buildColumnKey(
             String tableName,
@@ -546,16 +891,102 @@ public class SchemaDiscoveryService {
                 + normalizeName(columnName);
     }
 
+
+    // =========================================================
+    // 7. NORMALIZE NAME
+    // =========================================================
+
     /**
-     * Chuẩn hóa tên table/column.
+     * Normalize table/column name để tránh khác biệt:
+     *
+     *     USER
+     *     User
+     *     user
      *
      * Locale.ROOT giúp kết quả ổn định
-     * trên mọi môi trường chạy application.
+     * trên mọi môi trường.
      */
-    private String normalizeName(String name) {
+    private String normalizeName(
+            String name
+    ) {
 
         return name
                 .trim()
                 .toLowerCase(Locale.ROOT);
+    }
+
+
+    // =========================================================
+    // 8. GET JDBC CATALOG
+    // =========================================================
+
+    /**
+     * Xác định catalog truyền vào DatabaseMetaData.
+     *
+     * MySQL:
+     *
+     *     catalog = databaseName
+     *
+     * PostgreSQL:
+     *
+     *     catalog = null
+     *
+     * DuckDB:
+     *
+     *     catalog = null
+     */
+    private String getCatalog(
+            DatabaseConnection connection
+    ) {
+
+        if ("mysql".equalsIgnoreCase(
+                connection.getDbType()
+        )) {
+
+            return connection.getDatabaseName();
+        }
+
+        return null;
+    }
+
+
+    // =========================================================
+    // 9. GET JDBC SCHEMA PATTERN
+    // =========================================================
+
+    /**
+     * Xác định schemaPattern truyền vào DatabaseMetaData.
+     *
+     * PostgreSQL:
+     *
+     *     public
+     *
+     * MySQL:
+     *
+     *     null
+     *
+     * DuckDB:
+     *
+     *     null
+     *
+     * Hiện tại MVP chỉ discover schema public
+     * của PostgreSQL.
+     */
+    private String getSchemaPattern(
+            DatabaseConnection connection
+    ) {
+
+        if ("postgres".equalsIgnoreCase(
+                connection.getDbType()
+        )
+                ||
+                "postgresql".equalsIgnoreCase(
+                        connection.getDbType()
+                )) {
+
+            return "public";
+        }
+
+        return null;
     }
 }

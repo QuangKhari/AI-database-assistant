@@ -1,5 +1,7 @@
 package com.example.aidatabaseassistant.query;
 
+import com.example.aidatabaseassistant.db.JdbcUrlBuilder;
+import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.dto.QueryResultDto;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,8 +27,13 @@ class QueryExecutorSecurityTest {
                 SsrfProtection.class
         );
 
+        // QueryExecutor gio nhan TargetDatabaseClient thay vi SsrfProtection
+        // truc tiep. Van dung ssrfProtection mock ben trong (khong throw
+        // gi, giong hanh vi mac dinh cu) de DriverManager.getConnection()
+        // (dang bi mockStatic ben duoi) van la noi nem SQLException ra.
+        JdbcUrlBuilder jdbcUrlBuilder = new JdbcUrlBuilder();
         queryExecutor =
-                new QueryExecutor(ssrfProtection);
+                new QueryExecutor(new TargetDatabaseClient(ssrfProtection, jdbcUrlBuilder));
     }
 
     @Test

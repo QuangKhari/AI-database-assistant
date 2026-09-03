@@ -25,13 +25,30 @@ public class ChartSuggestionService {
     private final ChartTypeClassifier classifier;
     private final PromptBuilder promptBuilder;
     private final LLMClient llmClient;
+    private final SchemaDiscoveryService schemaDiscoveryService;
 
+    // Giu lai overload cu (khong username) de tuong thich nguoc - phong khi
+    // co noi khac trong code/test dang goi ban 1-tham-so nay. QueryController
+    // (noi duy nhat dung ChartSuggestionRequest o main code) da chuyen sang
+    // goi ban co username o Phan 2.7, KHONG con dung ham nay nua.
     public ChartSuggestionResponse suggest(ChartSuggestionRequest request) {
         return suggest(request.getColumns(), request.getRows());
     }
 
+    public ChartSuggestionResponse suggest(String username, ChartSuggestionRequest request) {
+        Map<String, Boolean> schemaKeyColumns =
+                schemaDiscoveryService.resolveKeyColumnMap(username, request.getConnectionId());
+
+        return suggest(request.getColumns(), request.getRows(), schemaKeyColumns);
+    }
+
     public ChartSuggestionResponse suggest(List<String> columns, List<Map<String, Object>> rows) {
-        ChartClassificationResult result = classifier.classify(columns, rows);
+        return suggest(columns, rows, Map.of());
+    }
+
+    public ChartSuggestionResponse suggest(List<String> columns, List<Map<String, Object>> rows,
+                                           Map<String, Boolean> schemaKeyColumns) {
+        ChartClassificationResult result = classifier.classify(columns, rows, schemaKeyColumns);
         String reason = generateReason(result, rows == null ? 0 : rows.size());
 
         return new ChartSuggestionResponse(

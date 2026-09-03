@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -76,6 +77,8 @@ class QueryServiceTest {
     private DataInsightService dataInsightService;
     @Mock
     private SchemaRetrievalService schemaRetrievalService;
+    @Mock
+    private Executor sseTaskExecutor;
 
     private QueryService queryService;
 
@@ -96,7 +99,7 @@ class QueryServiceTest {
                 userRepository, connectionRepository, schemaRepository, conversationRepository,
                 messageRepository, queryLogRepository, encryptionUtil, nl2SQLEngine, queryValidator,
                 sqlCorrectionService, llmClient, rateLimitService, chartSuggestionService,
-                schemaLoaderService, dataInsightService, schemaRetrievalService);
+                schemaLoaderService, dataInsightService, schemaRetrievalService, sseTaskExecutor);
 
         // modelUrl la field @Value, KHONG duoc Lombok dua vao constructor vi
         // khong phai final - phai bom bang reflection, giong cach da lam o
@@ -296,7 +299,7 @@ class QueryServiceTest {
                 .thenReturn(attemptResult);
 
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(chartSuggestionService.suggest(finalResult.getColumns(), finalResult.getRows()))
+        when(chartSuggestionService.suggest(eq(finalResult.getColumns()), eq(finalResult.getRows()), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.BAR, List.of(ChartType.LINE),
                         "thang", List.of("1"), List.of(), "vì lý do gì đó"));
 
@@ -331,7 +334,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "Không có dữ liệu"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -365,7 +368,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
-        when(chartSuggestionService.suggest(anyList(), anyList()))
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -517,12 +520,12 @@ class QueryServiceTest {
         ChartSuggestionResponse expectedChart = new ChartSuggestionResponse(
                 ChartType.LINE, List.of(ChartType.BAR), "thang", List.of("1", "2"),
                 List.of(), "cột 'thang' mang tính thời gian nên phù hợp Line");
-        when(chartSuggestionService.suggest(columns, rows)).thenReturn(expectedChart);
+        when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenReturn(expectedChart);
 
         QueryResponse response = queryService.processQuery("owner", request);
 
         assertSame(expectedChart, response.getChartSuggestion());
-        verify(chartSuggestionService).suggest(columns, rows);
+        verify(chartSuggestionService).suggest(eq(columns), eq(rows), anyMap());
     }
 
     @Test
@@ -577,8 +580,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(chartSuggestionService.suggest(columns, rows))
-                .thenThrow(new RuntimeException("Loi bat ngo trong chart suggestion"));
+        when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong chart suggestion"));
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -620,12 +622,12 @@ class QueryServiceTest {
                 "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
                 100.0, TrendDirection.INCREASING, "1", "2", null, null, List.of(),
                 "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
-        when(dataInsightService.analyze(columns, rows)).thenReturn(expectedInsight);
+        when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenReturn(expectedInsight);
 
         QueryResponse response = queryService.processQuery("owner", request);
 
         assertSame(expectedInsight, response.getDataInsight());
-        verify(dataInsightService).analyze(columns, rows);
+        verify(dataInsightService).analyze(eq(columns), eq(rows), anyMap());
     }
 
     @Test
@@ -680,8 +682,7 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
         when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
-        when(dataInsightService.analyze(columns, rows))
-                .thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
+        when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -689,5 +690,176 @@ class QueryServiceTest {
         assertEquals("SELECT thang, doanh_thu FROM revenue", response.getGeneratedSql());
         assertNotNull(response.getResult());
         assertNull(response.getDataInsight());
+    }
+
+    @Test
+    void processQuery_withExistingConversationAndPriorMessages_shouldBuildHistoryAndPassToCorrectionService() {
+        QueryRequest request = buildRequest("So sánh nó với tháng 2", 10L, 500L);
+        Conversation existingConversation = Conversation.builder().id(500L).user(owner).connection(connection).build();
+
+        Message priorUserMsg = Message.builder().id(1L).conversation(existingConversation)
+                .role("user").content("Doanh thu tháng 1 là bao nhiêu?").build();
+        Message priorAssistantMsg = Message.builder().id(2L).conversation(existingConversation)
+                .role("assistant").generatedSql("SELECT SUM(total) FROM orders WHERE MONTH(created_at)=1").build();
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(conversationRepository.findById(500L)).thenReturn(Optional.of(existingConversation));
+        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(500L))
+                .thenReturn(List.of(priorUserMsg, priorAssistantMsg));
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubMessageSaveAssignsId();
+
+        QueryResultDto finalResult = new QueryResultDto(List.of("col"), List.of(Map.of("col", 1)), 10L, 1, null);
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT col FROM t", finalResult,
+                List.of(buildAttemptLog("SELECT col FROM t", true, finalResult)));
+
+        // QUAN TRỌNG: stub bản 6-arg (có history), KHÔNG stub bản 5-arg cho test này
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection),
+                eq("plain-pass"), contains("Doanh thu tháng 1 là bao nhiêu?")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
+                .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "..."));
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertEquals("SELECT col FROM t", response.getGeneratedSql());
+        verify(sqlCorrectionService).run(anyString(), any(), any(), any(), anyString(),
+                contains("SELECT SUM(total) FROM orders WHERE MONTH(created_at)=1")); // SQL cũ có trong history
+    }
+
+    @Test
+    void processQuery_withNewConversation_shouldNotBuildHistory_backwardCompatible() {
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        QueryResultDto finalResult = new QueryResultDto(List.of("col"), List.of(Map.of("col", 1)), 10L, 1, null);
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT col FROM t", finalResult,
+                List.of(buildAttemptLog("SELECT col FROM t", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
+                .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
+
+        queryService.processQuery("owner", request);
+
+        // Conversation mới -> KHÔNG được query lịch sử (tránh 1 lượt DB thừa)
+        verify(messageRepository, never()).findByConversationIdOrderByCreatedAtAsc(anyLong());
+    }
+
+    @Test
+    void processQuery_withProgressListener_shouldEmitStagesInOrder() {
+        QueryRequest request =
+                buildRequest("Doanh thu theo tháng", 10L, null);
+
+        stubSuccessfulProcessQuery();
+
+        List<String> stages = new ArrayList<>();
+
+        QueryProgressListener listener =
+                (stage, message) -> stages.add(stage);
+
+        queryService.processQuery(
+                "owner",
+                request,
+                listener
+        );
+
+        assertFalse(stages.isEmpty());
+
+        assertEquals("STATUS", stages.get(0));
+
+        assertTrue(stages.contains("STATUS"));
+    }
+
+    private void stubSuccessfulProcessQuery() {
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+
+        when(connectionRepository.findById(10L))
+                .thenReturn(Optional.of(connection));
+
+        when(schemaLoaderService.loadCompleteSchema(10L))
+                .thenReturn(schema);
+
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema)))
+                .thenReturn(schema);
+
+        when(encryptionUtil.decrypt("enc-pass"))
+                .thenReturn("plain-pass");
+
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        QueryResultDto finalResult = new QueryResultDto(
+                List.of("thang", "doanh_thu"),
+                List.of(
+                        Map.of(
+                                "thang", 1,
+                                "doanh_thu", 1000
+                        )
+                ),
+                42L,
+                1,
+                null
+        );
+
+        SQLCorrectionService.AttemptLog attemptLog =
+                buildAttemptLog(
+                        "SELECT thang, doanh_thu FROM revenue",
+                        true,
+                        finalResult
+                );
+
+        SQLCorrectionService.AttemptResult attemptResult =
+                buildAttemptResult(
+                        true,
+                        "SELECT thang, doanh_thu FROM revenue",
+                        finalResult,
+                        List.of(attemptLog)
+                );
+
+        when(sqlCorrectionService.run(
+                eq("Doanh thu theo tháng"),
+                eq(schema),
+                eq(schema),
+                eq(connection),
+                eq("plain-pass")
+        )).thenReturn(attemptResult);
+
+        when(llmClient.generateResponse(anyString()))
+                .thenReturn("Doanh thu tháng 1 đạt 1000.");
+    }
+
+    @Test
+    void processQuery_defaultOverload_shouldUseNoopListener_noExceptionThrown() {
+        // Đảm bảo bản public cũ processQuery(username, request)
+        // vẫn hoạt động bình thường sau khi thêm overload có listener.
+
+        QueryRequest request =
+                buildRequest("Doanh thu theo tháng", 10L, null);
+
+        stubSuccessfulProcessQuery();
+
+        assertDoesNotThrow(
+                () -> queryService.processQuery("owner", request)
+        );
     }
 }

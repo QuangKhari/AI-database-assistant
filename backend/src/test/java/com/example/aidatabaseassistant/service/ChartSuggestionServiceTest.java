@@ -26,6 +26,8 @@ class ChartSuggestionServiceTest {
     private PromptBuilder promptBuilder;
     @Mock
     private LLMClient llmClient;
+    @Mock
+    private SchemaDiscoveryService schemaDiscoveryService;
 
     private ChartSuggestionService chartSuggestionService;
 
@@ -33,7 +35,10 @@ class ChartSuggestionServiceTest {
     void setUp() {
         // Dung ChartTypeClassifier THAT (khong mock) vi la thuat toan thuan,
         // khong co ly do gia lap - chi mock phan phu thuoc AI/network.
-        chartSuggestionService = new ChartSuggestionService(new ChartTypeClassifier(), promptBuilder, llmClient);
+        // schemaDiscoveryService chi mock cho du tham so constructor - cac
+        // test hien co deu goi overload suggest(columns, rows) (khong co
+        // username) nen KHONG dung toi mock nay, khong can stub gi ca.
+        chartSuggestionService = new ChartSuggestionService(new ChartTypeClassifier(), promptBuilder, llmClient, schemaDiscoveryService);
     }
 
     private Map<String, Object> row(Object... kv) {

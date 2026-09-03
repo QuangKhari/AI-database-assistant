@@ -8,16 +8,26 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @Component
 public class LLMClient {
 
     private static final Logger log =
             LoggerFactory.getLogger(LLMClient.class);
+
+    // Goi Gemini toi da 1 lan dau + 2 lan retry (network timeout, 429, 5xx),
+    // KHONG retry loi 4xx khac (vi du 400 - prompt sai, retry lai cung sai).
+    private static final int MAX_LLM_RETRIES = 2;
+    private static final long[] BACKOFF_MS = {500, 1500};
 
     private final RestTemplate restTemplate;
 
@@ -42,6 +52,7 @@ public class LLMClient {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("x-goog-api-key", apiKey);
 
         Map<String, Object> body = Map.of(
                 "contents", List.of(
@@ -59,7 +70,7 @@ public class LLMClient {
                 )
         );
 
-        String url = apiUrl + "?key=" + apiKey;
+        String url = apiUrl;
 
         log.info(
                 "Gọi Gemini API, độ dài prompt: {} ký tự",
@@ -74,11 +85,8 @@ public class LLMClient {
                 new HttpEntity<>(body, headers);
 
         ResponseEntity<Map> response =
-                restTemplate.postForEntity(
-                        url,
-                        entity,
-                        Map.class
-                );
+                callWithRetry("generateResponse",
+                        () -> restTemplate.postForEntity(url, entity, Map.class));
 
         Map<String, Object> responseBody =
                 response.getBody();
@@ -141,6 +149,7 @@ public class LLMClient {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("x-goog-api-key", apiKey);
 
         Map<String, Object> body = Map.of(
                 "model", "models/" + embeddingModel,
@@ -151,7 +160,7 @@ public class LLMClient {
                 )
         );
 
-        String url = embeddingApiUrl + "?key=" + apiKey;
+        String url = embeddingApiUrl;
 
         log.info(
                 "Gọi Gemini Embedding API, model={}, độ dài text={} ký tự",
@@ -161,12 +170,11 @@ public class LLMClient {
 
         long start = System.currentTimeMillis();
 
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
         ResponseEntity<Map> response =
-                restTemplate.postForEntity(
-                        url,
-                        new HttpEntity<>(body, headers),
-                        Map.class
-                );
+                callWithRetry("generateEmbedding",
+                        () -> restTemplate.postForEntity(embeddingApiUrl, entity, Map.class));
 
         Map<String, Object> responseBody = response.getBody();
 
@@ -209,5 +217,65 @@ public class LLMClient {
         );
 
         return vector;
+    }
+
+    /**
+     * Goi Gemini API voi retry cho cac loi CO THE THU LAI DUOC:
+     *  - ResourceAccessException: connect/read timeout, mat ket noi mang.
+     *  - HttpServerErrorException (5xx): loi phia Gemini, thuong tam thoi.
+     *  - HttpStatusCodeException voi status 429: rate limit, cho backoff roi thu lai.
+     *
+     * KHONG retry cac loi 4xx khac (400 prompt sai, 401/403 sai API key...)
+     * vi thu lai se cho ket qua giong het lan truoc, chi ton them thoi gian/API quota.
+     *
+     * Tong so lan goi toi da = 1 (lan dau) + MAX_LLM_RETRIES (lan thu lai).
+     */
+    private <T> T callWithRetry(String operationName, Supplier<T> call) {
+        RestClientException lastError = null;
+
+        for (int attempt = 0; attempt <= MAX_LLM_RETRIES; attempt++) {
+
+            try {
+                return call.get();
+
+            } catch (ResourceAccessException e) {
+                lastError = e;
+                log.warn("[{}] Gemini API network/timeout error (attempt {}/{}): {}",
+                        operationName, attempt + 1, MAX_LLM_RETRIES + 1, e.getMessage());
+
+            } catch (HttpServerErrorException e) {
+                lastError = e;
+                log.warn("[{}] Gemini API 5xx error (attempt {}/{}): {}",
+                        operationName, attempt + 1, MAX_LLM_RETRIES + 1, e.getStatusCode());
+
+            } catch (HttpStatusCodeException e) {
+                if (e.getStatusCode().value() == 429) {
+                    lastError = e;
+                    log.warn("[{}] Gemini API rate limited - 429 (attempt {}/{})",
+                            operationName, attempt + 1, MAX_LLM_RETRIES + 1);
+                } else {
+                    // 4xx khac (400/401/403...) - khong co ich gi khi retry, nem ra ngay.
+                    throw e;
+                }
+            }
+
+            if (attempt < MAX_LLM_RETRIES) {
+                sleepQuietly(BACKOFF_MS[attempt]);
+            }
+        }
+
+        log.error("[{}] Gemini API thất bại sau {} lần thử", operationName, MAX_LLM_RETRIES + 1);
+        throw new RuntimeException(
+                "Không thể kết nối tới dịch vụ AI, vui lòng thử lại sau ít phút.",
+                lastError
+        );
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

@@ -9,6 +9,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -72,6 +75,46 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
                 e.getMessage()
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingServletRequestParameter(
+            MissingServletRequestParameterException e) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Thiếu tham số bắt buộc: " + e.getParameterName()
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingServletRequestPart(
+            MissingServletRequestPartException e) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Thiếu file bắt buộc: " + e.getRequestPartName()
+        );
+    }
+
+    // Nem ra tu Spring's multipart filter TRUOC KHI request toi duoc
+    // controller (vi du: file Excel > spring.servlet.multipart.max-file-size
+    // trong application.properties). Khong phai IllegalArgumentException
+    // nen KHONG duoc handleIllegalArgument() bat - phai co handler rieng,
+    // neu khong se roi vao handleGeneral() va tra ve 500 chung chung thay
+    // vi 413 ro rang cho nguoi dung.
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(
+            MaxUploadSizeExceededException e) {
+
+        // HttpStatus.PAYLOAD_TOO_LARGE bi @Deprecated tu Spring Framework
+        // 7.0 (dung trong Boot 4.1), thay the boi CONTENT_TOO_LARGE theo
+        // ten goi moi cua RFC 9110 - ca hai cung la ma 413 nhung la 2 enum
+        // constant khac nhau, phai dung dung constant khong-deprecated.
+        return buildResponse(
+                HttpStatus.CONTENT_TOO_LARGE,
+                "File tải lên vượt quá dung lượng cho phép (tối đa 25MB)"
         );
     }
 
