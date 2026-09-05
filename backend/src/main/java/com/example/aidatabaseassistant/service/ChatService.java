@@ -80,6 +80,7 @@ public class ChatService {
                 .role("assistant")
                 .content(valid ? "SQL preview đã sẵn sàng." : "SQL preview chưa vượt qua kiểm tra an toàn.")
                 .generatedSql(generatedSql)
+                .generatedSqlValid(valid)
                 .build());
 
         conversation.setUpdatedAt(LocalDateTime.now());

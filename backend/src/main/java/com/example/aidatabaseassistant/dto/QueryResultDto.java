@@ -13,5 +13,7 @@ public class QueryResultDto {
     private List<Map<String, Object>> rows;
     private long executionTimeMs;
     private int rowCount;
+    private boolean truncated;
+    private String errorCode;
     private String error;
 }

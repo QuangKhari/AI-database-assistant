@@ -8,6 +8,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.access.AccessDeniedException;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
+import com.example.aidatabaseassistant.exception.QueryAlreadyRunningException;
 import com.example.aidatabaseassistant.exception.TargetDatabaseConnectionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -71,6 +72,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<Map<String, Object>> handleRateLimit(RateLimitExceededException e) {
         return buildResponse(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", e.getMessage(), null);
+    }
+
+    @ExceptionHandler(QueryAlreadyRunningException.class)
+    public ResponseEntity<Map<String, Object>> handleQueryAlreadyRunning(QueryAlreadyRunningException e) {
+        return buildResponse(HttpStatus.CONFLICT, "QUERY_ALREADY_RUNNING", e.getMessage(), null);
     }
 
     @ExceptionHandler(TargetDatabaseConnectionException.class)

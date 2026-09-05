@@ -13,6 +13,7 @@ public class MessageResponse {
     private String role;
     private String content;
     private String generatedSql;
+    private Boolean generatedSqlValid;
     private LocalDateTime createdAt;
     private List<QueryLogResponse> queryLogs;
 

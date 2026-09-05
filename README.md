@@ -1,6 +1,6 @@
 # AI Database Assistant
 
-Ứng dụng web công khai giúp người dùng tạo kết nối MySQL của riêng mình và sử dụng AI để hỗ trợ sinh, kiểm tra, thực thi SQL chỉ đọc. Hiện tại **phần 1–5 và 10** đã hoàn thành; phần chạy SQL vẫn chưa được mở trên giao diện.
+Ứng dụng web công khai giúp người dùng tạo kết nối MySQL của riêng mình và sử dụng AI để hỗ trợ sinh, kiểm tra, thực thi SQL chỉ đọc. Hiện tại **phần 1–6 và 10** đã hoàn thành.
 
 ## Những gì đã hoạt động
 
@@ -19,6 +19,9 @@
 - Schema Explorer cho phép chọn connection, tìm bảng/cột và đồng bộ lại; metadata cũ chỉ bị thay thế sau khi đọc thành công.
 - Chat tiếng Việt/Anh dùng OpenAI Responses API để sinh SQL preview, kiểm tra read-only/schema và nhớ 3 lượt gần nhất.
 - Mỗi conversation thuộc đúng một user và một connection; đổi connection sẽ tách ngữ cảnh.
+- User chủ động chạy SQL preview đã lưu; frontend không gửi raw SQL và backend kiểm tra ownership/read-only/schema lại trước khi chạy.
+- Query timeout mặc định 20 giây, tối đa 30 giây; chỉ một query/user tại một thời điểm và kết quả tối đa 500 dòng.
+- Giao diện Chat hiển thị trạng thái, thời gian chạy, cảnh báo cắt bớt dữ liệu và bảng HTML động theo các cột kết quả.
 - MySQL System DB, Target MySQL mẫu chỉ đọc và Mailpit chạy bằng Docker Compose.
 - Có sẵn cấu hình chuẩn bị deployment cho một Ubuntu server: Docker Compose production, Nginx, backup, deploy và rollback script. Chưa tác động lên server/domain thật.
 
@@ -56,7 +59,7 @@ Backend tự đọc `.env` ở thư mục gốc. Nếu máy chưa nhận Java tr
 
 Chi tiết request/response nằm trong [API_CONTRACT.md](API_CONTRACT.md).
 
-## Checklist kiểm tra giao diện phần 1–5 và Admin
+## Checklist kiểm tra giao diện phần 1–6 và Admin
 
 1. Vào `/register`, thử mật khẩu yếu/email sai, sau đó đăng ký hợp lệ.
 2. Đăng xuất; thử đăng nhập lần lượt bằng username và email.
@@ -73,5 +76,8 @@ Chi tiết request/response nằm trong [API_CONTRACT.md](API_CONTRACT.md).
 13. Vào `/schema`, chọn connection, nhấn đồng bộ và kiểm tra table/column/PK/FK; dùng ô tìm kiếm để lọc.
 14. Vào `/chat`, chọn connection đã sync, gửi câu hỏi và kiểm tra SQL preview; hỏi tiếp để kiểm tra context.
 15. Đổi connection và xác nhận conversation hiện tại được đóng, không dùng chéo schema/context.
+16. Với SQL preview hợp lệ, chọn timeout 20/25/30 giây, nhấn `Run query` và kiểm tra trạng thái, thời gian cùng bảng kết quả động.
+17. Chạy query trả hơn 500 dòng và xác nhận UI chỉ hiển thị 500 dòng kèm cảnh báo; thử mở hai lần chạy đồng thời và xác nhận lần thứ hai bị từ chối.
+18. Thử SQL ghi/nhiều statement/khác database bằng API và xác nhận backend chặn trước khi mở JDBC query.
 
 Xem hướng dẫn chuẩn bị server tại [DEPLOYMENT.md](DEPLOYMENT.md).

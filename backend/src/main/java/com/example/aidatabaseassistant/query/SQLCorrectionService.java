@@ -4,6 +4,7 @@ import com.example.aidatabaseassistant.ai.NL2SQLEngine;
 import com.example.aidatabaseassistant.dto.QueryResultDto;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
+import com.example.aidatabaseassistant.service.TargetDatabaseCredentials;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -35,8 +36,10 @@ public class SQLCorrectionService {
                 queryValidator.validate(currentSql, schema);
 
                 QueryResultDto queryResult = queryExecutor.executeQuery(
-                        connection.getHost(), connection.getPort(), connection.getDatabaseName(),
-                        connection.getUsername(), rawPassword, currentSql);
+                        new TargetDatabaseCredentials(
+                                connection.getHost(), connection.getPort(), connection.getDatabaseName(),
+                                connection.getUsername(), rawPassword),
+                        currentSql, 20);
 
                 log.result = queryResult;
 
@@ -53,7 +56,8 @@ public class SQLCorrectionService {
 
             } catch (IllegalArgumentException e) {
                 lastError = e.getMessage();
-                log.result = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
+                log.result = new QueryResultDto(
+                        List.of(), List.of(), 0, 0, false, "VALIDATION_ERROR", lastError);
             }
 
             log.success = false;
@@ -66,7 +70,8 @@ public class SQLCorrectionService {
 
         attemptResult.success = false;
         attemptResult.sql = currentSql;
-        attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
+        attemptResult.finalResult = new QueryResultDto(
+                List.of(), List.of(), 0, 0, false, "QUERY_FAILED", lastError);
         return attemptResult;
     }
 

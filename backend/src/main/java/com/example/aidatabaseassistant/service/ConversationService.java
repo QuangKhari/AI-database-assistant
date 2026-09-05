@@ -59,7 +59,7 @@ public class ConversationService {
 
         return new MessageResponse(
                 m.getId(), m.getRole(), m.getContent(), m.getGeneratedSql(),
-                m.getCreatedAt(), logs
+                m.getGeneratedSqlValid(), m.getCreatedAt(), logs
         );
     }
 

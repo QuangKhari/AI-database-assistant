@@ -141,6 +141,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   generatedSql: string | null
+  generatedSqlValid: boolean | null
   createdAt: string
   queryLogs: QueryLog[]
 }
@@ -152,4 +153,23 @@ export interface ChatPreviewResult {
   generatedSql: string
   valid: boolean
   validationError: string | null
+}
+
+export interface QueryResult {
+  columns: string[]
+  rows: Record<string, unknown>[]
+  executionTimeMs: number
+  rowCount: number
+  truncated: boolean
+  errorCode: string | null
+  error: string | null
+}
+
+export interface QueryExecutionResponse {
+  conversationId: number
+  messageId: number
+  generatedSql: string
+  status: 'SUCCESS' | 'FAILED' | 'TIMEOUT'
+  timeoutSeconds: number
+  result: QueryResult
 }

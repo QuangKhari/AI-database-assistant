@@ -37,6 +37,9 @@ public class Message {
     @Column(name = "generated_sql", columnDefinition = "TEXT")
     private String generatedSql;
 
+    @Column(name = "generated_sql_valid")
+    private Boolean generatedSqlValid;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

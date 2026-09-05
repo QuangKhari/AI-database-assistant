@@ -2,9 +2,57 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { chatApi } from '../api/chatApi'
 import { ApiError } from '../api/client'
 import { connectionApi } from '../api/connectionApi'
-import type { ChatMessage, Conversation, DatabaseConnection } from '../api/types'
+import { queryApi } from '../api/queryApi'
+import type { ChatMessage, Conversation, DatabaseConnection, QueryExecutionResponse } from '../api/types'
 import { useToast } from '../context/ToastContext'
 import styles from './ChatPage.module.css'
+
+function displayCell(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+function ExecutionResult({ execution }: { execution: QueryExecutionResponse }) {
+  if (execution.status !== 'SUCCESS') {
+    return (
+      <div className={styles.executionError} role="alert">
+        <strong>{execution.status === 'TIMEOUT' ? 'Query đã hết thời gian' : 'Không thể chạy query'}</strong>
+        <span>{execution.result.error}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section className={styles.result} aria-label="Kết quả query">
+      <header>
+        <strong>{execution.result.rowCount} dòng</strong>
+        <span>{execution.result.executionTimeMs} ms</span>
+        {execution.result.truncated && <em>Chỉ hiển thị 500 dòng đầu</em>}
+      </header>
+      {execution.result.columns.length === 0 ? (
+        <p>Query không trả về cột dữ liệu.</p>
+      ) : (
+        <div className={styles.resultTableWrap}>
+          <table>
+            <thead><tr>{execution.result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+            <tbody>
+              {execution.result.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {execution.result.columns.map((column) => (
+                    <td className={row[column] == null ? styles.nullCell : ''} key={column}>
+                      {displayCell(row[column])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
 
 export function ChatPage() {
   const { showToast } = useToast()
@@ -14,6 +62,9 @@ export function ChatPage() {
   const [conversationId, setConversationId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [question, setQuestion] = useState('')
+  const [timeoutSeconds, setTimeoutSeconds] = useState(20)
+  const [executions, setExecutions] = useState<Record<number, QueryExecutionResponse>>({})
+  const [runningMessageId, setRunningMessageId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +95,7 @@ export function ChatPage() {
   useEffect(() => {
     setConversationId(null)
     setMessages([])
+    setExecutions({})
     if (connectionId !== null) void loadConversations(connectionId)
   }, [connectionId, loadConversations])
 
@@ -55,6 +107,7 @@ export function ChatPage() {
 
   async function openConversation(id: number) {
     setConversationId(id)
+    setExecutions({})
     setLoading(true)
     try {
       setMessages(await chatApi.messages(id))
@@ -85,11 +138,29 @@ export function ChatPage() {
     } finally { setSending(false) }
   }
 
+  async function runQuery(message: ChatMessage) {
+    setRunningMessageId(message.id)
+    try {
+      const execution = await queryApi.execute({
+        assistantMessageId: message.id,
+        timeoutSeconds,
+      })
+      setExecutions((current) => ({ ...current, [message.id]: execution }))
+      if (execution.status === 'SUCCESS') {
+        showToast(`Query hoàn tất với ${execution.result.rowCount} dòng.`, 'success')
+      } else {
+        showToast(execution.result.error || 'Không thể chạy query.', 'error')
+      }
+    } catch (reason) {
+      showToast(reason instanceof ApiError ? reason.message : 'Không thể chạy query.', 'error')
+    } finally { setRunningMessageId(null) }
+  }
+
   async function removeConversation(item: Conversation) {
     if (!window.confirm(`Xóa cuộc trò chuyện “${item.title}”?`)) return
     try {
       await chatApi.removeConversation(item.id)
-      if (conversationId === item.id) { setConversationId(null); setMessages([]) }
+      if (conversationId === item.id) { setConversationId(null); setMessages([]); setExecutions({}) }
       if (connectionId !== null) await loadConversations(connectionId)
       showToast('Đã xóa cuộc trò chuyện.', 'success')
     } catch (reason) {
@@ -104,7 +175,7 @@ export function ChatPage() {
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
-        <div><p>Natural language to SQL</p><h1>Chat với database</h1><span>AI tạo SQL preview từ schema đã đồng bộ. Chưa thực thi truy vấn ở phần này.</span></div>
+        <div><p>Natural language to SQL</p><h1>Chat với database</h1><span>AI tạo SQL an toàn để bạn kiểm tra trước, sau đó bạn quyết định có chạy hay không.</span></div>
         <label>Database
           <select value={connectionId ?? ''} onChange={(event) => setConnectionId(Number(event.target.value))}>
             {connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name} — {connection.databaseName}</option>)}
@@ -115,7 +186,7 @@ export function ChatPage() {
       {error && <div className={styles.error} role="alert">{error}</div>}
       <div className={styles.workspace}>
         <aside className={styles.sidebar}>
-          <button type="button" onClick={() => { setConversationId(null); setMessages([]) }}>+ Cuộc trò chuyện mới</button>
+          <button type="button" onClick={() => { setConversationId(null); setMessages([]); setExecutions({}) }}>+ Cuộc trò chuyện mới</button>
           <h2>Gần đây</h2>
           <div className={styles.conversationList}>
             {conversations.length === 0 && <small>Chưa có cuộc trò chuyện.</small>}
@@ -132,13 +203,37 @@ export function ChatPage() {
           <div className={styles.messages} aria-live="polite">
             {loading ? <p className={styles.center}>Đang tải…</p> : messages.length === 0 ? (
               <div className={styles.welcome}><span>AI</span><h2>Bạn muốn tìm dữ liệu gì?</h2><p>Ví dụ: “Liệt kê 10 khách hàng có tổng đơn hàng cao nhất.”</p><small>AI chỉ dùng schema của connection đang chọn và nhớ tối đa 3 lượt gần nhất.</small></div>
-            ) : messages.map((message) => (
-              <article className={message.role === 'user' ? styles.userMessage : styles.assistantMessage} key={message.id}>
-                <header>{message.role === 'user' ? 'Bạn' : 'AI QueryMate'}</header>
-                <p>{message.content}</p>
-                {message.generatedSql && <div className={styles.sql}><div><span>SQL preview</span><small>Chưa thực thi</small></div><pre><code>{message.generatedSql}</code></pre></div>}
-              </article>
-            ))}
+            ) : messages.map((message) => {
+              const execution = executions[message.id]
+              const latestLog = message.queryLogs.at(-1)
+              const canRun = Boolean(message.generatedSql) && message.generatedSqlValid !== false
+              return (
+                <article className={message.role === 'user' ? styles.userMessage : styles.assistantMessage} key={message.id}>
+                  <header>{message.role === 'user' ? 'Bạn' : 'AI QueryMate'}</header>
+                  <p>{message.content}</p>
+                  {message.generatedSql && <div className={styles.sql}>
+                    <div className={styles.sqlHeader}>
+                      <span>SQL preview</span>
+                      <small>{execution ? (execution.status === 'SUCCESS' ? 'Đã chạy' : execution.status) : latestLog ? `Lần gần nhất: ${latestLog.status}` : 'Chưa thực thi'}</small>
+                    </div>
+                    <pre><code>{message.generatedSql}</code></pre>
+                    <div className={styles.sqlActions}>
+                      <label>Timeout
+                        <select aria-label="Query timeout" value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(Number(event.target.value))} disabled={runningMessageId !== null}>
+                          <option value={20}>20 giây</option>
+                          <option value={25}>25 giây</option>
+                          <option value={30}>30 giây</option>
+                        </select>
+                      </label>
+                      <button type="button" onClick={() => void runQuery(message)} disabled={!canRun || runningMessageId !== null}>
+                        {runningMessageId === message.id ? 'Đang chạy…' : canRun ? 'Run query' : 'SQL không an toàn'}
+                      </button>
+                    </div>
+                    {execution && <ExecutionResult execution={execution} />}
+                  </div>}
+                </article>
+              )
+            })}
             <div ref={endRef} />
           </div>
           <form className={styles.composer} onSubmit={sendQuestion}>

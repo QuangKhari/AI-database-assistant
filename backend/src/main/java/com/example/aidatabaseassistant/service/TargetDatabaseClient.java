@@ -63,14 +63,25 @@ public class TargetDatabaseClient {
     public Connection openReadOnlyConnection(TargetDatabaseCredentials credentials) {
         long startedAt = System.nanoTime();
         hostValidator.validate(credentials.host());
+        Connection connection = null;
         try {
-            Connection connection = DriverManager.getConnection(buildUrl(credentials), jdbcProperties(credentials));
+            connection = DriverManager.getConnection(buildUrl(credentials), jdbcProperties(credentials));
             connection.setReadOnly(true);
             return connection;
         } catch (SQLException e) {
+            closeQuietly(connection);
             ConnectionTestResponse error = mapSqlError(e, startedAt);
             throw new com.example.aidatabaseassistant.exception.TargetDatabaseConnectionException(
                     error.code(), error.message());
+        }
+    }
+
+    private void closeQuietly(Connection connection) {
+        if (connection == null) return;
+        try {
+            connection.close();
+        } catch (SQLException ignored) {
+            // Preserve the original connection error.
         }
     }
 

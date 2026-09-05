@@ -1,4 +1,4 @@
-# API Contract — phần 1–5 và 10
+# API Contract — phần 1–6 và 10
 
 Base URL local: `http://localhost:8080/api`. Dữ liệu gửi/nhận ở dạng JSON. Endpoint có biểu tượng 🔒 yêu cầu header `Authorization: Bearer <accessToken>`.
 
@@ -13,7 +13,7 @@ Base URL local: `http://localhost:8080/api`. Dữ liệu gửi/nhận ở dạng
 }
 ```
 
-Các mã chính: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `ACCOUNT_LOCKED` (403), `ACCESS_DENIED` (403), `RATE_LIMIT_EXCEEDED` (429), `INTERNAL_ERROR` (500).
+Các mã chính: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `ACCOUNT_LOCKED` (403), `ACCESS_DENIED` (403), `QUERY_ALREADY_RUNNING` (409), `RATE_LIMIT_EXCEEDED` (429), `INTERNAL_ERROR` (500).
 
 ## Authentication
 
@@ -245,6 +245,46 @@ Trả message của conversation thuộc user hiện tại. User khác không th
 ### `DELETE /conversations/{id}`
 
 Xóa conversation thuộc user hiện tại và dữ liệu con. Trả `204`.
+
+## Thực thi SQL read-only
+
+### `POST /query/execute`
+
+Frontend chỉ gửi ID của assistant message chứa SQL preview đã lưu, không gửi raw SQL. Backend kiểm tra lại ownership, connection đang hoạt động, schema và tính read-only trước mỗi lần chạy.
+
+```json
+{
+  "assistantMessageId": 32,
+  "timeoutSeconds": 20
+}
+```
+
+`timeoutSeconds` có thể bỏ trống để dùng mặc định 20 giây và không được vượt quá 30 giây. Mỗi user chỉ có một query chạy tại một thời điểm; request thứ hai đồng thời trả `409 QUERY_ALREADY_RUNNING`.
+
+Response thành công:
+
+```json
+{
+  "conversationId": 8,
+  "messageId": 32,
+  "generatedSql": "SELECT id, total FROM orders",
+  "status": "SUCCESS",
+  "timeoutSeconds": 20,
+  "result": {
+    "columns": ["id", "total"],
+    "rows": [{ "id": 1, "total": 125000 }],
+    "executionTimeMs": 18,
+    "rowCount": 1,
+    "truncated": false,
+    "errorCode": null,
+    "error": null
+  }
+}
+```
+
+`status` là `SUCCESS`, `FAILED` hoặc `TIMEOUT`. API chỉ trả tối đa 500 dòng; khi còn dữ liệu phía sau, `truncated=true`. JDBC connection, statement và result set luôn được đóng sau khi hoàn tất hoặc có lỗi.
+
+Hệ thống chặn câu lệnh ghi, nhiều statement, truy vấn database khác, `FOR UPDATE`, ghi file và các hàm gây giữ tài nguyên như `SLEEP`/`BENCHMARK`. Subquery không bị chặn riêng: nếu OpenAI sinh ra SQL hợp lệ, chỉ dùng bảng trong schema và vượt qua toàn bộ kiểm tra thì có thể chạy, nhưng không thuộc bộ test bắt buộc của MVP.
 
 ## Admin
 

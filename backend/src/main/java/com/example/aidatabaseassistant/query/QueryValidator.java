@@ -10,21 +10,44 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class QueryValidator {
 
+    private static final Pattern DANGEROUS_SELECT_PATTERN = Pattern.compile(
+            "(?is)\\b(?:INTO\\s+(?:OUTFILE|DUMPFILE)|FOR\\s+UPDATE|LOCK\\s+IN\\s+SHARE\\s+MODE|"
+                    + "LOAD_FILE\\s*\\(|SLEEP\\s*\\(|BENCHMARK\\s*\\()"
+    );
+
     public void validate(String sql, DatabaseSchema schema) {
         Statement statement = parse(sql);
         checkReadOnly(statement);
+        checkDangerousSelectFeatures(sql);
         checkSchemaMatch(statement, schema);
     }
 
     private Statement parse(String sql) {
+        if (sql == null || sql.isBlank()) {
+            throw new IllegalArgumentException("SQL không được để trống");
+        }
         try {
-            return CCJSqlParserUtil.parse(sql);
+            var statements = CCJSqlParserUtil.parseStatements(sql).getStatements();
+            if (statements.size() != 1) {
+                throw new IllegalArgumentException("Chỉ được thực thi một câu lệnh SQL mỗi lần");
+            }
+            return statements.get(0);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("SQL không hợp lệ về cú pháp: " + e.getMessage());
+        }
+    }
+
+    private void checkDangerousSelectFeatures(String sql) {
+        if (DANGEROUS_SELECT_PATTERN.matcher(sql).find()) {
+            throw new IllegalArgumentException(
+                    "SQL chứa chức năng không an toàn hoặc tiêu tốn tài nguyên và không được phép thực thi");
         }
     }
 
@@ -46,6 +69,14 @@ public class QueryValidator {
         TablesNamesFinder finder = new TablesNamesFinder();
         for (String tableName : finder.getTableList(statement)) {
             String clean = tableName.replaceAll("[`\"\\[\\]]", "").toLowerCase();
+            if (clean.contains(".")) {
+                String[] qualifiedName = clean.split("\\.");
+                String databaseName = qualifiedName[qualifiedName.length - 2];
+                if (!databaseName.equalsIgnoreCase(schema.getDatabaseName())) {
+                    throw new IllegalArgumentException("Không được truy vấn database khác: " + tableName);
+                }
+                clean = qualifiedName[qualifiedName.length - 1];
+            }
             if (!knownTables.contains(clean)) {
                 throw new IllegalArgumentException("Bảng không tồn tại trong schema: " + tableName);
             }
