@@ -19,4 +19,7 @@ public class ResetPasswordRequest {
             message = "Mật khẩu phải có từ 6 đến 100 ký tự"
     )
     private String newPassword;
+
+    @NotBlank(message = "Mật khẩu xác nhận không được để trống")
+    private String confirmPassword;
 }

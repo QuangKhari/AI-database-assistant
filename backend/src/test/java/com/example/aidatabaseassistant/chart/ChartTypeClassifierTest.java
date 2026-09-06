@@ -160,7 +160,7 @@ class ChartTypeClassifierTest {
 
         ChartClassificationResult result = classifier.classify(List.of("thang", "doanh_thu"), rows);
 
-        assertEquals(0, result.getSeries().get(0).getData().get(0));
+        assertEquals(0, result.getSeries().get(0).getValues().get(0));
     }
 
     @Test

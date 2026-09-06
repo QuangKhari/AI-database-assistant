@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 import com.example.aidatabaseassistant.db.TargetDatabaseClient;
+import com.example.aidatabaseassistant.dto.ConnectionTestResult;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -53,14 +54,42 @@ public class ConnectionService {
     private static final List<String> SUPPORTED_MANUAL_DB_TYPES =
             List.of("mysql", "postgres", "postgresql");
 
-    public boolean testConnection(ConnectionRequest request) {
-        return targetDatabaseClient.testConnection(
+    public ConnectionTestResult testConnection(ConnectionRequest request) {
+        long startTime = System.currentTimeMillis();
+
+        // KHÔNG bọc try/catch quanh lời gọi này: SQLException (sai host/port/
+        // credentials) đã được TargetDatabaseClient.testConnection() bắt và
+        // trả về false bên trong rồi. IllegalArgumentException (dbType không
+        // được hỗ trợ, vd "oracle") phải tiếp tục ném ra ngoài để
+        // GlobalExceptionHandler trả 400 kèm message rõ ràng - nếu nuốt vào
+        // đây thành "successful: false" thì người dùng không biết lý do thật
+        // là do gõ sai dbType chứ không phải do sai mật khẩu.
+        boolean successful = targetDatabaseClient.testConnection(
                 request.getDbType(),
                 request.getHost(),
                 request.getPort(),
                 request.getDatabaseName(),
                 request.getUsername(),
                 request.getPassword()
+        );
+
+        long durationMs = System.currentTimeMillis() - startTime;
+
+        String code = successful ? "CONNECTION_OK" : "CONNECTION_FAILED";
+        String message = successful
+                ? "Kết nối database thành công."
+                : "Không thể kết nối tới database. Vui lòng kiểm tra lại host, port, tên đăng nhập và mật khẩu.";
+
+        // readOnlyVerified và serverVersion: giữ giống hệt reconnect() hiện
+        // tại (false / null) vì BE hiện chưa thật sự verify quyền chỉ đọc hay
+        // đọc server version ở bước test - tránh báo sai thông tin chưa có.
+        return new ConnectionTestResult(
+                successful,
+                false,
+                code,
+                message,
+                durationMs,
+                null
         );
     }
 
@@ -178,7 +207,12 @@ public class ConnectionService {
                 connection.getHost(),
                 connection.getPort(),
                 connection.getDatabaseName(),
-                connection.getUsername()
+                connection.getUsername(),
+                connection.isActive(),
+                connection.getLastTestedAt(),
+                connection.getLastTestSuccessful(),
+                connection.getCreatedAt(),
+                connection.getUpdatedAt()
         );
     }
 
@@ -211,18 +245,68 @@ public class ConnectionService {
         return toResponse(connection);
     }
 
-    public boolean reconnect(String username, Long connectionId) {
+    public ConnectionTestResult reconnect(String username, Long connectionId) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
-        String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
+        // SSRF protection:
+        // Phải kiểm tra host trước khi thực hiện bất kỳ kết nối mạng nào.
+        //
+        // FIX (audit Excel/DuckDB): với dbType="excel", host luôn là
+        // chuỗi giả "local-file" (không phải hostname thật - xem
+        // saveExcelConnection()), KHÔNG mở bất kỳ socket mạng nào nên
+        // không có rủi ro SSRF. Trước đây gọi validateHost() vô điều
+        // kiện khiến InetAddress.getAllByName("local-file") luôn ném
+        // UnknownHostException -> reconnect() cho MỌI connection Excel
+        // đều báo lỗi 400 "Không thể phân giải host", dù file .duckdb
+        // hoàn toàn bình thường.
+        if (!"excel".equalsIgnoreCase(connection.getDbType())) {
+            ssrfProtection.validateHost(connection.getHost());
+        }
+        long startTime = System.currentTimeMillis();
 
-        return targetDatabaseClient.testConnection(
-                connection.getDbType(),
-                connection.getHost(),
-                connection.getPort(),
-                connection.getDatabaseName(),
-                connection.getUsername(),
-                rawPassword
+        String rawPassword = encryptionUtil.decrypt(
+                connection.getEncryptedPassword()
+        );
+
+        boolean successful;
+
+        try {
+            successful = targetDatabaseClient.testConnection(
+                    connection.getDbType(),
+                    connection.getHost(),
+                    connection.getPort(),
+                    connection.getDatabaseName(),
+                    connection.getUsername(),
+                    rawPassword
+            );
+        } catch (Exception e) {
+            successful = false;
+        }
+
+        long durationMs = System.currentTimeMillis() - startTime;
+
+        // Cập nhật trạng thái connection
+        connection.setLastTestedAt(java.time.LocalDateTime.now());
+        connection.setLastTestSuccessful(successful);
+        connection.setActive(successful);
+
+        connectionRepository.save(connection);
+
+        String code = successful
+                ? "CONNECTION_OK"
+                : "CONNECTION_FAILED";
+
+        String message = successful
+                ? "Kết nối database thành công."
+                : "Không thể kết nối tới database.";
+
+        return new ConnectionTestResult(
+                successful,
+                false,
+                code,
+                message,
+                durationMs,
+                null
         );
     }
 

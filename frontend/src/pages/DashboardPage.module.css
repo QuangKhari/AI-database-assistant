@@ -1,0 +1,338 @@
+.page {
+  display: grid;
+  gap: 24px;
+}
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 32px 35px;
+  border-radius: 18px;
+  color: white;
+  background: linear-gradient(120deg, #0a5f5c, #0e8d83);
+  box-shadow: 0 12px 36px rgb(9 92 88 / 15%);
+}
+.hero p {
+  margin: 0 0 8px;
+  color: #bff5ed;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.hero h1 {
+  margin: 0 0 10px;
+  font-size: 29px;
+  letter-spacing: -0.7px;
+}
+.hero div > span {
+  color: rgb(255 255 255 / 75%);
+  line-height: 1.55;
+}
+.status {
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  font-size: 12px;
+}
+.status span {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #8df2c7;
+}
+
+.error {
+  padding: 12px 14px;
+  border: 1px solid #f1c2ca;
+  border-radius: 10px;
+  color: #a42b40;
+  background: #fff0f2;
+  font-size: 13px;
+}
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.statCard {
+  display: grid;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid #dfe8e5;
+  border-radius: 14px;
+  background: white;
+}
+.statLabel {
+  color: #758487;
+  font-size: 12px;
+  font-weight: 650;
+}
+.statValue {
+  color: #16302f;
+  font-size: 26px;
+  font-weight: 800;
+}
+.statHint {
+  color: #8b989a;
+  font-size: 12px;
+}
+.statHint a {
+  color: #08756f;
+  font-weight: 700;
+  text-decoration: none;
+}
+.typeBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #08756f;
+  background: #e4f7f3;
+  font-size: 11px;
+  font-weight: 700;
+}
+.badgeMuted {
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #8b989a;
+  background: #f0f3f2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.card {
+  padding: 25px;
+  border: 1px solid #dfe8e5;
+  border-radius: 16px;
+  background: white;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #08756f;
+  background: #e4f7f3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.card h2 {
+  margin: 19px 0 8px;
+  color: #203b3e;
+  font-size: 17px;
+}
+.card p {
+  min-height: 48px;
+  margin: 0 0 20px;
+  color: #758487;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.card a {
+  color: #08756f;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 750;
+}
+.accountCard {
+  border-color: #a7dcd4;
+}
+
+.adminCard {
+  display: grid;
+  gap: 16px;
+  border-color: #f2d9a4;
+  background: #fffaf0;
+}
+.adminCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.adminCardHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.adminCardHeader h2 {
+  margin: 0;
+  color: #203b3e;
+  font-size: 16px;
+}
+.adminCardHeader a {
+  color: #9a6b12;
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+.adminStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.adminStatsGrid > div {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: white;
+}
+.adminStatsGrid strong {
+  color: #16302f;
+  font-size: 20px;
+}
+.adminStatsGrid span {
+  color: #8b989a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.recent {
+  padding: 22px 24px;
+  border: 1px solid #dfe8e5;
+  border-radius: 16px;
+  background: white;
+}
+.recentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.recentHeader h2 {
+  margin: 0;
+  color: #203b3e;
+  font-size: 16px;
+}
+.recentHeader a {
+  color: #08756f;
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+.recentList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recentList li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 4px;
+  border-bottom: 1px solid #eef2f1;
+}
+.recentList li:last-child {
+  border-bottom: none;
+}
+.recentIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: #08756f;
+  background: #e4f7f3;
+  font-size: 10px;
+  font-weight: 800;
+}
+.recentBody {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.recentBody strong {
+  overflow: hidden;
+  color: #203b3e;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recentBody small {
+  color: #8b989a;
+  font-size: 11px;
+}
+.recentTime {
+  flex-shrink: 0;
+  color: #8b989a;
+  font-size: 11px;
+}
+.recentEmpty {
+  margin: 0;
+  color: #758487;
+  font-size: 13px;
+}
+.recentEmpty a {
+  color: #08756f;
+  font-weight: 700;
+  text-decoration: none;
+}
+.loading {
+  margin: 0;
+  color: #8b989a;
+  font-size: 13px;
+}
+
+.featureStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.featureChip {
+  padding: 7px 13px;
+  border: 1px solid #dfe8e5;
+  border-radius: 999px;
+  color: #4a5c5e;
+  background: white;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .adminStatsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 800px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    display: block;
+  }
+  .status {
+    display: inline-block;
+    margin-top: 18px;
+  }
+  .statsRow {
+    grid-template-columns: 1fr;
+  }
+  .recentList li {
+    flex-wrap: wrap;
+  }
+}

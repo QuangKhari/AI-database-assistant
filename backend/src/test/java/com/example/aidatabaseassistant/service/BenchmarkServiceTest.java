@@ -97,6 +97,7 @@ class BenchmarkServiceTest {
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
 
         BenchmarkQuestionRequest request = new BenchmarkQuestionRequest();
+        request.setLanguage("VI");
         request.setQuestionText("Co bao nhieu khach hang?");
         request.setExpectedSql("SELECT COUNT(*) FROM customers");
 
@@ -121,6 +122,7 @@ class BenchmarkServiceTest {
         when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
 
         BenchmarkQuestionRequest request = new BenchmarkQuestionRequest();
+        request.setLanguage("VI");
         request.setQuestionText("x");
         request.setExpectedSql("SELECT 1");
 

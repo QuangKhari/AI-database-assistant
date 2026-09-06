@@ -74,7 +74,12 @@ class ConnectionExcelIntegrationTest {
                         "local-file",
                         0,
                         "/data/sales.duckdb",
-                        "excel-file"
+                        "excel-file",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null
                 );
 
         when(connectionService.saveExcelConnection(

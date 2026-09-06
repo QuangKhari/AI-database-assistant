@@ -22,7 +22,7 @@ public class AppConfig {
     // luc nhan duoc response day du (Gemini sinh SQL/tom tat co the mat
     // vai giay, nen de du hon connect timeout).
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
 
     @Bean
     public RestTemplate restTemplate(RestTemplateBuilder builder) {

@@ -1,11 +1,7 @@
 package com.example.aidatabaseassistant.controller;
 
-import com.example.aidatabaseassistant.dto.AuthResponse;
-import com.example.aidatabaseassistant.dto.LoginRequest;
-import com.example.aidatabaseassistant.dto.RegisterRequest;
+import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.service.AuthService;
-import com.example.aidatabaseassistant.dto.ForgotPasswordRequest;
-import com.example.aidatabaseassistant.dto.ResetPasswordRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -29,23 +25,32 @@ public class AuthController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<Void> forgotPassword(
+    public ResponseEntity<OperationResponse> forgotPassword(
             @Valid @RequestBody ForgotPasswordRequest request) {
 
         authService.forgotPassword(request.getEmail());
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(
+                new OperationResponse(
+                        "Nếu email tồn tại, liên kết khôi phục mật khẩu đã được gửi."
+                )
+        );
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(
+    public ResponseEntity<OperationResponse> resetPassword(
             @Valid @RequestBody ResetPasswordRequest request) {
 
         authService.resetPassword(
                 request.getToken(),
-                request.getNewPassword()
+                request.getNewPassword(),
+                request.getConfirmPassword()
         );
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(
+                new OperationResponse(
+                        "Đặt lại mật khẩu thành công."
+                )
+        );
     }
 }

@@ -89,7 +89,17 @@ public class AuthService {
     }
 
     @Transactional
-    public void resetPassword(String rawToken, String newPassword) {
+    public void resetPassword(
+            String rawToken,
+            String newPassword,
+            String confirmPassword
+    ) {
+
+        if (!newPassword.equals(confirmPassword)) {
+            throw new IllegalArgumentException(
+                    "Mật khẩu xác nhận không khớp"
+            );
+        }
 
         PasswordResetToken resetToken =
                 passwordResetTokenService.validateToken(rawToken);

@@ -79,7 +79,7 @@ class DataInsightServiceTest {
         assertEquals("thang", response.getDimensionColumn());
         assertEquals("3", response.getHighestLabel());
         assertEquals(2000.0, response.getHighestValue());
-        assertEquals(TrendDirection.INCREASING, response.getTrend());
+        assertEquals(TrendDirection.UP, response.getTrend());
     }
 
     @Test

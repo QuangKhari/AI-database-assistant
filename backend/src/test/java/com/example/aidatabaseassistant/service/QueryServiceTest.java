@@ -489,6 +489,84 @@ class QueryServiceTest {
         assertEquals("Doanh thu tháng 1 đạt 1000.", response.getSummary());
     }
 
+    // ===================== processQuery: hỏi bằng tiếng Anh (summarizeResult) =====================
+
+    @Test
+    void processQuery_withEnglishQuestion_shouldBuildSummaryPromptInEnglish() {
+        // Cau hoi tieng Anh -> prompt gui cho Gemini de tom tat cung phai
+        // yeu cau tra loi bang tieng Anh (khong duoc ep "1-2 cau tieng
+        // Viet" nhu truoc day), du LLMClient bi mock nen khong goi Gemini
+        // that - ta chi kiem tra NOI DUNG PROMPT duoc build dung.
+        QueryRequest request = buildRequest("How much revenue did we make in January?", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("month", "revenue");
+        List<Map<String, Object>> rows = List.of(Map.of("month", 1, "revenue", 1000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 20L, 1, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT month, revenue FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT month, revenue FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString())).thenReturn("Revenue in January was 1000.");
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertEquals("Revenue in January was 1000.", response.getSummary());
+
+        org.mockito.ArgumentCaptor<String> promptCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(llmClient).generateResponse(promptCaptor.capture());
+
+        String prompt = promptCaptor.getValue();
+        assertTrue(prompt.contains("Summarize the result in 1-2 natural, concise English sentences."));
+        assertFalse(prompt.contains("Tóm tắt kết quả bằng 1-2 câu tiếng Việt"));
+    }
+
+    @Test
+    void processQuery_withEnglishQuestion_shouldReturnEnglishFallbackSummary_whenLlmClientThrows() {
+        // Doi chung voi processQuery_shouldReturnFallbackSummary_whenLlmClientThrowsDuringSummarize
+        // nhung cho cau hoi tieng Anh: cau fallback khi Gemini loi cung
+        // phai bang tieng Anh thay vi luon ep tieng Viet nhu truoc day.
+        QueryRequest request = buildRequest("How much revenue did we make in January?", 10L, null);
+
+        when(rateLimitService.tryConsume("owner")).thenReturn(true);
+        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
+        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
+        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        stubConversationSaveAssignsId();
+        stubMessageSaveAssignsId();
+
+        List<String> columns = List.of("month", "revenue");
+        List<Map<String, Object>> rows = List.of(Map.of("month", 1, "revenue", 1000));
+        QueryResultDto finalResult = new QueryResultDto(columns, rows, 20L, 1, null);
+
+        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
+                true, "SELECT month, revenue FROM revenue", finalResult,
+                List.of(buildAttemptLog("SELECT month, revenue FROM revenue", true, finalResult)));
+        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
+                .thenReturn(attemptResult);
+        when(llmClient.generateResponse(anyString()))
+                .thenThrow(new RuntimeException("Gemini API did not return data"));
+
+        QueryResponse response = queryService.processQuery("owner", request);
+
+        assertNotNull(response);
+        assertEquals(
+                "Could not generate an automatic summary for this result. Please check the data table below.",
+                response.getSummary());
+    }
+
     // ===================== processQuery: tích hợp chart suggestion =====================
 
     @Test
@@ -620,7 +698,7 @@ class QueryServiceTest {
 
         DataInsightResponse expectedInsight = new DataInsightResponse(
                 "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
-                100.0, TrendDirection.INCREASING, "1", "2", null, null, List.of(),
+                100.0, TrendDirection.UP, "1", "2", null, null, List.of(),
                 "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
         when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenReturn(expectedInsight);
 

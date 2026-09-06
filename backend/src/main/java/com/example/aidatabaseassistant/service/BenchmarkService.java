@@ -34,23 +34,79 @@ public class BenchmarkService {
     private final QueryValidator queryValidator;
     private final UserRepository userRepository;
 
-    public BenchmarkQuestionResponse addQuestion(String username, Long connectionId, BenchmarkQuestionRequest request) {
+    public BenchmarkQuestionResponse addQuestion( String username,
+                                                  Long connectionId,
+                                                  BenchmarkQuestionRequest request) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
-
-        BenchmarkQuestion question = BenchmarkQuestion.builder()
-                .connection(connection)
-                .questionText(request.getQuestionText())
-                .expectedSql(request.getExpectedSql())
-                .build();
-
+        String language = request.getLanguage().trim().toUpperCase();
+        if (!language.equals("VI") && !language.equals("EN")) {
+            throw new IllegalArgumentException( "Language phải là VI hoặc EN" );
+        }
+        BenchmarkQuestion question =
+                BenchmarkQuestion
+                        .builder()
+                        .connection(connection)
+                        .language(language)
+                        .questionText(
+                                request.getQuestionText().trim() )
+                        .expectedSql( request.getExpectedSql().trim() )
+                        .build();
         BenchmarkQuestion saved = benchmarkQuestionRepository.save(question);
-
         return new BenchmarkQuestionResponse(
                 saved.getId(),
+                saved.getLanguage(),
                 saved.getQuestionText(),
                 saved.getExpectedSql(),
-                connectionId
-        );
+                connectionId );
+    }
+
+    public List<BenchmarkQuestionResponse> getQuestions(
+            String username,
+            Long connectionId,
+            String language) {
+
+        // Kiểm tra ownership trước khi đọc dữ liệu.
+        getOwnedConnection(username, connectionId);
+
+        List<BenchmarkQuestion> questions;
+
+        if (language == null || language.isBlank()) {
+            questions =
+                    benchmarkQuestionRepository.findByConnectionId(
+                            connectionId
+                    );
+        } else {
+
+            String normalizedLanguage =
+                    language.trim().toUpperCase();
+
+            if (!normalizedLanguage.equals("VI")
+                    && !normalizedLanguage.equals("EN")) {
+
+                throw new IllegalArgumentException(
+                        "Language phải là VI hoặc EN"
+                );
+            }
+
+            questions =
+                    benchmarkQuestionRepository
+                            .findByConnectionIdAndLanguage(
+                                    connectionId,
+                                    normalizedLanguage
+                            );
+        }
+
+        return questions.stream()
+                .map(question ->
+                        new BenchmarkQuestionResponse(
+                                question.getId(),
+                                question.getLanguage(),
+                                question.getQuestionText(),
+                                question.getExpectedSql(),
+                                connectionId
+                        )
+                )
+                .toList();
     }
 
     public BenchmarkRunResponse runBenchmark(String username, Long connectionId) {
@@ -232,47 +288,96 @@ public class BenchmarkService {
         throw new RuntimeException("Không thể generate SQL");
     }
 
-    private boolean compareResults(QueryResultDto generated,
-                                   QueryResultDto expected) {
+    private boolean compareResults(
+            QueryResultDto generated,
+            QueryResultDto expected) {
 
-        // Có lỗi SQL thì thất bại
-        if (generated.getError() != null || expected.getError() != null) {
+        // Một trong hai query có lỗi => benchmark fail.
+        if (generated.getError() != null
+                || expected.getError() != null) {
             return false;
         }
 
-        // Khác số dòng => sai
+        // Khác số dòng => kết quả khác nhau.
         if (generated.getRowCount() != expected.getRowCount()) {
             return false;
         }
 
-        List<Map<String, Object>> generatedRows = generated.getRows();
-        List<Map<String, Object>> expectedRows = expected.getRows();
+        List<Map<String, Object>> generatedRows =
+                generated.getRows();
 
-        if (generatedRows.isEmpty() && expectedRows.isEmpty()) {
+        List<Map<String, Object>> expectedRows =
+                expected.getRows();
+
+        // Cả hai không có dữ liệu => kết quả tương đương.
+        if (generatedRows.isEmpty()
+                && expectedRows.isEmpty()) {
             return true;
         }
 
-        // Lấy danh sách cột của SQL chuẩn
+        // Trường hợp bất thường: rowCount bằng nhau nhưng một bên
+        // không có row.
+        if (generatedRows.isEmpty()
+                || expectedRows.isEmpty()) {
+            return false;
+        }
+
+        /*
+         * Dùng thứ tự cột của expected SQL làm chuẩn.
+         *
+         * Kết quả được sort theo từng row để không phụ thuộc
+         * thứ tự record trả về từ database.
+         */
         List<String> expectedColumns =
-                new ArrayList<>(expectedRows.get(0).keySet());
+                new ArrayList<>(
+                        expectedRows.get(0).keySet()
+                );
 
-        List<String> generatedNormalized = generatedRows.stream()
-                .map(row -> expectedColumns.stream()
-                        .map(col -> String.valueOf(row.get(col)))
-                        .collect(Collectors.joining("|")))
-                .sorted()
-                .toList();
+        List<String> generatedNormalized =
+                generatedRows.stream()
+                        .map(row ->
+                                expectedColumns.stream()
+                                        .map(column ->
+                                                normalizeValue(
+                                                        row.get(column)
+                                                )
+                                        )
+                                        .collect(
+                                                Collectors.joining("|")
+                                        )
+                        )
+                        .sorted()
+                        .toList();
 
-        List<String> expectedNormalized = expectedRows.stream()
-                .map(row -> expectedColumns.stream()
-                        .map(col -> String.valueOf(row.get(col)))
-                        .collect(Collectors.joining("|")))
-                .sorted()
-                .toList();
+        List<String> expectedNormalized =
+                expectedRows.stream()
+                        .map(row ->
+                                expectedColumns.stream()
+                                        .map(column ->
+                                                normalizeValue(
+                                                        row.get(column)
+                                                )
+                                        )
+                                        .collect(
+                                                Collectors.joining("|")
+                                        )
+                        )
+                        .sorted()
+                        .toList();
 
-        return generatedNormalized.equals(expectedNormalized);
+        return generatedNormalized.equals(
+                expectedNormalized
+        );
     }
 
+    private String normalizeValue(Object value) {
+
+        if (value == null) {
+            return "<NULL>";
+        }
+
+        return value.toString().trim();
+    }
     private List<String> normalizeRows(List<Map<String, Object>> rows) {
         return rows.stream()
                 .map(row -> row.values().stream()

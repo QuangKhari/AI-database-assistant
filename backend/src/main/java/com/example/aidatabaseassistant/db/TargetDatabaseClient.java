@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Properties;
 
 /**
  * Điểm MỞ KẾT NỐI JDBC DUY NHẤT tới database đích của user.
@@ -87,7 +88,7 @@ public class TargetDatabaseClient {
                     databaseName
             );
 
-            return DriverManager.getConnection(url);
+            return DriverManager.getConnection(url, buildDuckDbReadOnlyProperties());
         }
 
         /*
@@ -160,5 +161,33 @@ public class TargetDatabaseClient {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /*
+     * FIX "connection locking":
+     *
+     * File .duckdb chi duoc GHI 1 LAN DUY NHAT luc ingest (xem
+     * ExcelIngestionService.buildDuckDbFile - dung connection RIENG cua
+     * no, KHONG di qua class nay). Moi truy cap SAU DO qua class nay
+     * (schema discovery, chay SELECT, test connection...) deu CHI DOC.
+     *
+     * DuckDB chi cho phep 1 connection GHI (read-write) tai 1 thoi diem
+     * cho 1 file .duckdb, nhung cho phep NHIEU connection DOC (read-only)
+     * cung luc. Neu KHONG khai bao read-only, 2 request chay song song
+     * toi cung 1 file Excel (vi du: dang xem schema + dang hoi cau khac
+     * cung connection) se dinh loi khoa file kieu "IO Error: Could not
+     * set lock on file" - day chinh la van de "connection locking" con
+     * ton dong trong audit Excel/DuckDB truoc day.
+     *
+     * LUU Y: key Properties "duckdb.read_only" theo tai lieu chinh thuc
+     * cua driver duckdb_jdbc (nhom duckdb.org/docs/stable/clients/java)
+     * cho dong ban 1.5.x dang dung trong pom.xml. Neu nang cap driver
+     * len major version khac trong tuong lai, kiem tra lai key nay
+     * truoc khi tin tuong y nguyen.
+     */
+    private Properties buildDuckDbReadOnlyProperties() {
+        Properties props = new Properties();
+        props.setProperty("duckdb.read_only", "true");
+        return props;
     }
 }

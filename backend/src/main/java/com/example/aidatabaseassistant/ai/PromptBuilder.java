@@ -75,15 +75,40 @@ public class PromptBuilder {
         StringBuilder sb = new StringBuilder();
 
         String dialectLabel = resolveDialectLabel(schema);
+        boolean english = QuestionLanguage.isEnglish(question);
 
-        sb.append("Bạn là chuyên gia ")
-                .append(dialectLabel)
-                .append(" và Text-to-SQL.\n");
+        sb.append(header(dialectLabel, english));
+        sb.append(english ? generationRulesEn() : generationRulesVi());
 
-        sb.append("""
+        sb.append(dialectSyntaxNote(dialectLabel));
+
+        sb.append("SCHEMA:\n");
+        appendSchema(sb, schema);
+
+        sb.append(english ? generationExamplesEn() : generationExamplesVi());
+
+        sb.append(english ? "QUESTION:\n" : "CÂU HỎI:\n");
+        sb.append(question);
+        sb.append("\n\nSQL:");
+
+        return sb.toString();
+    }
+
+    /**
+     * Header "Bạn là chuyên gia .../You are an expert..." tùy theo ngôn
+     * ngữ câu hỏi được detect (xem QuestionLanguage).
+     */
+    private String header(String dialectLabel, boolean english) {
+        return english
+                ? "You are a " + dialectLabel + " and Text-to-SQL expert.\n"
+                : "Bạn là chuyên gia " + dialectLabel + " và Text-to-SQL.\n";
+    }
+
+    private String generationRulesVi() {
+        return """
 
         Nhiệm vụ:
-        Chuyển câu hỏi tiếng Việt thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
+        Chuyển câu hỏi (tiếng Việt hoặc tiếng Anh) thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
 
         QUY TẮC BẮT BUỘC:
 
@@ -112,14 +137,47 @@ public class PromptBuilder {
         - distinct
         14. Không dịch giá trị enum sang tiếng Việt.
         
-        """);
+        """;
+    }
 
-        sb.append(dialectSyntaxNote(dialectLabel));
+    private String generationRulesEn() {
+        return """
 
-        sb.append("SCHEMA:\n");
-        appendSchema(sb, schema);
+        Task:
+        Convert the user's question (written in English) into EXACTLY ONE valid SQL SELECT statement.
 
-        sb.append("""
+        MANDATORY RULES:
+
+        1. Return ONLY the SQL statement, no explanation.
+        2. Do not use markdown or ```sql code fences.
+        3. Only SELECT statements are allowed.
+        4. NEVER use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, RENAME, USE.
+        5. Do NOT use SELECT * unless the question actually asks for the full record.
+        6. Only SELECT the columns that are actually referenced by the question.
+        7. Examples of mapping:
+           - "customer name" -> select only full_name
+           - "product name" -> select only name
+           - "name and price" -> select name, price
+           - "5 most recent customers" -> full_name, created_at
+           - "how many" -> use COUNT(*) AS total
+           - "total revenue" -> SUM(...) AS total
+        8. Use the exact table/column names from the schema below.
+        9. Use the foreign keys defined in the schema whenever a JOIN is needed.
+        10. Always prefer the shortest, most accurate SQL possible.
+        11. If the question asks "which orders", "which customers", "which products" and clearly wants the full record, return SELECT *.
+        12. Only select a subset of columns when the question explicitly names the fields it wants (e.g. name, price, email...).
+        13. Do NOT add DISTINCT on your own.
+        Only use DISTINCT when the question explicitly says:
+        - "distinct"
+        - "unique"
+        - "no duplicates"
+        14. Do NOT translate enum values into another language; keep them exactly as stored (e.g. "completed", "pending", "cancelled").
+
+        """;
+    }
+
+    private String generationExamplesVi() {
+        return """
 
         VÍ DỤ:
 
@@ -154,13 +212,46 @@ public class PromptBuilder {
         - Chờ xử lý
         - Đã hủy
         
-        """);
+        """;
+    }
 
-        sb.append("CÂU HỎI:\n");
-        sb.append(question);
-        sb.append("\n\nSQL:");
+    private String generationExamplesEn() {
+        return """
 
-        return sb.toString();
+        EXAMPLES:
+
+        Q: Which customers live in Hanoi?
+        SQL:
+        SELECT full_name
+        FROM customers
+        WHERE city='Hanoi';
+
+        Q: Which products cost more than 5000000?
+        SQL:
+        SELECT name, price
+        FROM products
+        WHERE price > 5000000;
+
+        Q: 5 most recently registered customers
+        SQL:
+        SELECT full_name, created_at
+        FROM customers
+        ORDER BY created_at DESC
+        LIMIT 5;
+
+        IMPORTANT DATA VALUES
+
+        The orders.status column only ever contains these exact values:
+        - completed
+        - pending
+        - cancelled
+
+        Do NOT translate or rewrite them as:
+        - "Completed successfully"
+        - "Awaiting processing"
+        - "Cancelled order"
+
+        """;
     }
 
     public String buildCorrectionPrompt(
@@ -441,9 +532,9 @@ public class PromptBuilder {
 
     private String trendToVietnamese(TrendDirection trend) {
         return switch (trend) {
-            case INCREASING -> "tăng dần";
-            case DECREASING -> "giảm dần";
-            case STABLE -> "ổn định, không tăng giảm rõ rệt";
+            case UP -> "tăng dần";
+            case DOWN -> "giảm dần";
+            case FLAT -> "ổn định, không tăng giảm rõ rệt";
         };
     }
 
@@ -520,25 +611,40 @@ public class PromptBuilder {
         StringBuilder sb = new StringBuilder();
 
         String dialectLabel = resolveDialectLabel(schema);
+        boolean english = QuestionLanguage.isEnglish(question);
 
-        sb.append("Bạn là chuyên gia ").append(dialectLabel).append(" và Text-to-SQL.\n");
+        sb.append(header(dialectLabel, english));
 
-        sb.append("""
+        sb.append(english ? """
+
+    Task:
+    Convert the user's question (written in English) into EXACTLY ONE valid SQL SELECT statement.
+    """ : """
 
     Nhiệm vụ:
-    Chuyển câu hỏi tiếng Việt thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
+    Chuyển câu hỏi (tiếng Việt hoặc tiếng Anh) thành DUY NHẤT một câu lệnh SQL SELECT hợp lệ.
     """);
 
         // Chỉ chèn block lịch sử nếu thực sự có (tránh phình prompt vô ích
         // ở lượt hỏi đầu tiên của conversation).
         if (conversationHistory != null && !conversationHistory.isBlank()) {
-            sb.append("""
+            sb.append(english ? """
+
+        RECENT CONVERSATION HISTORY (to understand follow-up questions,
+        e.g. "compare it with February", "what about last year"):
+        """ : """
 
         LỊCH SỬ HỘI THOẠI GẦN NHẤT (để hiểu ngữ cảnh câu hỏi nối tiếp,
         ví dụ "so sánh nó với tháng 2", "còn năm ngoái thì sao"):
         """);
             sb.append(conversationHistory);
-            sb.append("""
+            sb.append(english ? """
+
+        NOTE: the current question may implicitly refer to the question/SQL
+        above (pronouns like "it", "that", "those"). Use the history to
+        infer the correct intent, but ONLY generate SQL for the CURRENT
+        question - do not repeat the old SQL.
+        """ : """
 
         LƯU Ý: câu hỏi hiện tại có thể tham chiếu ngầm tới câu hỏi/SQL
         phía trên (đại từ "nó", "đó", "cái đó"...). Hãy suy luận đúng
@@ -547,7 +653,22 @@ public class PromptBuilder {
         """);
         }
 
-        sb.append("""
+        sb.append(english ? generationRulesEnCompact() : generationRulesViCompact());
+
+        sb.append(dialectSyntaxNote(dialectLabel));
+
+        sb.append("SCHEMA:\n");
+        appendSchema(sb, schema);
+
+        sb.append(english ? "\nCURRENT QUESTION: " : "\nCÂU HỎI HIỆN TẠI: ")
+                .append(question)
+                .append("\nSQL:");
+
+        return sb.toString();
+    }
+
+    private String generationRulesViCompact() {
+        return """
 
     QUY TẮC BẮT BUỘC:
     1. Chỉ trả về SQL, không giải thích.
@@ -570,15 +691,33 @@ public class PromptBuilder {
     12. Chỉ chọn một vài cột khi câu hỏi nêu rõ các cột cần lấy (ví dụ: tên, giá, email...).
         13. KHÔNG được tự ý dùng DISTINCT. Chỉ dùng DISTINCT khi câu hỏi có từ: không trùng, duy nhất, distinct.
     14. Không dịch giá trị enum sang tiếng Việt.
-    """);
+    """;
+    }
 
-        sb.append(dialectSyntaxNote(dialectLabel));
+    private String generationRulesEnCompact() {
+        return """
 
-        sb.append("SCHEMA:\n");
-        appendSchema(sb, schema);
-
-        sb.append("\nCÂU HỎI HIỆN TẠI: ").append(question).append("\nSQL:");
-
-        return sb.toString();
+    MANDATORY RULES:
+    1. Return ONLY the SQL statement, no explanation.
+    2. Do not use markdown or ```sql code fences.
+    3. Only SELECT statements are allowed.
+    4. NEVER use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, RENAME, USE.
+    5. Do NOT use SELECT * unless the question actually asks for the full record.
+    6. Only SELECT the columns that are actually referenced by the question.
+    7. Examples of mapping:
+       - "customer name" -> select only full_name
+       - "product name" -> select only name
+       - "name and price" -> select name, price
+       - "5 most recent customers" -> full_name, created_at
+       - "how many" -> use COUNT(*) AS total
+       - "total revenue" -> SUM(...) AS total
+    8. Use the exact table/column names from the schema below.
+    9. Use the foreign keys defined in the schema whenever a JOIN is needed.
+    10. Always prefer the shortest, most accurate SQL possible.
+    11. If the question asks "which orders/customers/products" and clearly wants the full record, return SELECT *.
+    12. Only select a subset of columns when the question explicitly names the fields it wants.
+        13. Do NOT add DISTINCT on your own. Only use it when the question explicitly says "distinct"/"unique"/"no duplicates".
+    14. Do NOT translate enum values; keep them exactly as stored.
+    """;
     }
 }

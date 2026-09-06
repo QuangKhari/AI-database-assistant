@@ -1,5 +1,6 @@
 package com.example.aidatabaseassistant.service;
 
+import com.example.aidatabaseassistant.config.CacheConfig;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.entity.ColumnMetadata;
@@ -13,6 +14,7 @@ import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -210,6 +212,16 @@ public class SchemaDiscoveryService {
     // 3. DISCOVER SCHEMA
     // =========================================================
 
+    /*
+     * CACHE: schema vua dong bo lai (bang/cot/mo ta co the da doi) -> BAT
+     * BUOC xoa cache "fullSchema" cua dung connectionId nay, neu khong
+     * QueryService se tiep tuc dung schema CU cho toi khi TTL het han.
+     */
+    @CacheEvict(
+            cacheNames = CacheConfig.FULL_SCHEMA_CACHE,
+            cacheManager = "localCacheManager",
+            key = "#connectionId"
+    )
     @Transactional
     public DatabaseSchema discoverSchema(
             String username,
@@ -431,14 +443,17 @@ public class SchemaDiscoveryService {
             //     catalog = null
             //     schema  = public
             //
-            // DuckDB:
+            // DuckDB/Excel:
             //
-            //     thường không cần chỉ định catalog/schema
-            //     như MySQL/PostgreSQL.
+            //     catalog = tên catalog THẬT của connection hiện tại
+            //     (xem getCatalog() - fix audit Excel/DuckDB, trước đây
+            //     luôn là null khiến getTables/getColumns quét lẫn cả
+            //     catalog nội bộ "system"/"temp" của DuckDB)
+            //     schema  = null
             // =================================================
 
             String catalog =
-                    getCatalog(connection);
+                    getCatalog(connection, metaData);
 
             String schemaPattern =
                     getSchemaPattern(connection);
@@ -635,7 +650,7 @@ public class SchemaDiscoveryService {
         // -----------------------------------------------------
 
         String catalog =
-                getCatalog(connection);
+                getCatalog(connection, metaData);
 
         String schemaPattern =
                 getSchemaPattern(connection);
@@ -931,19 +946,44 @@ public class SchemaDiscoveryService {
      *
      *     catalog = null
      *
-     * DuckDB:
+     * DuckDB/Excel:
      *
-     *     catalog = null
+     *     catalog = TÊN CATALOG THẬT của connection hiện tại (lấy từ
+     *     metaData.getConnection().getCatalog()), KHÔNG PHẢI null.
+     *
+     *     FIX (audit Excel/DuckDB - "catalog naming"): trước đây luôn
+     *     trả về null cho DuckDB. Với JDBC, catalog=null nghĩa là "không
+     *     lọc theo catalog" - getTables/getColumns/... sẽ quét qua TẤT
+     *     CẢ catalog mà connection nhìn thấy được, bao gồm cả 2 catalog
+     *     nội bộ luôn tồn tại sẵn của DuckDB là "system" và "temp" (chứa
+     *     view/function hệ thống). Trước đây "chạy đúng" chỉ vì các
+     *     catalog đó tình cờ không có object kiểu TABLE trùng tên - đây
+     *     là hành vi MAY MẮN chứ không phải cố ý, dễ vỡ khi DuckDB thêm
+     *     object mới vào catalog hệ thống ở version sau.
+     *
+     *     Catalog THẬT của 1 file .duckdb luôn là tên file KHÔNG kèm
+     *     đuôi ".duckdb" (ví dụ file "abc123.duckdb" -> catalog
+     *     "abc123") - lấy trực tiếp từ chính connection đang mở thay vì
+     *     tự suy luận từ đường dẫn file, để không phụ thuộc vào quy ước
+     *     đặt tên nội bộ của driver duckdb_jdbc có thể đổi khác đi.
      */
     private String getCatalog(
-            DatabaseConnection connection
-    ) {
+            DatabaseConnection connection,
+            DatabaseMetaData metaData
+    ) throws SQLException {
 
         if ("mysql".equalsIgnoreCase(
                 connection.getDbType()
         )) {
 
             return connection.getDatabaseName();
+        }
+
+        if ("excel".equalsIgnoreCase(
+                connection.getDbType()
+        )) {
+
+            return metaData.getConnection().getCatalog();
         }
 
         return null;

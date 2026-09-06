@@ -1,0 +1,19 @@
+.screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: #526071;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #dce5eb;
+  border-top-color: #0b7a75;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }

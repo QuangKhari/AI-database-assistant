@@ -67,7 +67,10 @@ class NL2SQLEngineTest {
     void shouldStillBlockWriteOperation_forEnglishSqlKeyword() {
         String sql = engine.generateSQL("Please DELETE all orders", emptySchema());
 
-        assertTrue(sql.contains("Không được phép"));
+        // Câu hỏi bằng tiếng Anh -> thông báo chặn cũng phải bằng tiếng
+        // Anh (xem NL2SQLEngine.blockedWriteOperationSql / QuestionLanguage),
+        // thay vì luôn ép tiếng Việt như hành vi cũ.
+        assertTrue(sql.contains("not allowed"));
         verifyNoInteractions(llmClient);
     }
 

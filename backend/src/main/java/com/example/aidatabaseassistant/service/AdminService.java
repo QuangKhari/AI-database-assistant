@@ -1,5 +1,6 @@
 package com.example.aidatabaseassistant.service;
 
+import com.example.aidatabaseassistant.config.CacheConfig;
 import com.example.aidatabaseassistant.dto.AdminConnectionResponse;
 import com.example.aidatabaseassistant.dto.AdminStatsResponse;
 import com.example.aidatabaseassistant.dto.AdminUserResponse;
@@ -8,6 +9,8 @@ import com.example.aidatabaseassistant.entity.Role;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -132,6 +135,14 @@ public class AdminService {
                 .toList();
     }
 
+    /*
+     * Xoa connection lam thay doi so lieu "totalConnections" (va gian
+     * tiep totalConversations/totalQueries do cascade delete). Xoa cache
+     * adminStats ngay de dashboard khong hien so lieu cu toi 60 giay.
+     * allEntries=true vi cache nay chi co DUY NHAT 1 gia tri (khong co
+     * key theo tham so).
+     */
+    @CacheEvict(cacheNames = CacheConfig.ADMIN_STATS_CACHE, cacheManager = "sharedCacheManager", allEntries = true)
     @Transactional
     public void deleteConnection(Long connectionId) {
         DatabaseConnection connection = connectionRepository.findById(connectionId)
@@ -139,6 +150,12 @@ public class AdminService {
         connectionRepository.delete(connection);
     }
 
+    /*
+     * CACHE: getStats() chay 4 lenh COUNT(*), dashboard hay bi goi lai
+     * lien tuc (polling/F5). Cache ngan han 60s la du. cacheManager =
+     * "sharedCacheManager": DTO thuan, an toan dung Redis khi scale-out.
+     */
+    @Cacheable(cacheNames = CacheConfig.ADMIN_STATS_CACHE, cacheManager = "sharedCacheManager")
     @Transactional(readOnly = true)
     public AdminStatsResponse getStats() {
         return new AdminStatsResponse(

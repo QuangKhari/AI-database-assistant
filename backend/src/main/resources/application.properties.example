@@ -1,4 +1,5 @@
 spring.application.name=aidatabaseassistant
+
 spring.datasource.url=jdbc:mysql://127.0.0.1:3308/ai_db_assistant_system
 spring.datasource.username=${DB_USERNAME:root}
 spring.datasource.password=${DB_PASSWORD}
@@ -9,18 +10,112 @@ spring.jpa.hibernate.ddl-auto=update
 # Mac dinh tat show-sql (an toan cho production). Khi debug local, chay voi
 # SHOW_SQL=true (vi du them vao file .env) de bat lai.
 spring.jpa.show-sql=${SHOW_SQL:false}
+spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
+
 jwt.secret=${JWT_SECRET}
 jwt.expiration=86400000
+
 app.encryption.secret=${ENCRYPTION_SECRET}
+
+# =========================
+# Excel/DuckDB connection storage
+# =========================
+# Thu muc luu file .duckdb da ingest tu Excel (moi user 1 thu muc con).
+# File .xlsx goc CHI ton tai tam trong luc ingest roi bi xoa - du lieu that
+# nam trong file .duckdb.
+app.storage.excel-dir=${EXCEL_STORAGE_DIR:./data/excel-dbs}
+
+# Gioi han upload - Spring Boot mac dinh chi 1MB/file, phai nang len de
+# nhan file Excel thuc te.
+spring.servlet.multipart.max-file-size=25MB
+spring.servlet.multipart.max-request-size=25MB
 
 gemini.api.key=${GEMINI_API_KEY}
 gemini.api.url=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent
 
+# =========================
+# Gemini Embedding
+# =========================
+gemini.embedding.model=gemini-embedding-001
+gemini.embedding.api.url=https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent
+
+# =========================
+# Schema RAG
+# =========================
+schema.rag.enabled=true
+schema.rag.top-k=5
+schema.rag.min-similarity=0.62
+schema.rag.min-tables-to-activate=2
+
+# =========================
+# UTF-8
+# =========================
+server.servlet.encoding.charset=UTF-8
+server.servlet.encoding.enabled=true
+server.servlet.encoding.force=true
+spring.http.encoding.charset=UTF-8
+spring.http.encoding.force=true
+
+# =========================
+# Logging
+# =========================
 # Muc log mac dinh la INFO nen LLMClient.log.debug(prompt/response) se KHONG
 # xuat hien trong log production (tranh lo schema/metadata nhay cam qua log).
 # Khi can debug prompt gui Gemini o local, doi dong duoi thanh DEBUG.
 logging.level.com.example.aidatabaseassistant=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId}] %logger{36} - %msg%n
 
+# =========================
+# Connection limit
+# =========================
+connection.max-per-user=20
+
+# =========================
+# Bootstrap admin (TUY CHON - chi dung khi seed lan dau / Docker smoke test).
+# Mac dinh RONG = tat, khong tao gi ca. Xem AdminBootstrapRunner.java.
+# =========================
+app.bootstrap.admin.username=${BOOTSTRAP_ADMIN_USERNAME:}
+app.bootstrap.admin.email=${BOOTSTRAP_ADMIN_EMAIL:}
+app.bootstrap.admin.password=${BOOTSTRAP_ADMIN_PASSWORD:}
+
+# =========================
+# SSRF Protection
+# =========================
+# TRUE = an toan production/bao ve do an (chan localhost + moi dai IP noi bo).
+# Chi doi thanh FALSE trong application-local.properties de test thu cong
+# voi MySQL Docker chay cung may.
+security.ssrf.block-private-hosts=true
+
+# =========================
+# Cache (Caffeine / Redis) - xem CacheConfig.java de biet chi tiet
+# =========================
+# none     = tat cache hoan toan.
+# caffeine = (MAC DINH) cache trong bo nho JVM, khong can cai them gi,
+#            phu hop chay 1 instance / local dev / demo.
+# redis    = sharedCacheManager (embeddings, thong ke admin) dung Redis
+#            de nhieu instance backend dung chung 1 cache. Cache
+#            "fullSchema" (chua JPA entity) LUON dung Caffeine bat ke
+#            gia tri nay - khong serialize entity sang Redis.
+app.cache.provider=${CACHE_PROVIDER:caffeine}
+
+# TTL / kich thuoc toi da cua tung cache - co the chinh rieng khong can
+# sua code. Don vi da ghi ro trong ten property.
+app.cache.full-schema.ttl-minutes=${CACHE_FULL_SCHEMA_TTL_MINUTES:60}
+app.cache.full-schema.max-size=${CACHE_FULL_SCHEMA_MAX_SIZE:500}
+app.cache.table-embeddings.ttl-minutes=${CACHE_TABLE_EMBEDDINGS_TTL_MINUTES:30}
+app.cache.admin-stats.ttl-seconds=${CACHE_ADMIN_STATS_TTL_SECONDS:60}
+
+# Chi thuc su duoc dung khi app.cache.provider=redis (xem CacheConfig).
+# Khi provider=caffeine, Spring Boot van tu tao 1 RedisConnectionFactory
+# (vi spring-boot-starter-data-redis nam tren classpath) nhung KHONG bao
+# gio ket noi that toi Redis - Lettuce chi ket noi "lazy" khi co lenh
+# Redis dau tien duoc goi, nen khong lam loi/cham lup khoi dong app.
+spring.data.redis.host=${REDIS_HOST:localhost}
+spring.data.redis.port=${REDIS_PORT:6379}
+spring.data.redis.password=${REDIS_PASSWORD:}
+spring.data.redis.timeout=2000ms
+
+# =====================================================================
 # Cach chay local (khong can export bien moi truong thu cong moi lan):
 # 1) Tao file .env (da co trong .gitignore, KHONG bao gio commit file nay):
 #      DB_USERNAME=root
@@ -31,3 +126,4 @@ logging.level.com.example.aidatabaseassistant=INFO
 # 2) Trong IntelliJ: Run/Debug Configurations > Environment variables > nap tung dong tren,
 #    hoac dung plugin "EnvFile" de tu dong doc file .env.
 # 3) Doi ten file nay thanh application.properties (file that, da co trong .gitignore).
+# =====================================================================

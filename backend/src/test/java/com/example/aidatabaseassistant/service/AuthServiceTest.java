@@ -383,6 +383,7 @@ class AuthServiceTest {
 
         authService.resetPassword(
                 "valid-reset-token",
+                "NewPassword@123",
                 "NewPassword@123"
         );
 
@@ -424,6 +425,7 @@ class AuthServiceTest {
                         IllegalArgumentException.class,
                         () -> authService.resetPassword(
                                 "invalid-token",
+                                "NewPassword@123",
                                 "NewPassword@123"
                         )
                 );
@@ -487,6 +489,7 @@ class AuthServiceTest {
                         IllegalArgumentException.class,
                         () -> authService.resetPassword(
                                 "used-token",
+                                "NewPassword@123",
                                 "NewPassword@123"
                         )
                 );

@@ -35,6 +35,11 @@ public class QueryController {
     public ResponseEntity<ExplainSqlResponse> explain(
             Authentication authentication,
             @Valid @RequestBody ExplainSqlRequest request) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
 
         return ResponseEntity.ok(
                 sqlExplanationService.explain(
@@ -48,6 +53,11 @@ public class QueryController {
     public ResponseEntity<PreviewResponse> preview(
             Authentication authentication,
             @Valid @RequestBody QueryRequest request) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
 
         return ResponseEntity.ok(
                 queryService.previewQuery(
