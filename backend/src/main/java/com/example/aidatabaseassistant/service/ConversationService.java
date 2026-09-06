@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -33,6 +35,39 @@ public class ConversationService {
                 .stream()
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
+    }
+
+    // MỚI: overload có filter connectionId - giữ nguyên overload cũ ở trên để
+    // không phá test hiện có đang stub theo đúng 1 tham số (username).
+    public List<ConversationResponse> getConversations(String username, Long connectionId) {
+        if (connectionId == null) {
+            return getConversations(username);
+        }
+
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        return conversationRepository.findByUserIdAndConnectionIdOrderByUpdatedAtDesc(user.getId(), connectionId)
+                .stream()
+                .map(this::toConversationResponse)
+                .collect(Collectors.toList());
+    }
+
+    // MỚI: bản phân trang - dùng cho sidebar Chat khi user có nhiều hội thoại.
+    // Overload riêng (thêm Pageable) - KHÔNG đụng 2 hàm getConversations() ở
+    // trên để giữ nguyên toàn bộ test cũ.
+    @Transactional(readOnly = true)
+    public Page<ConversationResponse> getConversationsPaged(
+            String username, Long connectionId, Pageable pageable) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        Page<Conversation> page = (connectionId != null)
+                ? conversationRepository.findByUserIdAndConnectionIdOrderByUpdatedAtDesc(
+                user.getId(), connectionId, pageable)
+                : conversationRepository.findByUserIdOrderByUpdatedAtDesc(user.getId(), pageable);
+
+        return page.map(this::toConversationResponse);
     }
 
     public List<MessageResponse> getMessages(String username, Long conversationId) {

@@ -142,6 +142,31 @@
             <version>8.10.1</version>
         </dependency>
 
+        <!-- ==================== Cache (Caffeine + Redis) ==================== -->
+
+        <!-- Cung cap @EnableCaching, @Cacheable, @CacheEvict, CacheManager... -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
+        <!-- Cache mac dinh: trong bo nho JVM, khong can cai them gi (dev/1 instance) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!--
+            Cache tuy chon: dung khi chay nhieu instance backend (scale-out),
+            can cache dung chung. Neu app.cache.provider=caffeine (mac dinh)
+            thi thu vien nay nam tren classpath nhung KHONG duoc su dung -
+            khong ket noi Redis, khong anh huong lup khoi dong app.
+            Xem CacheConfig.java.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
 
         <!-- ==================== Lombok ==================== -->
 

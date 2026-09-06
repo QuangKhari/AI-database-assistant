@@ -62,6 +62,9 @@ class QueryControllerTest {
         when(authentication.getName())
                 .thenReturn("testuser");
 
+        when(rateLimitService.tryConsume("testuser"))
+                .thenReturn(true);
+
         ExplainSqlRequest request =
                 mock(ExplainSqlRequest.class);
 
@@ -105,6 +108,9 @@ class QueryControllerTest {
 
         when(authentication.getName())
                 .thenReturn("testuser");
+
+        when(rateLimitService.tryConsume("testuser"))
+                .thenReturn(true);
 
         QueryRequest request =
                 mock(QueryRequest.class);

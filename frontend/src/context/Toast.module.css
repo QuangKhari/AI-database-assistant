@@ -1,0 +1,37 @@
+.container {
+  position: fixed;
+  z-index: 100;
+  right: 22px;
+  bottom: 22px;
+  display: grid;
+  gap: 10px;
+  width: min(390px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgb(15 23 42 / 22%);
+  animation: enter 180ms ease-out;
+}
+
+.toast button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.success { background: #087f5b; }
+.error { background: #c92a2a; }
+.info { background: #334155; }
+
+@keyframes enter {
+  from { opacity: 0; transform: translateY(8px); }
+}

@@ -47,11 +47,45 @@ public class DatabaseConnection {
     @Column(name = "encrypted_password", nullable = false, columnDefinition = "TEXT")
     private String encryptedPassword;
 
+    /**
+     * Connection hiện có đang được đánh dấu là hoạt động hay không.
+     */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
+    /**
+     * Thời điểm test/reconnect gần nhất.
+     */
+    @Column(name = "last_tested_at")
+    private LocalDateTime lastTestedAt;
+
+    /**
+     * Kết quả của lần test gần nhất.
+     *
+     * null = chưa từng test
+     * true = test thành công
+     * false = test thất bại
+     */
+    @Column(name = "last_test_successful")
+    private Boolean lastTestSuccessful;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

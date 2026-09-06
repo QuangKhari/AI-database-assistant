@@ -216,11 +216,12 @@ class PasswordResetIntegrationTest {
                                         MediaType.APPLICATION_JSON
                                 )
                                 .content("""
-                                        {
-                                            "token": "%s",
-                                            "newPassword": "NewPassword123!"
-                                        }
-                                        """.formatted(rawToken))
+                                    {
+                                        "token": "%s",
+                                        "newPassword": "NewPassword123!",
+                                        "confirmPassword": "NewPassword123!"
+                                    }
+                                    """.formatted(rawToken))
                 )
                 .andExpect(
                         status().is4xxClientError()
@@ -314,11 +315,12 @@ class PasswordResetIntegrationTest {
                                         MediaType.APPLICATION_JSON
                                 )
                                 .content("""
-                                        {
-                                            "token": "%s",
-                                            "newPassword": "NewPassword123!"
-                                        }
-                                        """.formatted(rawToken))
+                                    {
+                                        "token": "%s",
+                                        "newPassword": "AnotherPassword123!",
+                                        "confirmPassword": "AnotherPassword123!"
+                                    }
+                                    """.formatted(rawToken))
                 )
                 .andExpect(
                         status().isOk()

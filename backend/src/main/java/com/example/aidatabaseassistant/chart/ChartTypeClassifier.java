@@ -171,12 +171,22 @@ public class ChartTypeClassifier {
         return labels;
     }
 
-    private List<Object> extractNumericValues(String column, List<Map<String, Object>> rows) {
-        List<Object> values = new ArrayList<>();
+    private List<Number> extractNumericValues(
+            String column,
+            List<Map<String, Object>> rows) {
+
+        List<Number> values = new ArrayList<>();
+
         for (Map<String, Object> row : rows) {
             Object value = row.get(column);
-            values.add(value == null ? 0 : value);
+
+            if (value instanceof Number number) {
+                values.add(number);
+            } else {
+                values.add(0);
+            }
         }
+
         return values;
     }
 

@@ -130,7 +130,7 @@ public class SecurityConfig {
                                             response.getWriter().write("""
                                             {
                                                 "status": 401,
-                                                "error": "Unauthorized",
+                                                "code": "UNAUTHORIZED",
                                                 "message": "Authentication required"
                                             }
                                             """);
@@ -156,7 +156,7 @@ public class SecurityConfig {
                                             response.getWriter().write("""
                                             {
                                                 "status": 403,
-                                                "error": "Forbidden",
+                                                "code": "FORBIDDEN",
                                                 "message": "Bạn không có quyền truy cập tài nguyên này"
                                             }
                                             """);

@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.Authentication;
+import com.example.aidatabaseassistant.dto.ConnectionTestResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -86,7 +87,12 @@ class ConnectionControllerTest {
                         "local-file",
                         0,
                         "/data/sales.duckdb",
-                        "excel-file"
+                        "excel-file",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null
                 );
 
         when(
@@ -139,7 +145,12 @@ class ConnectionControllerTest {
                         "localhost",
                         3306,
                         "shop",
-                        "root"
+                        "root",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null
                 );
 
         when(
@@ -190,7 +201,12 @@ class ConnectionControllerTest {
                         "localhost",
                         3306,
                         "shop",
-                        "root"
+                        "root",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null
                 );
 
         when(
@@ -227,12 +243,22 @@ class ConnectionControllerTest {
         when(authentication.getName())
                 .thenReturn("owner");
 
+        ConnectionTestResult expected =
+                new ConnectionTestResult(
+                        true,
+                        false,
+                        "CONNECTION_OK",
+                        "Kết nối database thành công.",
+                        100L,
+                        null
+                );
+
         when(
                 connectionService.reconnect(
                         "owner",
                         10L
                 )
-        ).thenReturn(true);
+        ).thenReturn(expected);
 
         var response =
                 connectionController.reconnect(
@@ -241,7 +267,7 @@ class ConnectionControllerTest {
                 );
 
         assertEquals(
-                true,
+                expected,
                 response.getBody()
         );
 

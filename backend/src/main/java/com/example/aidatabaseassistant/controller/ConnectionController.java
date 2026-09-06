@@ -1,8 +1,6 @@
 package com.example.aidatabaseassistant.controller;
 
-import com.example.aidatabaseassistant.dto.ConnectionRequest;
-import com.example.aidatabaseassistant.dto.ConnectionResponse;
-import com.example.aidatabaseassistant.dto.ConnectionUpdateRequest;
+import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.service.ConnectionService;
 import com.example.aidatabaseassistant.service.SuggestedQuestionService;
 import jakarta.validation.Valid;
@@ -10,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.example.aidatabaseassistant.dto.SchemaResponse;
 import com.example.aidatabaseassistant.service.SchemaDiscoveryService;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -32,27 +29,47 @@ public class ConnectionController {
 //        return ResponseEntity.ok(llmClient.generateResponse("Xin chào, bạn là ai?"));
 //    }
 
+    // GIỮ LẠI để không phá FE cũ nào còn gọi endpoint này, nhưng FE hiện tại
+    // (SchemaExplorerPage) đã dùng /api/schema/connections/{id}/sync (xem
+    // SchemaController). Hai endpoint cùng trả 1 shape SchemaResponse để
+    // không lệch contract dù dùng endpoint nào.
     @PostMapping("/{id}/schema")
     public ResponseEntity<SchemaResponse> discoverSchema(Authentication authentication, @PathVariable Long id) {
         var schema = schemaDiscoveryService.discoverSchema(authentication.getName(), id);
 
         var tables = schema.getTables().stream()
                 .map(t -> new SchemaResponse.TableInfo(
+                        t.getId(),
                         t.getName(),
                         t.getDescription(),
                         t.getColumns().stream()
                                 .map(c -> new SchemaResponse.ColumnInfo(
-                                        c.getName(), c.getDataType(), c.getPrimaryKey(), c.getForeignKey(),
+                                        c.getId(), c.getName(), c.getDataType(),
+                                        Boolean.TRUE.equals(c.getNullable()),
+                                        c.getPrimaryKey(), c.getForeignKey(),
                                         c.getReferencedTable(), c.getReferencedColumn(), c.getDescription()))
                                 .toList()
                 ))
                 .toList();
 
-        return ResponseEntity.ok(new SchemaResponse(schema.getDatabaseName(), schema.getLastSyncedAt(), tables));
+        return ResponseEntity.ok(new SchemaResponse(
+                schema.getId(), schema.getConnection().getId(),
+                schema.getDatabaseName(), schema.getLastSyncedAt(), tables));
     }
 
     @PostMapping("/test")
-    public ResponseEntity<Boolean> testConnection(@Valid @RequestBody ConnectionRequest request) {
+    public ResponseEntity<ConnectionTestResult> testConnection(
+            Authentication authentication,
+            @Valid @RequestBody ConnectionRequest request) {
+
+        // Endpoint này mở kết nối TCP thật tới host/port do người dùng nhập
+        // (chỉ chặn IP nội bộ/reserved qua SsrfProtection)
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new com.example.aidatabaseassistant.exception.RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
+
         return ResponseEntity.ok(connectionService.testConnection(request));
     }
 
@@ -89,7 +106,7 @@ public class ConnectionController {
     }
 
     @PostMapping("/{id}/reconnect")
-    public ResponseEntity<Boolean> reconnect(Authentication authentication, @PathVariable Long id) {
+    public ResponseEntity<ConnectionTestResult> reconnect(Authentication authentication, @PathVariable Long id) {
         return ResponseEntity.ok(connectionService.reconnect(authentication.getName(), id));
     }
 

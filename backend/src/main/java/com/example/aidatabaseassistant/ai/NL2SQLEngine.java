@@ -60,10 +60,7 @@ public class NL2SQLEngine {
          * hoặc thao tác thay đổi database thì không gọi LLM.
          */
         if (containsWriteOperation(question)) {
-
-            return """
-                    SELECT 'Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database' AS message
-                    """.trim();
+            return blockedWriteOperationSql(question);
         }
 
         /*
@@ -87,9 +84,7 @@ public class NL2SQLEngine {
         }
 
         if (containsWriteOperation(question)) {
-            return """
-                SELECT 'Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database' AS message
-                """.trim();
+            return blockedWriteOperationSql(question);
         }
 
         String prompt = promptBuilder.buildGenerationPrompt(question, schema, conversationHistory);
@@ -141,6 +136,23 @@ public class NL2SQLEngine {
         return extractSql(
                 llmClient.generateResponse(prompt)
         );
+    }
+
+    /**
+     * Trả lời từ chối khi câu hỏi có thao tác ghi (INSERT/UPDATE/DELETE...).
+     * Trả về đúng ngôn ngữ của câu hỏi (tiếng Anh nếu câu hỏi bằng tiếng
+     * Anh) thay vì luôn ép tiếng Việt như trước đây.
+     */
+    private String blockedWriteOperationSql(String question) {
+        if (QuestionLanguage.isEnglish(question)) {
+            return """
+                    SELECT 'INSERT, UPDATE, DELETE or database structure changes are not allowed' AS message
+                    """.trim();
+        }
+
+        return """
+                SELECT 'Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database' AS message
+                """.trim();
     }
 
     private boolean containsWriteOperation(String question) {

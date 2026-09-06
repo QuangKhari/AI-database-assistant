@@ -13,5 +13,5 @@ import java.util.List;
 @AllArgsConstructor
 public class ChartSeriesDto {
     private String name;
-    private List<Object> data;
+    private List<Number> values;
 }

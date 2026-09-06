@@ -89,9 +89,10 @@ class ResetPasswordSecurityIntegrationTest {
                                 .content("""
                                     {
                                         "token": "expired-token",
-                                        "newPassword": "NewPassword123!"
+                                        "newPassword": "NewPassword123!",
+                                        "confirmPassword": "NewPassword123!"
                                     }
-                                    """)
+                                """)
                 )
                 .andExpect(
                         status().isBadRequest()
@@ -145,9 +146,10 @@ class ResetPasswordSecurityIntegrationTest {
                                 .content("""
                                     {
                                         "token": "used-token",
-                                        "newPassword": "NewPassword123!"
+                                        "newPassword": "NewPassword123!",
+                                        "confirmPassword": "NewPassword123!"
                                     }
-                                    """)
+                                """)
                 )
                 .andExpect(
                         status().isBadRequest()
@@ -163,5 +165,29 @@ class ResetPasswordSecurityIntegrationTest {
         ).consumeToken(
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    @Test
+    void resetPassword_shouldRejectMismatchedPasswords() throws Exception {
+
+        mockMvc.perform(
+                        post("/api/auth/reset-password")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                {
+                                    "token": "valid-token",
+                                    "newPassword": "NewPassword123!",
+                                    "confirmPassword": "DifferentPassword123!"
+                                }
+                                """)
+                )
+                .andExpect(
+                        status().isBadRequest()
+                );
+
+        verify(
+                passwordResetTokenService,
+                never()
+        ).validateToken("valid-token");
     }
 }

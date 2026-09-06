@@ -79,7 +79,7 @@ class DataInsightAnalyzerTest {
         assertEquals(1000.0, facts.getLowestValue());
         assertNotNull(facts.getGrowthPercent());
         assertEquals(100.0, facts.getGrowthPercent(), 0.001);
-        assertEquals(TrendDirection.INCREASING, facts.getTrend());
+        assertEquals(TrendDirection.UP, facts.getTrend());
         // Nhan diem dau/cuoi PHAI dung voi diem thuc su dung de tinh growth
         // (thang 1 -> thang 4), KHONG duoc trung voi nhan cua highest/lowest
         // mot cach ngau nhien roi gay hieu lam khi AI viet summary.
@@ -203,6 +203,6 @@ class DataInsightAnalyzerTest {
         assertNotEquals(facts.getHighestLabel(), facts.getPeriodEndLabel());
         assertNotEquals(facts.getLowestLabel(), facts.getPeriodStartLabel());
         assertEquals(-56.529, facts.getGrowthPercent(), 0.01);
-        assertEquals(TrendDirection.DECREASING, facts.getTrend());
+        assertEquals(TrendDirection.DOWN, facts.getTrend());
     }
 }

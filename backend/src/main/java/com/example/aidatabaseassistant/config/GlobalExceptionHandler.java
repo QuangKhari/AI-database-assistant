@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -51,20 +52,45 @@ public class GlobalExceptionHandler {
         );
     }
 
+    /*
+     * FE-BE CONTRACT FIX:
+     *
+     * Truoc day handler nay chi tra ve "message" voi noi dung cua LOI DAU
+     * TIEN tim thay, khien form dang ky (RegisterPage.tsx) khong the
+     * highlight dung o input bi loi - no doc reason.fieldErrors (xem
+     * api/client.ts, api/types.ts: ApiErrorBody.fieldErrors) nhung BE
+     * chua bao gio dien field nay.
+     *
+     * Gio day tra ve DAY DU fieldErrors: {"username": "...", "email": "..."}
+     * de FE highlight DUNG tung o loi, dong thoi van giu "message" (loi
+     * dau tien) de hien thi o banner loi chung cho tuong thich nguoc.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException e) {
 
-        String message = e.getBindingResult()
-                .getFieldErrors()
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        for (FieldError fieldError : e.getBindingResult().getFieldErrors()) {
+            // Neu 1 field co nhieu loi (vi du @NotBlank + @Size deu fail),
+            // chi giu loi DAU TIEN cho field do - putIfAbsent tranh ghi de.
+            fieldErrors.putIfAbsent(
+                    fieldError.getField(),
+                    fieldError.getDefaultMessage() != null
+                            ? fieldError.getDefaultMessage()
+                            : "Giá trị không hợp lệ"
+            );
+        }
+
+        String message = fieldErrors.values()
                 .stream()
                 .findFirst()
-                .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .orElse("Dữ liệu không hợp lệ");
 
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
-                message
+                "VALIDATION_ERROR",
+                message,
+                fieldErrors
         );
     }
 
@@ -133,12 +159,39 @@ public class GlobalExceptionHandler {
             HttpStatus status,
             String message) {
 
+        return buildResponse(status, status.name(), message, null);
+    }
+
+    /*
+     * FE-BE CONTRACT FIX:
+     *
+     * Truoc day key nay ten la "error" va chua gia tri status.getReasonPhrase()
+     * (vi du "Bad Request", co khoang trang, khong on dinh cho logic).
+     * FE (ApiErrorBody trong api/types.ts, ApiError trong api/client.ts)
+     * lai doc field "code" - dan den error.code o FE LUON LA undefined.
+     *
+     * Doi ten key thanh "code" va dung status.name() (vi du "BAD_REQUEST",
+     * "VALIDATION_ERROR"...) - dang SCREAMING_SNAKE_CASE on dinh, thich
+     * hop de FE so sanh bang == trong tuong lai neu can (vi du hien thi
+     * thong bao rieng cho "RATE_LIMIT_EXCEEDED"), thay vi parse chuoi
+     * tieng Anh co khoang trang.
+     */
+    private ResponseEntity<Map<String, Object>> buildResponse(
+            HttpStatus status,
+            String code,
+            String message,
+            Map<String, String> fieldErrors) {
+
         Map<String, Object> body = new LinkedHashMap<>();
 
         body.put("timestamp", LocalDateTime.now());
         body.put("status", status.value());
-        body.put("error", status.getReasonPhrase());
+        body.put("code", code);
         body.put("message", message);
+
+        if (fieldErrors != null && !fieldErrors.isEmpty()) {
+            body.put("fieldErrors", fieldErrors);
+        }
 
         return ResponseEntity
                 .status(status)

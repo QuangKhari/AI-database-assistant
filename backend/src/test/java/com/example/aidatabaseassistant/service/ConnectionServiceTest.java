@@ -638,6 +638,53 @@ class ConnectionServiceTest {
     }
 
     @Test
+    void reconnect_withExcelConnection_shouldSkipSsrfValidation_andSucceed() {
+        // FIX (audit Excel/DuckDB): truoc day reconnect() goi
+        // ssrfProtection.validateHost(connection.getHost()) VO DIEU KIEN.
+        // Voi Excel, host la chuoi gia "local-file" - InetAddress.getAllByName
+        // se nem UnknownHostException that (khong mock duoc bang Mockito vi
+        // day la loi JDK that su, khong phai loi cua SsrfProtection mock),
+        // khien reconnect() cho MOI connection Excel truoc day LUON that bai
+        // voi loi 400 "Khong the phan giai host" du file .duckdb binh thuong.
+        //
+        // Test nay dam bao voi dbType="excel", ssrfProtection KHONG duoc goi
+        // toi (verify never()), va reconnect chay binh thuong toi
+        // targetDatabaseClient.testConnection().
+        DatabaseConnection excelConnection = DatabaseConnection.builder()
+                .id(30L)
+                .user(owner)
+                .name("Sales Excel")
+                .dbType("excel")
+                .host("local-file")
+                .port(0)
+                .databaseName("/data/excel-dbs/user_1/sales.duckdb")
+                .username("excel-file")
+                .encryptedPassword("encrypted")
+                .build();
+
+        when(userRepository.findByUsername("owner"))
+                .thenReturn(Optional.of(owner));
+        when(connectionRepository.findById(30L))
+                .thenReturn(Optional.of(excelConnection));
+        when(encryptionUtil.decrypt("encrypted")).thenReturn("-");
+        when(targetDatabaseClient.testConnection(
+                eq("excel"),
+                eq("local-file"),
+                eq(0),
+                eq("/data/excel-dbs/user_1/sales.duckdb"),
+                eq("excel-file"),
+                eq("-")
+        )).thenReturn(true);
+
+        var result = connectionService.reconnect("owner", 30L);
+
+        assertTrue(result.isSuccessful());
+
+        // Diem mau chot cua fix: KHONG duoc goi SSRF validation cho excel.
+        verify(ssrfProtection, never()).validateHost(anyString());
+    }
+
+    @Test
     void testConnection_shouldPropagateException_whenUnsupportedDbType() {
 
         // Validate dbType (mysql/postgres/...) giờ nằm trong
@@ -923,4 +970,6 @@ class ConnectionServiceTest {
         verify(connectionRepository)
                 .delete(connection);
     }
+
+
 }

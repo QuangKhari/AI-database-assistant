@@ -25,6 +25,41 @@ services:
           cpus: "1.0"
           memory: 1g
 
+  # ---------------------------------------------------------------------
+  # Redis - CHI can khi app.cache.provider=redis (chay nhieu instance
+  # backend, can cache dung chung). Mac dinh du an dung Caffeine (cache
+  # trong bo nho JVM) nen KHONG can Redis - container nay nam trong
+  # profile "redis", se KHONG duoc tao khi chay "docker compose up" binh
+  # thuong.
+  #
+  # Cach bat:
+  #   1) Trong file .env: CACHE_PROVIDER=redis
+  #   2) Chay: docker compose --profile redis up -d
+  # ---------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ai-db-assistant-redis
+    restart: unless-stopped
+    profiles:
+      - redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-db-assistant-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+
   backend:
     build:
       context: ./backend
@@ -46,9 +81,23 @@ services:
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Cache: mac dinh "caffeine" (khong can Redis). Doi CACHE_PROVIDER=redis
+      # trong file .env NEU da bat profile "redis" o tren.
+      CACHE_PROVIDER: ${CACHE_PROVIDER:-caffeine}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JAVA_OPTS: ${BACKEND_JAVA_OPTS:--Xmx512m}
     ports:
       - "8080:8080"
+
+    volumes:
+      # Luu file .duckdb da ingest tu Excel (app.storage.excel-dir trong
+      # application-docker.properties = /app/data/excel-dbs). Neu khong mount
+      # volume nay, du lieu Excel se MAT khi container bi recreate (vi du
+      # "docker compose up --build", restart do loi/OOM...).
+      - excel_data:/app/data/excel-dbs
+
     networks:
       - ai-db-assistant-net
     healthcheck:
@@ -74,3 +123,5 @@ networks:
 
 volumes:
   mysql_data:
+  redis_data:
+  excel_data:

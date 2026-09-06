@@ -1,5 +1,6 @@
 package com.example.aidatabaseassistant.entity;
 
+import com.example.aidatabaseassistant.entity.BenchmarkResult;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -27,13 +28,33 @@ public class BenchmarkQuestion {
     @JoinColumn(name = "connection_id", nullable = false)
     private DatabaseConnection connection;
 
-    @Column(name = "question_text", nullable = false, columnDefinition = "TEXT")
+    @Column(
+            name = "language",
+            nullable = false,
+            length = 10
+    )
+    @Builder.Default
+    private String language = "VI";
+
+    @Column(
+            name = "question_text",
+            nullable = false,
+            columnDefinition = "TEXT"
+    )
     private String questionText;
 
-    @Column(name = "expected_sql", nullable = false, columnDefinition = "TEXT")
+    @Column(
+            name = "expected_sql",
+            nullable = false,
+            columnDefinition = "TEXT"
+    )
     private String expectedSql;
 
-    @OneToMany(mappedBy = "benchmarkQuestion", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(
+            mappedBy = "benchmarkQuestion",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
     @Builder.Default
     private List<BenchmarkResult> results = new ArrayList<>();
 }

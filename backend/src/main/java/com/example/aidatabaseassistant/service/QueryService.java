@@ -2,6 +2,7 @@ package com.example.aidatabaseassistant.service;
 
 import com.example.aidatabaseassistant.ai.LLMClient;
 import com.example.aidatabaseassistant.ai.NL2SQLEngine;
+import com.example.aidatabaseassistant.ai.QuestionLanguage;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
@@ -184,6 +185,7 @@ public class QueryService {
                 .conversation(conversation).role("user").content(request.getQuestion()).build();
         messageRepository.save(userMessage);
 
+        log.info("Connection #{} encryptedPassword length={}", connection.getId(), connection.getEncryptedPassword() != null ? connection.getEncryptedPassword().length() : null);
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
         listener.onProgress("STATUS", "Đang sinh câu lệnh SQL từ AI và thực thi (tự sửa lỗi nếu cần)...");
@@ -301,7 +303,9 @@ public class QueryService {
                     e.toString()
             );
 
-            return "Không thể tạo tóm tắt tự động cho kết quả này. Vui lòng xem bảng dữ liệu bên dưới.";
+            return QuestionLanguage.isEnglish(question)
+                    ? "Could not generate an automatic summary for this result. Please check the data table below."
+                    : "Không thể tạo tóm tắt tự động cho kết quả này. Vui lòng xem bảng dữ liệu bên dưới.";
         }
     }
 
@@ -315,7 +319,25 @@ public class QueryService {
                         ? result.getRows().subList(0, 20)
                         : result.getRows();
 
-        String prompt = """
+        // Câu hỏi bằng tiếng Anh -> tóm tắt cũng phải trả lời bằng tiếng
+        // Anh (trước đây prompt luôn ép "1-2 câu tiếng Việt" bất kể ngôn
+        // ngữ câu hỏi, khiến người dùng hỏi tiếng Anh vẫn nhận tóm tắt
+        // tiếng Việt - đây là phần còn thiếu của tính năng hỏi tiếng Anh).
+        String prompt = QuestionLanguage.isEnglish(question)
+                ? """
+            Question: %s
+
+            SQL result:
+            %s
+
+            REQUIREMENTS:
+            - Summarize the result in 1-2 natural, concise English sentences.
+            - Only use figures that literally appear in the result above.
+            - Do NOT recompute totals, averages, percentages or any arithmetic yourself.
+            - Do NOT alter, round, or infer any numbers.
+            - If the result has multiple rows, highlight the key points directly from the data.
+            """.formatted(question, limitedRows)
+                : """
             Câu hỏi: %s
 
             Kết quả SQL:
@@ -327,10 +349,7 @@ public class QueryService {
             - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
             - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
             - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
-            """.formatted(
-                question,
-                limitedRows
-        );
+            """.formatted(question, limitedRows);
 
         return llmClient.generateResponse(prompt);
     }

@@ -6,7 +6,9 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public class BenchmarkQuestionResponse {
+
     private Long id;
+    private String language;
     private String questionText;
     private String expectedSql;
     private Long connectionId;

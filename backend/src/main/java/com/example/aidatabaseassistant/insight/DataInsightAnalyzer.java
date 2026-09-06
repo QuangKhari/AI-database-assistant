@@ -55,7 +55,7 @@ public class DataInsightAnalyzer {
         // breadth": 1 insight duy nhat nhung chac chan dung, thay vi co gang
         // tong hop nhieu cot cung luc roi lam loang/sai lech ket luan.
         ChartSeriesDto primarySeries = classification.getSeries().get(0);
-        List<Double> values = toDoubleValues(primarySeries.getData());
+        List<Double> values = toDoubleValues(primarySeries.getValues());
         List<String> labels = classification.getXAxisLabels();
 
         int highestIndex = indexOfMax(values);
@@ -92,11 +92,13 @@ public class DataInsightAnalyzer {
         return facts;
     }
 
-    private List<Double> toDoubleValues(List<Object> data) {
+    private List<Double> toDoubleValues(List<? extends Number> data) {
         List<Double> values = new ArrayList<>();
-        for (Object value : data) {
-            values.add(value instanceof Number number ? number.doubleValue() : 0.0);
+
+        for (Number value : data) {
+            values.add(value != null ? value.doubleValue() : 0.0);
         }
+
         return values;
     }
 
@@ -137,12 +139,12 @@ public class DataInsightAnalyzer {
             return null;
         }
         if (growth > STABLE_THRESHOLD_PERCENT) {
-            return TrendDirection.INCREASING;
+            return TrendDirection.UP;
         }
         if (growth < -STABLE_THRESHOLD_PERCENT) {
-            return TrendDirection.DECREASING;
+            return TrendDirection.DOWN;
         }
-        return TrendDirection.STABLE;
+        return TrendDirection.FLAT;
     }
 
     /**

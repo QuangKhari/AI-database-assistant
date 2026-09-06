@@ -6,7 +6,7 @@ package com.example.aidatabaseassistant.dto;
  * (vi du Pie/Bar), khai niem "xu huong tang/giam" khong co y nghia.
  */
 public enum TrendDirection {
-    INCREASING,
-    DECREASING,
-    STABLE
+    UP,
+    DOWN,
+    FLAT
 }
