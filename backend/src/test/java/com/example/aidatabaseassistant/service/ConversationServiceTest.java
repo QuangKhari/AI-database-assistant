@@ -297,7 +297,7 @@ class ConversationServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> conversationService.togglePin("owner", 999L)
         );
 
