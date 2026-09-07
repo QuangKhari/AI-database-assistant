@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { adminApi } from "../api/adminApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type { AdminConnection, AdminStats, AdminUserPage } from "../api/types";
 import { useToast } from "../context/ToastContext";
 
@@ -80,9 +80,9 @@ export function AdminPage() {
       );
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể cập nhật vai trò tài khoản.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể cập nhật vai trò tài khoản."),
+        ),
         "error",
       );
     } finally {
@@ -106,9 +106,9 @@ export function AdminPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không tải được dữ liệu quản trị.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được dữ liệu quản trị."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -145,9 +145,9 @@ export function AdminPage() {
       await load();
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : `Không thể ${verb} tài khoản.`,
+        formatErrorWithSupportCode(
+          parseApiError(reason, `Không thể ${verb} tài khoản.`),
+        ),
         "error",
       );
     } finally {
@@ -190,9 +190,9 @@ export function AdminPage() {
       showToast(`Đã xóa connection "${connection.name}".`, "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể xóa connection.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể xóa connection."),
+        ),
         "error",
       );
     } finally {

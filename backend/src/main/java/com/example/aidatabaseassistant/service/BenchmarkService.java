@@ -4,6 +4,7 @@ import com.example.aidatabaseassistant.ai.NL2SQLEngine;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.repository.*;
@@ -33,6 +34,7 @@ public class BenchmarkService {
     private final QueryExecutor queryExecutor;
     private final QueryValidator queryValidator;
     private final UserRepository userRepository;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     public BenchmarkQuestionResponse addQuestion( String username,
                                                   Long connectionId,
@@ -113,7 +115,7 @@ public class BenchmarkService {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Chưa discover schema cho connection này"));
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa discover schema cho connection này"));
 
         List<BenchmarkQuestion> questions =
                 benchmarkQuestionRepository.findByConnectionId(connectionId);
@@ -414,17 +416,7 @@ public class BenchmarkService {
     }
 
     private DatabaseConnection getOwnedConnection(String username, Long connectionId) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-        }
-
-        return connection;
+        return connectionAccessGuard.requireOwnedConnection(username, connectionId);
     }
 
     private void sleep(long milliseconds) {

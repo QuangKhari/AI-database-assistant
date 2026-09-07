@@ -302,7 +302,7 @@ class SchemaMetadataOwnershipIntegrationTest {
                 );
 
         assertEquals(
-                HttpStatus.BAD_REQUEST,
+                HttpStatus.FORBIDDEN,
                 response.getStatusCode()
         );
 
@@ -448,7 +448,7 @@ class SchemaMetadataOwnershipIntegrationTest {
                 );
 
         assertEquals(
-                HttpStatus.BAD_REQUEST,
+                HttpStatus.FORBIDDEN,
                 response.getStatusCode()
         );
 

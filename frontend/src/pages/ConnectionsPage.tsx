@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { connectionApi } from "../api/connectionApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type { DatabaseConnection } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import styles from "./ConnectionsPage.module.css";
@@ -22,9 +22,9 @@ export function ConnectionsPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không tải được danh sách connection.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được danh sách connection."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -43,9 +43,9 @@ export function ConnectionsPage() {
       await loadConnections();
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể kiểm tra connection.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể kiểm tra connection."),
+        ),
         "error",
       );
     } finally {
@@ -67,9 +67,9 @@ export function ConnectionsPage() {
       await loadConnections();
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể ngắt connection.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể ngắt connection."),
+        ),
         "error",
       );
     } finally {
@@ -101,9 +101,9 @@ export function ConnectionsPage() {
       await loadConnections();
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể tạo connection từ file Excel.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể tạo connection từ file Excel."),
+        ),
         "error",
       );
     } finally {

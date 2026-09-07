@@ -6,6 +6,7 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * FIX (audit Excel/DuckDB - "catalog naming"):
  *
  * Truoc day SchemaDiscoveryService.getCatalog() LUON tra ve null cho
  * dbType="excel", khien DatabaseMetaData.getTables()/getColumns()/...
@@ -53,6 +53,8 @@ class SchemaDiscoveryServiceCatalogTest {
     private DatabaseMetaData metaData;
     @Mock
     private Connection liveConnection;
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
 
     private SchemaDiscoveryService service;
 
@@ -63,6 +65,7 @@ class SchemaDiscoveryServiceCatalogTest {
                 schemaRepository,
                 encryptionUtil,
                 userRepository,
+                connectionAccessGuard,
                 targetDatabaseClient,
                 schemaEmbeddingService
         );

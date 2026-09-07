@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { historyApi } from "../api/historyApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type {
   ChatMessage,
   Conversation,
@@ -30,7 +30,9 @@ export function HistoryPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError ? reason.message : "Không tải được lịch sử.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được lịch sử."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -49,9 +51,9 @@ export function HistoryPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không tải được nội dung.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được nội dung."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -65,9 +67,9 @@ export function HistoryPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không tải được mục đã ghim.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được mục đã ghim."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -83,7 +85,9 @@ export function HistoryPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError ? reason.message : "Không thể tìm kiếm.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể tìm kiếm."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -108,9 +112,9 @@ export function HistoryPage() {
       );
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể ghim tin nhắn.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể ghim tin nhắn."),
+        ),
         "error",
       );
     }
@@ -129,7 +133,7 @@ export function HistoryPage() {
       showToast("Đã xóa cuộc trò chuyện.", "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError ? reason.message : "Không thể xóa.",
+        formatErrorWithSupportCode(parseApiError(reason, "Không thể xóa.")),
         "error",
       );
     }
@@ -150,7 +154,9 @@ export function HistoryPage() {
       showToast("Đã xóa toàn bộ lịch sử.", "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError ? reason.message : "Không thể xóa lịch sử.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể xóa lịch sử."),
+        ),
         "error",
       );
     }

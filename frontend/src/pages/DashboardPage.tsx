@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../api/adminApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
 import { historyApi } from "../api/historyApi";
 import type {
@@ -81,9 +81,9 @@ export function DashboardPage() {
       } catch (reason) {
         if (!cancelled) {
           setError(
-            reason instanceof ApiError
-              ? reason.message
-              : "Không tải được dữ liệu tổng quan.",
+            formatErrorWithSupportCode(
+              parseApiError(reason, "Không tải được dữ liệu tổng quan."),
+            ),
           );
         }
       } finally {

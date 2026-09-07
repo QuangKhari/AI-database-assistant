@@ -200,7 +200,7 @@ class ConversationSecurityIntegrationTest {
                                         "Bearer " + ownerToken
                                 )
                 )
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isForbidden());
 
 
         // -----------------------------------------------------
@@ -249,7 +249,7 @@ class ConversationSecurityIntegrationTest {
                                         "Bearer " + ownerToken
                                 )
                 )
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isForbidden());
 
 
         // -----------------------------------------------------
@@ -299,7 +299,7 @@ class ConversationSecurityIntegrationTest {
                                 )
                                 .contentType(MediaType.APPLICATION_JSON)
                 )
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isForbidden());
 
 
         // -----------------------------------------------------

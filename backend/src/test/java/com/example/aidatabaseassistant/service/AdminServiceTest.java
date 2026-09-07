@@ -10,6 +10,8 @@ import com.example.aidatabaseassistant.repository.ConversationRepository;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.QueryLogRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.exception.ConflictException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -137,7 +139,7 @@ class AdminServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> adminService.updateRole(
                         999L,
                         "ADMIN",
@@ -154,8 +156,8 @@ class AdminServiceTest {
         when(userRepository.findById(2L))
                 .thenReturn(Optional.of(normalUser));
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        ConflictException ex = assertThrows(
+                ConflictException.class,
                 () -> adminService.updateRole(
                         2L,
                         "USER",
@@ -214,8 +216,8 @@ class AdminServiceTest {
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(normalUser));
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        ConflictException ex = assertThrows(
+                ConflictException.class,
                 () -> adminService.lockUser(2L, "khai")
         );
 
@@ -290,7 +292,7 @@ class AdminServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> adminService.deleteConnection(999L)
         );
 

@@ -47,18 +47,12 @@ public class SqlOptimizationService {
     private final SqlOptimizationAnalyzer analyzer;
     private final PromptBuilder promptBuilder;
     private final LLMClient llmClient;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     public OptimizeSqlResponse optimize(String username, OptimizeSqlRequest request) {
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-        DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-        }
+        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(
+                username, request.getDatabaseConnectionId());
 
         if (!"mysql".equalsIgnoreCase(connection.getDbType())) {
             throw new IllegalArgumentException("Tính năng tối ưu SQL hiện chỉ hỗ trợ MySQL");

@@ -6,6 +6,7 @@ import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import com.example.aidatabaseassistant.service.ConnectionService;
 import com.example.aidatabaseassistant.service.QueryService;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,7 +75,7 @@ class ConnectionControllerIntegrationTest {
                 eq("owner"),
                 eq(100L)
         )).thenThrow(
-                new IllegalArgumentException(
+                new ForbiddenResourceException(
                         "Bạn không có quyền truy cập connection này"
                 )
         );
@@ -86,7 +87,7 @@ class ConnectionControllerIntegrationTest {
                                         "Bearer " + ownerToken
                                 )
                 )
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isForbidden())
                 .andExpect(
                         jsonPath("$.message")
                                 .value(
@@ -107,7 +108,7 @@ class ConnectionControllerIntegrationTest {
                 eq(100L),
                 any(ConnectionUpdateRequest.class)
         )).thenThrow(
-                new IllegalArgumentException(
+                new ForbiddenResourceException(
                         "Bạn không có quyền truy cập connection này"
                 )
         );
@@ -133,7 +134,7 @@ class ConnectionControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(requestBody)
                 )
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isForbidden())
                 .andExpect(
                         jsonPath("$.message")
                                 .value(
@@ -153,7 +154,7 @@ class ConnectionControllerIntegrationTest {
             throws Exception {
 
         doThrow(
-                new IllegalArgumentException(
+                new ForbiddenResourceException(
                         "Bạn không có quyền truy cập connection này"
                 )
         ).when(connectionService)
@@ -167,7 +168,7 @@ class ConnectionControllerIntegrationTest {
                                         "Bearer " + ownerToken
                                 )
                 )
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isForbidden())
                 .andExpect(
                         jsonPath("$.message")
                                 .value(
@@ -183,14 +184,11 @@ class ConnectionControllerIntegrationTest {
     void reconnect_shouldReturn400_whenConnectionBelongsToAnotherUser()
             throws Exception {
 
-        when(connectionService.reconnect(
-                "owner",
-                100L
-        )).thenThrow(
-                new IllegalArgumentException(
+        doThrow(
+                new ForbiddenResourceException(
                         "Bạn không có quyền truy cập connection này"
                 )
-        );
+        ).when(connectionService).reconnect("owner", 100L);
 
         mockMvc.perform(
                         org.springframework.test.web.servlet.request.MockMvcRequestBuilders
@@ -200,7 +198,7 @@ class ConnectionControllerIntegrationTest {
                                         "Bearer " + ownerToken
                                 )
                 )
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isForbidden())
                 .andExpect(
                         jsonPath("$.message")
                                 .value(

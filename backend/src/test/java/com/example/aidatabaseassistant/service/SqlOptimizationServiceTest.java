@@ -9,12 +9,14 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
 import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
 import com.example.aidatabaseassistant.optimization.SqlOptimizationAnalyzer;
 import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SqlOptimizationRawData;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,6 +49,8 @@ class SqlOptimizationServiceTest {
     private PromptBuilder promptBuilder;
     @Mock
     private LLMClient llmClient;
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
 
     private SqlOptimizationService service;
 
@@ -62,7 +66,7 @@ class SqlOptimizationServiceTest {
         service = new SqlOptimizationService(
                 userRepository, connectionRepository, encryptionUtil,
                 new QueryValidator(), queryExecutor, schemaLoaderService,
-                new SqlOptimizationAnalyzer(), promptBuilder, llmClient);
+                new SqlOptimizationAnalyzer(), promptBuilder, llmClient, connectionAccessGuard);
 
         owner = User.builder().id(1L).username("owner").build();
         otherUser = User.builder().id(2L).username("intruder").build();
@@ -97,10 +101,10 @@ class SqlOptimizationServiceTest {
         request.setSql("SELECT * FROM orders");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("intruder", 10L))
+                .thenThrow(new ForbiddenResourceException("Bạn không có quyền truy cập connection này"));
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(ForbiddenResourceException.class,
                 () -> service.optimize("intruder", request));
 
         verifyNoInteractions(queryExecutor, llmClient);
@@ -114,8 +118,7 @@ class SqlOptimizationServiceTest {
         request.setSql("SELECT * FROM orders");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.optimize("owner", request));
@@ -128,8 +131,7 @@ class SqlOptimizationServiceTest {
         request.setSql("DELETE FROM orders");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
 
         assertThrows(IllegalArgumentException.class,
@@ -144,8 +146,7 @@ class SqlOptimizationServiceTest {
         request.setSql("SELECT * FROM orders");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("real-pass");
         when(queryExecutor.collectOptimizationData(any(), any(), any(), any(), any(), any()))
@@ -162,8 +163,7 @@ class SqlOptimizationServiceTest {
         request.setSql("SELECT * FROM orders WHERE status = 'pending'");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("real-pass");
 
@@ -193,8 +193,7 @@ class SqlOptimizationServiceTest {
         request.setSql("SELECT * FROM orders WHERE status = 'pending'");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("real-pass");
 

@@ -9,14 +9,25 @@ export class ApiError extends Error {
   status: number;
   code: string;
   fieldErrors?: Record<string, string>;
+  correlationId?: string;
+  retryAfterSeconds?: number;
 
-  constructor(body: ApiErrorBody) {
+  constructor(body: ApiErrorBody, retryAfterSeconds?: number) {
     super(body.message);
     this.name = "ApiError";
     this.status = body.status;
     this.code = body.code;
     this.fieldErrors = body.fieldErrors;
+    this.correlationId = body.correlationId;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+function parseRetryAfter(response: Response): number | undefined {
+  const header = response.headers.get("Retry-After");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  return Number.isFinite(seconds) ? seconds : undefined;
 }
 
 export function getStoredToken(): string | null {
@@ -75,7 +86,7 @@ export async function apiRequest<T>(
       };
     }
 
-    throw new ApiError(errorBody);
+    throw new ApiError(errorBody, parseRetryAfter(response));
   }
 
   if (response.status === 204) {
@@ -121,7 +132,7 @@ export async function apiRequestBlob(
       };
     }
 
-    throw new ApiError(errorBody);
+    throw new ApiError(errorBody, parseRetryAfter(response));
   }
 
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -203,7 +214,7 @@ export async function apiRequestSse(
       };
     }
 
-    throw new ApiError(errorBody);
+    throw new ApiError(errorBody, parseRetryAfter(response));
   }
 
   // Browser phải cung cấp ReadableStream.

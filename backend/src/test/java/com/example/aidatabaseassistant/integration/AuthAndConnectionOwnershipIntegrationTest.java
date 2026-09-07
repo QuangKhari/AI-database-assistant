@@ -251,7 +251,7 @@ class AuthAndConnectionOwnershipIntegrationTest {
         System.out.println("BODY   = " + intruderReadResponse.getBody());
         System.out.println("===================================");
 
-        assertEquals(HttpStatus.BAD_REQUEST, intruderReadResponse.getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN, intruderReadResponse.getStatusCode());
 
         assertTrue(
                 toJson(intruderReadResponse.getBody())
@@ -276,7 +276,7 @@ class AuthAndConnectionOwnershipIntegrationTest {
         System.out.println("BODY   = " + intruderDeleteResponse.getBody());
         System.out.println("=====================================");
 
-        assertEquals(HttpStatus.BAD_REQUEST, intruderDeleteResponse.getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN, intruderDeleteResponse.getStatusCode());
 
 
         // ============================================================
