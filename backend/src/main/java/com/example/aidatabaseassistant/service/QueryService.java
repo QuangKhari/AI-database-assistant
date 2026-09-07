@@ -8,6 +8,7 @@ import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.exception.ConflictException;
 import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
@@ -341,7 +342,7 @@ public class QueryService {
                                     request.getConversationId()
                             )
                             .orElseThrow(() ->
-                                    new IllegalArgumentException(
+                                    new ResourceNotFoundException(
                                             "Không tìm thấy conversation"
                                     )
                             );

@@ -85,15 +85,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Nếu gọi lỗi (BE tạm thời chậm...), vẫn đăng nhập thành công với email
     // rỗng thay vì làm hỏng cả luồng đăng nhập.
     let email = "";
+    let id = 0;
     try {
       const profile = await authApi.getProfile();
       email = profile.email;
-    } catch {
-      // bỏ qua - không được để lỗi lấy profile làm hỏng đăng nhập
-    }
+      id = profile.id;
+    } catch {}
 
     const user: UserInfo = {
-      id: 0,
+      id,
       username: response.username,
       displayName: null,
       email,

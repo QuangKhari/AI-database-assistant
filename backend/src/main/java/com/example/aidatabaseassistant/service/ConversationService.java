@@ -199,7 +199,7 @@ public class ConversationService {
         Message message =
                 messageRepository.findByIdWithOwner(messageId)
                         .orElseThrow(
-                                () -> new IllegalArgumentException(
+                                () -> new ResourceNotFoundException(
                                         "Không tìm thấy message"
                                 )
                         );

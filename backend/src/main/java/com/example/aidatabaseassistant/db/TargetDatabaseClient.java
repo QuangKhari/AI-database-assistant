@@ -162,7 +162,7 @@ public class TargetDatabaseClient {
             return false;
         }
     }
-    
+
     private Properties buildDuckDbReadOnlyProperties() {
         Properties props = new Properties();
         props.setProperty("duckdb.read_only", "true");
