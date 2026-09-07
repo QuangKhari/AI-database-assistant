@@ -2,10 +2,7 @@ package com.example.aidatabaseassistant.service;
 
 import com.example.aidatabaseassistant.ai.LLMClient;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
-import com.example.aidatabaseassistant.entity.TableEmbedding;
 import com.example.aidatabaseassistant.entity.TableMetadata;
-import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,9 +33,7 @@ public class SchemaRetrievalService {
      */
 
     private final LLMClient llmClient;
-    private final TableEmbeddingRepository tableEmbeddingRepository;
     private final SchemaEmbeddingService schemaEmbeddingService;
-    private final ObjectMapper objectMapper;
 
     /**
      * Bật / tắt RAG bằng application.properties.
@@ -225,33 +220,23 @@ public class SchemaRetrievalService {
          * 4. LOAD TOÀN BỘ TABLE EMBEDDING CHỈ 1 LẦN
          * =========================================================
          *
-         * Không query DB cho từng table.
+         * FIX (audit Redis caching): trước đây query DB trực tiếp
+         * (tableEmbeddingRepository.findBySchemaId) ở NGAY ĐÂY - chạy
+         * lại trên MỌI câu hỏi người dùng gõ, dù embedding không hề đổi.
+         * Giờ đi qua SchemaEmbeddingService.getEmbeddingsByTableName(),
+         * method có @Cacheable("tableEmbeddings") - cache này đã được
+         * cấu hình sẵn từ trước (Caffeine/Redis tùy app.cache.provider)
+         * nhưng chưa từng thực sự được áp dụng ở đâu.
          *
-         * Một schema có 50 bảng:
-         *
-         *     1 query
-         *
-         * thay vì:
-         *
-         *     50 queries.
+         * Không thể đặt @Cacheable trực tiếp ở method này (self-
+         * invocation - Spring AOP proxy không chặn được lời gọi nội bộ
+         * "this.xxx()"), nên logic được chuyển sang SchemaEmbeddingService
+         * (bean khác, gọi qua field đã có sẵn).
          */
         Map<String, float[]> embeddingsByName =
-                tableEmbeddingRepository
-                        .findBySchemaId(fullSchema.getId())
-                        .stream()
-                        .filter(e ->
-                                e.getTableName() != null
-                                        && !e.getTableName().isBlank()
-                        )
-                        .collect(Collectors.toMap(
-                                e -> normalizeName(
-                                        e.getTableName()
-                                ),
-                                e -> fromJson(
-                                        e.getVectorJson()
-                                ),
-                                (a, b) -> a
-                        ));
+                schemaEmbeddingService.getEmbeddingsByTableName(
+                        fullSchema.getId()
+                );
 
         /*
          * =========================================================
@@ -699,41 +684,6 @@ public class SchemaRetrievalService {
         }
 
         return true;
-    }
-
-    /**
-     * Chuyển JSON TEXT trong database
-     * thành float[].
-     *
-     * Nếu JSON lỗi:
-     *
-     *     trả null
-     *
-     * để retrieval bỏ qua embedding lỗi
-     * thay vì làm crash toàn bộ query.
-     */
-    private float[] fromJson(String json) {
-
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-
-        try {
-
-            return objectMapper.readValue(
-                    json,
-                    float[].class
-            );
-
-        } catch (Exception e) {
-
-            log.warn(
-                    "Không thể đọc embedding vector từ database: {}",
-                    e.getMessage()
-            );
-
-            return null;
-        }
     }
 
     /**

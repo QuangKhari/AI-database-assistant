@@ -17,6 +17,8 @@ import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.Message;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.ConversationRepository;
@@ -30,17 +32,23 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
+import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import org.mockito.MockedConstruction;
 
 @ExtendWith(MockitoExtension.class)
 class QueryServiceTest {
@@ -79,6 +87,8 @@ class QueryServiceTest {
     private SchemaRetrievalService schemaRetrievalService;
     @Mock
     private Executor sseTaskExecutor;
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
 
     private QueryService queryService;
 
@@ -96,16 +106,32 @@ class QueryServiceTest {
         // @RequiredArgsConstructor), nhung KHONG duoc stub truc tiep trong
         // cac test ben duoi (se gay UnnecessaryStubbingException).
         queryService = new QueryService(
-                userRepository, connectionRepository, schemaRepository, conversationRepository,
-                messageRepository, queryLogRepository, encryptionUtil, nl2SQLEngine, queryValidator,
-                sqlCorrectionService, llmClient, rateLimitService, chartSuggestionService,
-                schemaLoaderService, dataInsightService, schemaRetrievalService, sseTaskExecutor);
+                userRepository,
+                connectionRepository,
+                schemaRepository,
+                conversationRepository,
+                messageRepository,
+                queryLogRepository,
+                encryptionUtil,
+                nl2SQLEngine,
+                queryValidator,
+                sqlCorrectionService,
+                llmClient,
+                rateLimitService,
+                chartSuggestionService,
+                schemaLoaderService,
+                dataInsightService,
+                schemaRetrievalService,
+                sseTaskExecutor,
+                connectionAccessGuard
+        );
 
         // modelUrl la field @Value, KHONG duoc Lombok dua vao constructor vi
         // khong phai final - phai bom bang reflection, giong cach da lam o
         // BenchmarkServiceTest.
         ReflectionTestUtils.setField(queryService, "modelUrl",
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
+        ReflectionTestUtils.setField(queryService, "sseTimeoutMs", 180_000L);
 
         owner = User.builder().id(1L).username("owner").build();
         otherUser = User.builder().id(2L).username("intruder").build();
@@ -174,8 +200,8 @@ class QueryServiceTest {
     void previewQuery_shouldReturnValid_whenSqlPassesValidation() {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("SELECT * FROM orders");
@@ -191,8 +217,8 @@ class QueryServiceTest {
     void previewQuery_shouldReturnInvalid_whenValidationFails() {
         QueryRequest request = buildRequest("Xoá hết đơn hàng", 10L, null);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(nl2SQLEngine.generateSQL(request.getQuestion(), schema)).thenReturn("DELETE FROM orders");
@@ -209,10 +235,15 @@ class QueryServiceTest {
     void previewQuery_shouldThrow_whenConnectionNotOwnedByUser_IDOR() {
         QueryRequest request = buildRequest("Bất kỳ câu hỏi nào", 10L, null);
 
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("intruder"))
+                .thenReturn(otherUser);
 
-        assertThrows(IllegalArgumentException.class, () -> queryService.previewQuery("intruder", request));
+        when(connectionAccessGuard.requireOwnedConnection(otherUser, 10L))
+                .thenThrow(new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"));
+
+        assertThrows(ForbiddenResourceException.class,
+                () -> queryService.previewQuery("intruder", request));
         verifyNoInteractions(nl2SQLEngine, queryValidator, schemaLoaderService, schemaRetrievalService);
     }
 
@@ -235,29 +266,36 @@ class QueryServiceTest {
     void processQuery_shouldThrow_whenUserNotFound() {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.empty());
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenThrow(new ResourceNotFoundException("Không tìm thấy user"));
 
-        assertThrows(IllegalArgumentException.class, () -> queryService.processQuery("owner", request));
+        assertThrows(ResourceNotFoundException.class,
+                () -> queryService.processQuery("owner", request));
     }
 
     @Test
     void processQuery_shouldThrow_whenConnectionNotFound() {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 999L, null);
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(999L)).thenReturn(Optional.empty());
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 999L))
+                .thenThrow(new ResourceNotFoundException("Không tìm thấy connection"));
 
-        assertThrows(IllegalArgumentException.class, () -> queryService.processQuery("owner", request));
+        assertThrows(ResourceNotFoundException.class,
+                () -> queryService.processQuery("owner", request));
     }
 
     @Test
     void processQuery_shouldThrow_whenConnectionNotOwnedByUser_IDOR() {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
         when(rateLimitService.tryConsume("intruder")).thenReturn(true);
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("intruder")).thenReturn(otherUser);
+        when(connectionAccessGuard.requireOwnedConnection(otherUser, 10L))
+                .thenThrow(new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"));
 
-        assertThrows(IllegalArgumentException.class, () -> queryService.processQuery("intruder", request));
+        assertThrows(ForbiddenResourceException.class,
+                () -> queryService.processQuery("intruder", request));
         verifyNoInteractions(sqlCorrectionService, chartSuggestionService, dataInsightService);
     }
 
@@ -265,8 +303,8 @@ class QueryServiceTest {
     void processQuery_shouldThrow_whenSchemaNotDiscovered() {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L))
                 .thenThrow(new IllegalArgumentException("Chưa discover schema cho connection này"));
 
@@ -280,8 +318,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -319,8 +357,8 @@ class QueryServiceTest {
         Conversation existingConversation = Conversation.builder().id(500L).user(owner).connection(connection).build();
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(conversationRepository.findById(500L)).thenReturn(Optional.of(existingConversation));
@@ -349,8 +387,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Câu hỏi khó, cần tự sửa SQL", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -382,8 +420,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Câu hỏi không sinh được SQL hợp lệ", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -419,8 +457,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -465,8 +503,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -500,8 +538,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("How much revenue did we make in January?", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -539,8 +577,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("How much revenue did we make in January?", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -574,8 +612,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -611,8 +649,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Câu hỏi không hợp lệ", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -640,8 +678,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -675,8 +713,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -713,8 +751,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Câu hỏi không hợp lệ", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -742,8 +780,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -781,8 +819,8 @@ class QueryServiceTest {
                 .role("assistant").generatedSql("SELECT SUM(total) FROM orders WHERE MONTH(created_at)=1").build();
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(conversationRepository.findById(500L)).thenReturn(Optional.of(existingConversation));
@@ -816,8 +854,8 @@ class QueryServiceTest {
         QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
 
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
         when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
         when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
         when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
@@ -868,11 +906,11 @@ class QueryServiceTest {
     private void stubSuccessfulProcessQuery() {
         when(rateLimitService.tryConsume("owner")).thenReturn(true);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L))
+                .thenReturn(connection);
 
         when(schemaLoaderService.loadCompleteSchema(10L))
                 .thenReturn(schema);
@@ -939,5 +977,84 @@ class QueryServiceTest {
         assertDoesNotThrow(
                 () -> queryService.processQuery("owner", request)
         );
+    }
+
+    // ===================== processQueryStreaming (SSE) =====================
+
+    @Test
+    void processQueryStreaming_shouldCreateEmitterWithConfiguredTimeout() {
+        // FIX chính của audit lần này: timeout không còn hardcode 60_000L
+        // mà lấy từ app.sse.timeout-ms (field sseTimeoutMs, @Value).
+        ReflectionTestUtils.setField(queryService, "sseTimeoutMs", 180_000L);
+
+        // Không cần task thực sự chạy cho test này - chỉ kiểm tra
+        // đối tượng SseEmitter được tạo ra với đúng cấu hình.
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        SseEmitter emitter = queryService.processQueryStreaming("owner", request);
+
+        assertNotNull(emitter);
+
+        // SseEmitter/ResponseBodyEmitter lưu timeout ở field private
+        // "timeout" (kiểu Long) - không có getter public. Đọc bằng
+        // reflection để xác nhận đúng giá trị đã cấu hình, thay vì chỉ
+        // tin rằng constructor được gọi đúng cách.
+        Object timeout = ReflectionTestUtils.getField(emitter, "timeout");
+        assertEquals(180_000L, timeout);
+    }
+
+    @Test
+    void processQueryStreaming_shouldSubmitWorkToSseExecutor_notCallerThread() {
+        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+
+        queryService.processQueryStreaming("owner", request);
+
+        verify(sseTaskExecutor, times(1)).execute(any(Runnable.class));
+
+        // Chưa "run" task nên các mock nghiệp vụ (rateLimitService...)
+        // tuyệt đối KHÔNG được gọi tới ở bước này.
+        verifyNoInteractions(rateLimitService);
+    }
+
+    @Test
+    void processQueryStreaming_happyPath_shouldSendStatusThenResult_andComplete()
+            throws IOException {
+
+        QueryRequest request =
+                buildRequest("Doanh thu theo tháng", 10L, null);
+
+        stubSuccessfulProcessQuery();
+
+        try (MockedConstruction<SseEmitter> mocked =
+                     mockConstruction(SseEmitter.class)) {
+
+            doAnswer(invocation -> {
+                Runnable task = invocation.getArgument(0);
+                task.run();
+                return null;
+            }).when(sseTaskExecutor).execute(any(Runnable.class));
+
+            SseEmitter emitter =
+                    queryService.processQueryStreaming("owner", request);
+
+            assertNotNull(emitter);
+
+            assertEquals(1, mocked.constructed().size());
+
+            SseEmitter mockedEmitter =
+                    mocked.constructed().get(0);
+
+            verify(sseTaskExecutor, times(1))
+                    .execute(any(Runnable.class));
+
+            verify(mockedEmitter, times(6))
+                    .send(any(SseEmitter.SseEventBuilder.class));
+
+            verify(mockedEmitter, times(1))
+                    .complete();
+
+            verify(mockedEmitter, never())
+                    .completeWithError(any(Throwable.class));
+        }
     }
 }

@@ -6,7 +6,6 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableEmbedding;
 import com.example.aidatabaseassistant.entity.TableMetadata;
-import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +16,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,9 +30,6 @@ class SchemaRetrievalServiceTest {
     private LLMClient llmClient;
 
     @Mock
-    private TableEmbeddingRepository tableEmbeddingRepository;
-
-    @Mock
     private SchemaEmbeddingService schemaEmbeddingService;
 
     private SchemaRetrievalService service;
@@ -41,9 +39,7 @@ class SchemaRetrievalServiceTest {
 
         service = new SchemaRetrievalService(
                 llmClient,
-                tableEmbeddingRepository,
-                schemaEmbeddingService,
-                new ObjectMapper()
+                schemaEmbeddingService
         );
 
         /*
@@ -90,7 +86,6 @@ class SchemaRetrievalServiceTest {
 
         verifyNoInteractions(schemaEmbeddingService);
         verifyNoInteractions(llmClient);
-        verifyNoInteractions(tableEmbeddingRepository);
     }
 
     @Test
@@ -108,7 +103,6 @@ class SchemaRetrievalServiceTest {
 
         verifyNoInteractions(schemaEmbeddingService);
         verifyNoInteractions(llmClient);
-        verifyNoInteractions(tableEmbeddingRepository);
     }
 
     @Test
@@ -154,8 +148,8 @@ class SchemaRetrievalServiceTest {
             embeddings.add(embedding);
         }
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(embeddings);
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(toEmbeddingMap(embeddings));
 
         DatabaseSchema result =
                 service.retrieveRelevantSchema(
@@ -204,12 +198,15 @@ class SchemaRetrievalServiceTest {
 
         /*
          * Quan trọng:
-         * findBySchemaId() chỉ được gọi 1 lần.
+         * getEmbeddingsByTableName() chỉ được gọi 1 lần.
          *
-         * Đây chính là test chống N+1 query.
+         * Đây chính là test chống N+1 query (trước đây verify thẳng
+         * tableEmbeddingRepository.findBySchemaId - giờ SchemaRetrievalService
+         * không còn gọi trực tiếp repository nữa, xem
+         * SchemaEmbeddingService.getEmbeddingsByTableName).
          */
-        verify(tableEmbeddingRepository, times(1))
-                .findBySchemaId(1L);
+        verify(schemaEmbeddingService, times(1))
+                .getEmbeddingsByTableName(1L);
     }
 
     @Test
@@ -290,8 +287,8 @@ class SchemaRetrievalServiceTest {
             );
         }
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(embeddings);
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(toEmbeddingMap(embeddings));
 
         DatabaseSchema result =
                 service.retrieveRelevantSchema(
@@ -344,8 +341,8 @@ class SchemaRetrievalServiceTest {
             );
         }
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(embeddings);
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(toEmbeddingMap(embeddings));
 
         DatabaseSchema result =
                 service.retrieveRelevantSchema(
@@ -449,8 +446,8 @@ class SchemaRetrievalServiceTest {
             );
         }
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(embeddings);
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(toEmbeddingMap(embeddings));
 
         DatabaseSchema result =
                 service.retrieveRelevantSchema(
@@ -572,8 +569,8 @@ class SchemaRetrievalServiceTest {
             );
         }
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(embeddings);
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(toEmbeddingMap(embeddings));
 
         DatabaseSchema result =
                 service.retrieveRelevantSchema(
@@ -605,8 +602,8 @@ class SchemaRetrievalServiceTest {
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(new float[]{1f, 0f});
 
-        when(tableEmbeddingRepository.findBySchemaId(1L))
-                .thenReturn(List.of());
+        when(schemaEmbeddingService.getEmbeddingsByTableName(1L))
+                .thenReturn(java.util.Map.of());
 
         service.retrieveRelevantSchema(
                 "Tìm khách hàng",
@@ -616,8 +613,7 @@ class SchemaRetrievalServiceTest {
         var inOrder =
                 inOrder(
                         schemaEmbeddingService,
-                        llmClient,
-                        tableEmbeddingRepository
+                        llmClient
                 );
 
         inOrder.verify(schemaEmbeddingService)
@@ -626,8 +622,8 @@ class SchemaRetrievalServiceTest {
         inOrder.verify(llmClient)
                 .generateEmbedding("Tìm khách hàng");
 
-        inOrder.verify(tableEmbeddingRepository)
-                .findBySchemaId(1L);
+        inOrder.verify(schemaEmbeddingService)
+                .getEmbeddingsByTableName(1L);
     }
 
     @Test
@@ -642,9 +638,9 @@ class SchemaRetrievalServiceTest {
         );
 
         verify(
-                tableEmbeddingRepository,
+                schemaEmbeddingService,
                 never()
-        ).findBySchemaId(anyLong());
+        ).getEmbeddingsByTableName(anyLong());
 
         verify(
                 schemaEmbeddingService,
@@ -726,5 +722,41 @@ class SchemaRetrievalServiceTest {
                 .contentHash("hash-" + tableName)
                 .modelName("text-embedding-004")
                 .build();
+    }
+
+    /*
+     * FIX (audit Redis caching): SchemaRetrievalService KHONG con doc
+     * truc tiep tu TableEmbeddingRepository nua - no goi
+     * schemaEmbeddingService.getEmbeddingsByTableName(schemaId), method
+     * co @Cacheable tra ve san Map<String, float[]> (xem
+     * SchemaEmbeddingService). Helper nay giu nguyen cach cac test o
+     * tren XAY DUNG du lieu (List<TableEmbedding> + vectorJson dang
+     * chuoi JSON), chi doi "diem stub" tu repository sang service, thay
+     * vi phai viet lai tung test de tu tay dung Map<String, float[]>.
+     *
+     * Viec parse JSON + chuan hoa ten bang o day PHAI khop dung logic
+     * that trong SchemaEmbeddingService.getEmbeddingsByTableName()
+     * (trim + toLowerCase(Locale.ROOT)) de test phan anh dung hanh vi
+     * production.
+     */
+    private Map<String, float[]> toEmbeddingMap(List<TableEmbedding> embeddings) {
+
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, float[]> result = new java.util.HashMap<>();
+
+        for (TableEmbedding embedding : embeddings) {
+            try {
+                result.put(
+                        embedding.getTableName().trim().toLowerCase(Locale.ROOT),
+                        mapper.readValue(embedding.getVectorJson(), float[].class)
+                );
+            } catch (Exception e) {
+                throw new RuntimeException(
+                        "Test fixture lỗi: vectorJson không hợp lệ cho bảng "
+                                + embedding.getTableName(), e);
+            }
+        }
+
+        return result;
     }
 }

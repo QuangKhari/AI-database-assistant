@@ -9,6 +9,9 @@ import com.example.aidatabaseassistant.entity.Role;
 import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,10 +24,11 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +52,9 @@ class ConnectionServiceTest {
     @Mock
     private ExcelIngestionService excelIngestionService;
 
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
+
     private ConnectionService connectionService;
 
     private User owner;
@@ -62,7 +69,8 @@ class ConnectionServiceTest {
                 encryptionUtil,
                 ssrfProtection,
                 targetDatabaseClient,
-                excelIngestionService
+                excelIngestionService,
+                connectionAccessGuard
         );
 
         ReflectionTestUtils.setField(
@@ -109,8 +117,8 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(encryptionUtil.encrypt("plain-secret"))
                 .thenReturn("encrypted-secret");
@@ -139,7 +147,7 @@ class ConnectionServiceTest {
 
     // =========================================================
     // MULTI-DB: saveConnection() phải chấp nhận postgres/postgresql
-    // và chặn SỚM (trước khi lưu DB) các dbType không được hỗ trợ.
+    // và chặn SỚM các dbType không được hỗ trợ.
     // =========================================================
 
     @Test
@@ -154,8 +162,8 @@ class ConnectionServiceTest {
         request.setUsername("postgres");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(encryptionUtil.encrypt("plain-secret"))
                 .thenReturn("encrypted-secret");
@@ -164,6 +172,7 @@ class ConnectionServiceTest {
                 connectionService.saveConnection("owner", request);
 
         assertEquals("postgres", response.getDbType());
+
         verify(connectionRepository).save(any());
     }
 
@@ -179,8 +188,8 @@ class ConnectionServiceTest {
         request.setUsername("postgres");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(encryptionUtil.encrypt("plain-secret"))
                 .thenReturn("encrypted-secret");
@@ -203,15 +212,14 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> connectionService.saveConnection("owner", request)
         );
 
-        // Bị chặn SỚM: không được đi tiếp tới bước validate SSRF hay lưu DB.
         verify(ssrfProtection, never()).validateHost(any());
         verify(connectionRepository, never()).save(any());
     }
@@ -228,8 +236,8 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -242,8 +250,8 @@ class ConnectionServiceTest {
     @Test
     void getConnectionsByUser_shouldReturnOnlyConnectionsOfThatUser() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(connectionRepository.findByUserId(1L))
                 .thenReturn(List.of(sampleConnection()));
@@ -260,11 +268,8 @@ class ConnectionServiceTest {
 
         DatabaseConnection connection = sampleConnection();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         ConnectionResponse response =
                 connectionService.getConnection("owner", 10L);
@@ -275,35 +280,31 @@ class ConnectionServiceTest {
     @Test
     void getConnection_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
-        DatabaseConnection connection = sampleConnection();
+        when(connectionAccessGuard.requireOwnedConnection("intruder", 10L))
+                .thenThrow(
+                        new ForbiddenResourceException(
+                                "Bạn không có quyền truy cập connection này"
+                        )
+                );
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
-
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        assertThrows(
+                ForbiddenResourceException.class,
                 () -> connectionService.getConnection("intruder", 10L)
-        );
-
-        assertTrue(
-                ex.getMessage().contains("không có quyền")
         );
     }
 
     @Test
     void getConnection_shouldThrow_whenConnectionDoesNotExist() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(999L))
-                .thenReturn(Optional.empty());
+        when(connectionAccessGuard.requireOwnedConnection("owner", 999L))
+                .thenThrow(
+                        new ResourceNotFoundException(
+                                "Không tìm thấy connection"
+                        )
+                );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> connectionService.getConnection("owner", 999L)
         );
     }
@@ -320,11 +321,13 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
-        doThrow(new IllegalArgumentException("Host không được phép"))
-                .when(ssrfProtection).validateHost("169.254.169.254");
+        doThrow(
+                new IllegalArgumentException("Host không được phép")
+        ).when(ssrfProtection)
+                .validateHost("169.254.169.254");
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -346,8 +349,8 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(connectionRepository.countByUserId(1L))
                 .thenReturn(5L);
@@ -372,14 +375,13 @@ class ConnectionServiceTest {
         request.setDatabaseName("shop2");
         request.setUsername("root2");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
-
-        doThrow(new IllegalArgumentException("Host không được phép"))
-                .when(ssrfProtection).validateHost("127.0.0.1");
+        doThrow(
+                new IllegalArgumentException("Host không được phép")
+        ).when(ssrfProtection)
+                .validateHost("127.0.0.1");
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -396,27 +398,26 @@ class ConnectionServiceTest {
     @Test
     void updateConnection_shouldValidateHost_afterOwnershipCheck() {
 
-        // IDOR phải được ưu tiên kiểm tra TRƯỚC validate host:
-        // nếu không phải chủ sở hữu thì không được phép biết host
-        // có bị SSRF chặn hay không.
+        ConnectionUpdateRequest request =
+                new ConnectionUpdateRequest();
 
-        DatabaseConnection connection = sampleConnection();
-
-        ConnectionUpdateRequest request = new ConnectionUpdateRequest();
         request.setName("Hacked");
         request.setHost("evil.com");
         request.setPort(1);
         request.setDatabaseName("x");
         request.setUsername("x");
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "intruder",
+                10L
+        )).thenThrow(
+                new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"
+                )
+        );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ForbiddenResourceException.class,
                 () -> connectionService.updateConnection(
                         "intruder",
                         10L,
@@ -445,11 +446,8 @@ class ConnectionServiceTest {
         request.setUsername("root2");
         request.setPassword("new-plain-secret");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         when(encryptionUtil.encrypt("new-plain-secret"))
                 .thenReturn("new-encrypted-secret");
@@ -461,7 +459,10 @@ class ConnectionServiceTest {
                         request
                 );
 
-        assertEquals("Renamed DB", response.getName());
+        assertEquals(
+                "Renamed DB",
+                response.getName()
+        );
 
         assertEquals(
                 "new-encrypted-secret",
@@ -489,11 +490,8 @@ class ConnectionServiceTest {
         request.setUsername("root2");
         request.setPassword("   ");
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         connectionService.updateConnection(
                 "owner",
@@ -515,8 +513,6 @@ class ConnectionServiceTest {
     @Test
     void updateConnection_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
-        DatabaseConnection connection = sampleConnection();
-
         ConnectionUpdateRequest request =
                 new ConnectionUpdateRequest();
 
@@ -526,14 +522,17 @@ class ConnectionServiceTest {
         request.setDatabaseName("x");
         request.setUsername("x");
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "intruder",
+                10L
+        )).thenThrow(
+                new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"
+                )
+        );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ForbiddenResourceException.class,
                 () -> connectionService.updateConnection(
                         "intruder",
                         10L,
@@ -552,11 +551,8 @@ class ConnectionServiceTest {
 
         DatabaseConnection connection = sampleConnection();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         connectionService.disconnect("owner", 10L);
 
@@ -567,11 +563,68 @@ class ConnectionServiceTest {
     @Test
     void disconnect_shouldThrowAndNotDelete_whenRequestedByNonOwner_IDOR() {
 
-        DatabaseConnection connection =
+        when(connectionAccessGuard.requireOwnedConnection(
+                "intruder",
+                20L
+        )).thenThrow(
+                new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"
+                )
+        );
+
+        assertThrows(
+                ForbiddenResourceException.class,
+                () -> connectionService.disconnect(
+                        "intruder",
+                        20L
+                )
+        );
+
+        verify(
+                excelIngestionService,
+                never()
+        ).deleteDuckDbFile(anyString());
+
+        verify(
+                connectionRepository,
+                never()
+        ).delete(any());
+    }
+
+    @Test
+    void reconnect_shouldThrow_beforeTouchingNetwork_whenRequestedByNonOwner_IDOR() {
+
+        when(connectionAccessGuard.requireOwnedConnection(
+                "intruder",
+                10L
+        )).thenThrow(
+                new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"
+                )
+        );
+
+        assertThrows(
+                ForbiddenResourceException.class,
+                () -> connectionService.reconnect(
+                        "intruder",
+                        10L
+                )
+        );
+
+        verify(
+                encryptionUtil,
+                never()
+        ).decrypt(any());
+    }
+
+    @Test
+    void reconnect_withExcelConnection_shouldSkipSsrfValidation_andSucceed() {
+
+        DatabaseConnection excelConnection =
                 DatabaseConnection.builder()
-                        .id(20L)
+                        .id(30L)
                         .user(owner)
-                        .name("Sales")
+                        .name("Sales Excel")
                         .dbType("excel")
                         .host("local-file")
                         .port(0)
@@ -582,91 +635,14 @@ class ConnectionServiceTest {
                         .encryptedPassword("encrypted")
                         .build();
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "owner",
+                30L
+        )).thenReturn(excelConnection);
 
-        when(connectionRepository.findById(20L))
-                .thenReturn(Optional.of(connection));
+        when(encryptionUtil.decrypt("encrypted"))
+                .thenReturn("-");
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> connectionService.disconnect(
-                        "intruder",
-                        20L
-                )
-        );
-
-        // User không sở hữu connection Excel
-        // thì tuyệt đối không được xóa file DuckDB.
-        verify(
-                excelIngestionService,
-                never()
-        ).deleteDuckDbFile(anyString());
-
-        // Đồng thời cũng không được xóa connection.
-        verify(
-                connectionRepository,
-                never()
-        ).delete(any());
-    }
-
-    @Test
-    void reconnect_shouldThrow_beforeTouchingNetwork_whenRequestedByNonOwner_IDOR() {
-
-        DatabaseConnection connection = sampleConnection();
-
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> connectionService.reconnect(
-                        "intruder",
-                        10L
-                )
-        );
-
-        // Ownership check phải chặn trước khi giải mã password
-        // hoặc mở kết nối thật.
-        verify(
-                encryptionUtil,
-                never()
-        ).decrypt(any());
-    }
-
-    @Test
-    void reconnect_withExcelConnection_shouldSkipSsrfValidation_andSucceed() {
-        // FIX (audit Excel/DuckDB): truoc day reconnect() goi
-        // ssrfProtection.validateHost(connection.getHost()) VO DIEU KIEN.
-        // Voi Excel, host la chuoi gia "local-file" - InetAddress.getAllByName
-        // se nem UnknownHostException that (khong mock duoc bang Mockito vi
-        // day la loi JDK that su, khong phai loi cua SsrfProtection mock),
-        // khien reconnect() cho MOI connection Excel truoc day LUON that bai
-        // voi loi 400 "Khong the phan giai host" du file .duckdb binh thuong.
-        //
-        // Test nay dam bao voi dbType="excel", ssrfProtection KHONG duoc goi
-        // toi (verify never()), va reconnect chay binh thuong toi
-        // targetDatabaseClient.testConnection().
-        DatabaseConnection excelConnection = DatabaseConnection.builder()
-                .id(30L)
-                .user(owner)
-                .name("Sales Excel")
-                .dbType("excel")
-                .host("local-file")
-                .port(0)
-                .databaseName("/data/excel-dbs/user_1/sales.duckdb")
-                .username("excel-file")
-                .encryptedPassword("encrypted")
-                .build();
-
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(30L))
-                .thenReturn(Optional.of(excelConnection));
-        when(encryptionUtil.decrypt("encrypted")).thenReturn("-");
         when(targetDatabaseClient.testConnection(
                 eq("excel"),
                 eq("local-file"),
@@ -676,24 +652,22 @@ class ConnectionServiceTest {
                 eq("-")
         )).thenReturn(true);
 
-        var result = connectionService.reconnect("owner", 30L);
+        var result =
+                connectionService.reconnect(
+                        "owner",
+                        30L
+                );
 
         assertTrue(result.isSuccessful());
 
-        // Diem mau chot cua fix: KHONG duoc goi SSRF validation cho excel.
-        verify(ssrfProtection, never()).validateHost(anyString());
+        verify(
+                ssrfProtection,
+                never()
+        ).validateHost(anyString());
     }
 
     @Test
     void testConnection_shouldPropagateException_whenUnsupportedDbType() {
-
-        // Validate dbType (mysql/postgres/...) giờ nằm trong
-        // TargetDatabaseClient.buildJdbcUrl(), không còn ở
-        // ConnectionService nữa.
-        //
-        // ConnectionService.testConnection() chỉ delegate nguyên si,
-        // nên test này mock TargetDatabaseClient để mô phỏng hành vi
-        // khi gặp dbType chưa được hỗ trợ.
 
         ConnectionRequest request =
                 new ConnectionRequest();
@@ -736,7 +710,9 @@ class ConnectionServiceTest {
                 .role(Role.USER)
                 .build();
 
-        ConnectionRequest request = new ConnectionRequest();
+        ConnectionRequest request =
+                new ConnectionRequest();
+
         request.setName("Connection 6");
         request.setDbType("mysql");
         request.setHost("127.0.0.1");
@@ -745,19 +721,20 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("password");
 
-        when(userRepository.findByUsername("khai"))
-                .thenReturn(Optional.of(user));
+        when(connectionAccessGuard.requireUser("khai"))
+                .thenReturn(user);
 
         when(connectionRepository.countByUserId(1L))
                 .thenReturn(5L);
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
-                () -> connectionService.saveConnection(
-                        "khai",
-                        request
-                )
-        );
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> connectionService.saveConnection(
+                                "khai",
+                                request
+                        )
+                );
 
         assertEquals(
                 "Bạn đã đạt giới hạn tối đa 5 kết nối database. "
@@ -787,7 +764,9 @@ class ConnectionServiceTest {
                 .role(Role.USER)
                 .build();
 
-        ConnectionRequest request = new ConnectionRequest();
+        ConnectionRequest request =
+                new ConnectionRequest();
+
         request.setName("Connection 5");
         request.setDbType("mysql");
         request.setHost("127.0.0.1");
@@ -796,8 +775,8 @@ class ConnectionServiceTest {
         request.setUsername("root");
         request.setPassword("password");
 
-        when(userRepository.findByUsername("khai"))
-                .thenReturn(Optional.of(user));
+        when(connectionAccessGuard.requireUser("khai"))
+                .thenReturn(user);
 
         when(connectionRepository.countByUserId(1L))
                 .thenReturn(4L);
@@ -848,8 +827,8 @@ class ConnectionServiceTest {
                         new byte[]{1, 2, 3}
                 );
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(connectionRepository.countByUserId(owner.getId()))
                 .thenReturn(0L);
@@ -932,11 +911,10 @@ class ConnectionServiceTest {
                         .encryptedPassword("encrypted")
                         .build();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(20L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "owner",
+                20L
+        )).thenReturn(connection);
 
         connectionService.disconnect("owner", 20L);
 
@@ -954,11 +932,10 @@ class ConnectionServiceTest {
 
         DatabaseConnection connection = sampleConnection();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "owner",
+                10L
+        )).thenReturn(connection);
 
         connectionService.disconnect("owner", 10L);
 
@@ -970,6 +947,4 @@ class ConnectionServiceTest {
         verify(connectionRepository)
                 .delete(connection);
     }
-
-
 }

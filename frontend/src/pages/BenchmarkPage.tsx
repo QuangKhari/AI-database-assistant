@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { benchmarkApi } from "../api/benchmarkApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
 import type {
   BenchmarkQuestion,
@@ -47,9 +47,9 @@ export function BenchmarkPage() {
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không tải được connections.",
+          formatErrorWithSupportCode(
+            parseApiError(reason, "Không tải được connections."),
+          ),
         );
       } finally {
         setLoading(false);
@@ -70,9 +70,12 @@ export function BenchmarkPage() {
         setError("");
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không tải được danh sách câu hỏi benchmark.",
+          formatErrorWithSupportCode(
+            parseApiError(
+              reason,
+              "Không tải được danh sách câu hỏi benchmark.",
+            ),
+          ),
         );
       } finally {
         setLoading(false);
@@ -114,9 +117,9 @@ export function BenchmarkPage() {
       await loadQuestions(connectionId, languageFilter);
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể thêm câu hỏi benchmark.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể thêm câu hỏi benchmark."),
+        ),
         "error",
       );
     } finally {
@@ -142,9 +145,9 @@ export function BenchmarkPage() {
       );
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể chạy benchmark.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể chạy benchmark."),
+        ),
         "error",
       );
     } finally {

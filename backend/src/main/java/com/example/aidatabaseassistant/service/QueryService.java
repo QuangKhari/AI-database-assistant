@@ -6,9 +6,12 @@ import com.example.aidatabaseassistant.ai.QuestionLanguage;
 import com.example.aidatabaseassistant.config.EncryptionUtil;
 import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.entity.*;
+import com.example.aidatabaseassistant.exception.ConflictException;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.query.SQLCorrectionService;
 import com.example.aidatabaseassistant.repository.*;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.Executor;
@@ -29,6 +32,9 @@ public class QueryService {
     @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
     private String modelUrl;
 
+    @org.springframework.beans.factory.annotation.Value("${app.sse.timeout-ms:180000}")
+    private long sseTimeoutMs;
+
     private final UserRepository userRepository;
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseSchemaRepository schemaRepository;
@@ -46,6 +52,7 @@ public class QueryService {
     private final DataInsightService dataInsightService;
     private final SchemaRetrievalService schemaRetrievalService;
     private final Executor sseTaskExecutor; // inject qua constructor
+    private final ConnectionAccessGuard connectionAccessGuard;
 
     private static final int MAX_HISTORY_MESSAGES = 6; // 3 cặp hỏi-đáp gần nhất
 
@@ -54,30 +61,9 @@ public class QueryService {
             QueryRequest request
     ) {
 
-        User user =
-                userRepository.findByUsername(username)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy user"
-                                )
-                        );
-
+        User user = connectionAccessGuard.requireUser(username);
         DatabaseConnection connection =
-                connectionRepository.findById(
-                                request.getDatabaseConnectionId()
-                        )
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy connection"
-                                )
-                        );
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-
-            throw new IllegalArgumentException(
-                    "Bạn không có quyền truy cập connection này"
-            );
-        }
+                connectionAccessGuard.requireOwnedConnection(user, request.getDatabaseConnectionId());
 
         /*
          * Luôn load FULL schema trước.
@@ -160,15 +146,9 @@ public class QueryService {
 
         listener.onProgress("STATUS", "Đang xác thực người dùng và kết nối...");
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-        DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-        }
+        User user = connectionAccessGuard.requireUser(username);
+        DatabaseConnection connection =
+                connectionAccessGuard.requireOwnedConnection(user, request.getDatabaseConnectionId());
 
         listener.onProgress("STATUS", "Đang tải schema database...");
 
@@ -279,13 +259,6 @@ public class QueryService {
             return null;
         }
     }
-
-    // Giong buildChartSuggestion/buildDataInsight: AI Summary la tinh nang
-    // BO SUNG, tuyet doi khong duoc lam vo luong /execute chinh neu Gemini
-    // loi/timeout/tra ve rong. LLMClient.generateResponse() nem thang
-    // RuntimeException trong cac truong hop do, nen phai bat lai o day va
-    // tra ve fallback thay vi de loi lan len Controller (=> 500 du SQL da
-    // chay thanh cong).
     private String safeSummarize(
             String question,
             QueryResultDto result
@@ -375,19 +348,10 @@ public class QueryService {
 
             // Kiểm tra conversation thuộc user hiện tại
             if (!conversation.getUser().getId().equals(user.getId())) {
-
-                throw new IllegalArgumentException(
-                        "Bạn không có quyền truy cập conversation này"
-                );
+                throw new ForbiddenResourceException("Bạn không có quyền truy cập conversation này");
             }
-
-            // Kiểm tra conversation thuộc đúng connection
-            if (!conversation.getConnection().getId()
-                    .equals(connection.getId())) {
-
-                throw new IllegalArgumentException(
-                        "Conversation không thuộc connection này"
-                );
+            if (!conversation.getConnection().getId().equals(connection.getId())) {
+                throw new ConflictException("Conversation không thuộc connection này");
             }
 
             return conversation;
@@ -423,17 +387,6 @@ public class QueryService {
                 end
         );
     }
-
-    /**
-     * Lấy N message gần nhất của conversation, format thành text ngắn gọn
-     * để nhúng vào prompt. Chỉ áp dụng khi conversation ĐÃ tồn tại từ trước
-     * (request.getConversationId() != null) — conversation mới thì không
-     * có gì để lấy, tránh query DB thừa.
-     *
-     * Nếu lỗi (ví dụ DB tạm thời chậm), trả về null thay vì ném exception —
-     * đúng nguyên tắc kiến trúc: tính năng AI phụ trợ không được làm gãy
-     * luồng /execute chính.
-     */
     private String buildConversationHistory(Long conversationId) {
 
         try {
@@ -472,8 +425,33 @@ public class QueryService {
     }
 
     public SseEmitter processQueryStreaming(String username, QueryRequest request) {
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
 
-        SseEmitter emitter = new SseEmitter(60_000L); // timeout 60s, tránh treo connection vô hạn
+        emitter.onTimeout(() ->
+                log.warn(
+                        "SSE query timeout sau {}ms cho user={}, question=\"{}\"",
+                        sseTimeoutMs,
+                        username,
+                        request.getQuestion()
+                )
+        );
+
+        emitter.onError(ex ->
+                log.warn(
+                        "SSE query lỗi cho user={}, question=\"{}\": {}",
+                        username,
+                        request.getQuestion(),
+                        ex.toString()
+                )
+        );
+
+        emitter.onCompletion(() ->
+                log.debug(
+                        "SSE query hoàn tất cho user={}, question=\"{}\"",
+                        username,
+                        request.getQuestion()
+                )
+        );
 
         sseTaskExecutor.execute(() -> {
             try {

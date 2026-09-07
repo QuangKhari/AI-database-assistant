@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { useAuth } from "../context/AuthContext";
 import styles from "../styles/Form.module.css";
 import {
@@ -56,10 +56,12 @@ export function RegisterPage() {
       });
       navigate("/", { replace: true });
     } catch (reason) {
-      if (reason instanceof ApiError) {
-        setServerError(reason.message);
-        setErrors(reason.fieldErrors ?? {});
-      } else setServerError("Không thể kết nối máy chủ. Vui lòng thử lại.");
+      const parsed = parseApiError(
+        reason,
+        "Không thể kết nối máy chủ. Vui lòng thử lại.",
+      );
+      setServerError(formatErrorWithSupportCode(parsed));
+      setErrors(parsed.fieldErrors ?? {});
     } finally {
       setSubmitting(false);
     }

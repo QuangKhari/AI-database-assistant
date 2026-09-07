@@ -96,4 +96,39 @@ class QueryControllerStreamingIntegrationTest {
                                 """))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void executeStream_shouldEmitErrorEvent_andEndStream_whenServiceFails() throws Exception {
+
+        SseEmitter fakeEmitter = new SseEmitter(5_000L);
+        when(queryService.processQueryStreaming(eq("khai"), any())).thenReturn(fakeEmitter);
+
+        // Mo phong dung thu tu that: STATUS... roi den error (khong co "result")
+        fakeEmitter.send(SseEmitter.event().name("STATUS").data("Đang sinh SQL..."));
+        fakeEmitter.send(SseEmitter.event().name("error").data("Không thể sinh SQL hợp lệ sau 3 lần thử"));
+        fakeEmitter.complete();
+
+        mockMvc.perform(
+                        post("/api/query/execute/stream")
+                                .header("Authorization", "Bearer " + validToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"question": "Câu hỏi không hợp lệ", "databaseConnectionId": 1}
+                                    """))
+                .andExpect(request().asyncStarted())
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:STATUS")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:error")))
+                // "error" phai xuat hien SAU "STATUS" va KHONG co "result" trong stream
+                .andExpect(result -> {
+                    String body = result.getResponse().getContentAsString();
+                    int statusIdx = body.indexOf("event:STATUS");
+                    int errorIdx = body.indexOf("event:error");
+                    org.junit.jupiter.api.Assertions.assertTrue(statusIdx >= 0 && errorIdx > statusIdx,
+                            "Event 'error' phải xuất hiện sau 'STATUS'");
+                    org.junit.jupiter.api.Assertions.assertFalse(body.contains("event:result"),
+                            "Khi có lỗi thì KHÔNG được có event 'result'");
+                });
+    }
 }

@@ -13,6 +13,8 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
+import com.example.aidatabaseassistant.exception.ConflictException;
 
 import java.util.List;
 
@@ -31,12 +33,6 @@ public class AdminService {
                 .map(this::toAdminUserResponse)
                 .toList();
     }
-
-    /**
-     * Tim user theo username hoac email (khong phan biet hoa/thuong).
-     * Keyword rong/null -> tra ve toan bo danh sach, giu hanh vi tuong tu
-     * getAllUsers() de Frontend khong can xu ly rieng truong hop rong.
-     */
     @Transactional(readOnly = true)
     public List<AdminUserResponse> searchUsers(String keyword) {
         if (keyword == null || keyword.isBlank()) {
@@ -49,24 +45,13 @@ public class AdminService {
                 .map(this::toAdminUserResponse)
                 .toList();
     }
-
-    /**
-     * Khoa mot user - tu day tro di user nay khong the dang nhap nua
-     * (CustomUserDetailsService -> accountLocked -> Spring Security tu chan
-     * bang LockedException -> 401 "Tài khoản đã bị khóa").
-     *
-     * Chan admin tu khoa chinh minh: neu khong co guard nay, mot admin duy
-     * nhat co the vo tinh (hoac bi lua) tu khoa tai khoan cua minh va mat
-     * toan bo quyen truy cap Admin API, khong con cach nao mo lai tru khi
-     * sua thang trong DB.
-     */
     @Transactional
     public AdminUserResponse lockUser(Long userId, String currentAdminUsername) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy user"));
 
         if (user.getUsername().equals(currentAdminUsername)) {
-            throw new IllegalArgumentException("Không thể tự khóa tài khoản của chính mình");
+            throw new ConflictException("Không thể tự khóa tài khoản của chính mình");
         }
 
         user.setLocked(true);
@@ -77,7 +62,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse unlockUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy user"));
 
         user.setLocked(false);
         userRepository.save(user);
@@ -100,11 +85,10 @@ public class AdminService {
             String currentAdminUsername) {
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Không tìm thấy user"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy user"));
 
         if (user.getUsername().equals(currentAdminUsername)) {
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "Không thể thay đổi role của chính mình"
             );
         }
@@ -134,19 +118,11 @@ public class AdminService {
                 ))
                 .toList();
     }
-
-    /*
-     * Xoa connection lam thay doi so lieu "totalConnections" (va gian
-     * tiep totalConversations/totalQueries do cascade delete). Xoa cache
-     * adminStats ngay de dashboard khong hien so lieu cu toi 60 giay.
-     * allEntries=true vi cache nay chi co DUY NHAT 1 gia tri (khong co
-     * key theo tham so).
-     */
     @CacheEvict(cacheNames = CacheConfig.ADMIN_STATS_CACHE, cacheManager = "sharedCacheManager", allEntries = true)
     @Transactional
     public void deleteConnection(Long connectionId) {
         DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy connection"));
         connectionRepository.delete(connection);
     }
 

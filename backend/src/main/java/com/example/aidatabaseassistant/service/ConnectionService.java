@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.dto.ConnectionTestResult;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -33,11 +34,7 @@ public class ConnectionService {
     private final SsrfProtection ssrfProtection;
     private final TargetDatabaseClient targetDatabaseClient;
     private final ExcelIngestionService excelIngestionService;
-    // Khong khai bao "final" vi day la field duoc inject bang @Value (field
-    // injection), tach biet voi cac dependency con lai dang duoc constructor-inject
-    // qua @RequiredArgsConstructor. Neu de "final" thi Lombok se doi hoi truyen
-    // gia tri nay qua constructor -> pha vo constructor 4-tham-so hien tai dang
-    // duoc goi truc tiep trong ConnectionServiceTest.
+    private final ConnectionAccessGuard connectionAccessGuard;
     @Value("${connection.max-per-user:20}")
     private int maxConnectionsPerUser = 20;
 
@@ -115,8 +112,7 @@ public class ConnectionService {
     }
 
     public ConnectionResponse saveConnection(String username, ConnectionRequest request) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         validateDbType(request.getDbType());
 
@@ -160,8 +156,7 @@ public class ConnectionService {
             org.springframework.web.multipart.MultipartFile file,
             String name) {
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         long currentCount = connectionRepository.countByUserId(user.getId());
         if (currentCount >= maxConnectionsPerUser) {
@@ -188,8 +183,7 @@ public class ConnectionService {
     }
 
     public List<ConnectionResponse> getConnectionsByUser(String username) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         return connectionRepository.findByUserId(user.getId())
                 .stream()
@@ -324,16 +318,6 @@ public class ConnectionService {
     }
 
     private DatabaseConnection getOwnedConnection(String username, Long connectionId) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-        }
-
-        return connection;
+        return connectionAccessGuard.requireOwnedConnection(username, connectionId);
     }
 }

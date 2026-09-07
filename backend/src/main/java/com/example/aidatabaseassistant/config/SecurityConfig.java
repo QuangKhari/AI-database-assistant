@@ -2,6 +2,8 @@ package com.example.aidatabaseassistant.config;
 
 import com.example.aidatabaseassistant.security.CustomUserDetailsService;
 import com.example.aidatabaseassistant.security.JwtAuthenticationFilter;
+import com.example.aidatabaseassistant.security.RestAccessDeniedHandler;
+import com.example.aidatabaseassistant.security.RestAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -22,8 +24,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
-import jakarta.servlet.http.HttpServletResponse;
-
 import java.util.List;
 
 @Configuration
@@ -34,14 +34,8 @@ public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-
-    // Truoc day danh sach nay bi hard-code "http://localhost:3000,5173",
-    // khien bien moi truong CORS_ALLOWED_ORIGINS trong docker-compose.yml /
-    // application-docker.properties (app.cors.allowed-origins) hoan toan vo
-    // tac dung - khi deploy that voi domain khac localhost, frontend se bi
-    // trinh duyet chan boi CORS du backend chay dung. Gia tri mac dinh o day
-    // (khi khong co profile "docker") van giu 2 origin dev cu de khong pha
-    // vo luong lam viec hien tai cua IntelliJ/Vite.
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final RestAccessDeniedHandler restAccessDeniedHandler;
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
     private String allowedOrigins;
 
@@ -113,55 +107,10 @@ public class SecurityConfig {
                                 SessionCreationPolicy.STATELESS
                         )
                 )
-
-                // Authentication failure → 401
                 .exceptionHandling(exception ->
-                        exception.authenticationEntryPoint(
-                                        (request, response, authException) -> {
-
-                                            response.setStatus(
-                                                    HttpServletResponse.SC_UNAUTHORIZED
-                                            );
-
-                                            response.setContentType(
-                                                    "application/json;charset=UTF-8"
-                                            );
-
-                                            response.getWriter().write("""
-                                            {
-                                                "status": 401,
-                                                "code": "UNAUTHORIZED",
-                                                "message": "Authentication required"
-                                            }
-                                            """);
-                                        }
-                                )
-
-                                // Da dang nhap thanh cong nhung thieu quyen (VD:
-                                // USER goi endpoint /api/admin/**) -> 403, KHONG
-                                // phai 401. Truoc day khong khai bao rieng nen bi
-                                // lan vao nhanh 401 o tren, gay hieu lam "chua
-                                // dang nhap" du token hoan toan hop le.
-                                .accessDeniedHandler(
-                                        (request, response, accessDeniedException) -> {
-
-                                            response.setStatus(
-                                                    HttpServletResponse.SC_FORBIDDEN
-                                            );
-
-                                            response.setContentType(
-                                                    "application/json;charset=UTF-8"
-                                            );
-
-                                            response.getWriter().write("""
-                                            {
-                                                "status": 403,
-                                                "code": "FORBIDDEN",
-                                                "message": "Bạn không có quyền truy cập tài nguyên này"
-                                            }
-                                            """);
-                                        }
-                                )
+                        exception
+                                .authenticationEntryPoint(restAuthenticationEntryPoint)
+                                .accessDeniedHandler(restAccessDeniedHandler)
                 )
 
                 .authorizeHttpRequests(auth ->
@@ -177,7 +126,7 @@ public class SecurityConfig {
                                 // (xem application-docker.properties) chỉ trả về
                                 // {"status":"UP"} chứ không chi tiết DB/disk/...
                                 .requestMatchers("/actuator/health").permitAll()
-                                .requestMatchers("/api/admin/**").hasRole("ADMIN")   // MỚI — defense in depth
+                                .requestMatchers("/api/admin/**").hasRole("ADMIN")   // defense in depth
                                 .anyRequest().authenticated()
                 )
 

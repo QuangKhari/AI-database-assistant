@@ -4,6 +4,8 @@ import com.example.aidatabaseassistant.dto.ChangePasswordRequest;
 import com.example.aidatabaseassistant.dto.UpdateProfileRequest;
 import com.example.aidatabaseassistant.dto.UserProfileResponse;
 import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.exception.ConflictException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -62,7 +64,7 @@ public class UserService {
         if (!user.getEmail().equalsIgnoreCase(newEmail)
                 && userRepository.existsByEmail(newEmail)) {
 
-            throw new IllegalArgumentException("Email đã tồn tại");
+            throw new ConflictException("Email đã tồn tại");
         }
 
         user.setEmail(newEmail);
@@ -141,7 +143,7 @@ public class UserService {
 
         return userRepository.findByUsername(username)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new ResourceNotFoundException(
                                 "Không tìm thấy tài khoản"
                         )
                 );

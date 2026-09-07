@@ -18,6 +18,7 @@ import java.util.List;
 public class BenchmarkController {
 
     private final BenchmarkService benchmarkService;
+    private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
 
     /**
      * Lấy danh sách câu hỏi benchmark của connection.
@@ -59,21 +60,18 @@ public class BenchmarkController {
         );
     }
 
-    /**
-     * Chạy toàn bộ benchmark questions của connection.
-     *
-     * POST /api/benchmark/run/{connectionId}
-     */
     @PostMapping("/run/{connectionId}")
     public ResponseEntity<BenchmarkRunResponse> runBenchmark(
             Authentication authentication,
             @PathVariable Long connectionId) {
+        if (!rateLimitService.tryConsume(authentication.getName())) {
+            throw new com.example.aidatabaseassistant.exception.RateLimitExceededException(
+                    "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
+            );
+        }
 
         return ResponseEntity.ok(
-                benchmarkService.runBenchmark(
-                        authentication.getName(),
-                        connectionId
-                )
+                benchmarkService.runBenchmark(authentication.getName(), connectionId)
         );
     }
 }

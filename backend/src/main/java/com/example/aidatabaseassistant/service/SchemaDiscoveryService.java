@@ -42,6 +42,7 @@ public class SchemaDiscoveryService {
     private final DatabaseSchemaRepository schemaRepository;
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     /*
      * Điểm duy nhất mở JDBC connection tới database
@@ -65,20 +66,8 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 1. RESOLVE KEY COLUMN MAP
+    //RESOLVE KEY COLUMN MAP
     // =========================================================
-
-    /**
-     * Trả về map:
-     *
-     *     columnName -> có phải PK/FK hay không
-     *
-     * Dữ liệu lấy từ schema đã lưu trong application database.
-     *
-     * Không kết nối lại database đích.
-     *
-     * Dùng cho ChartTypeClassifier / DataInsightAnalyzer.
-     */
     @Transactional(readOnly = true)
     public Map<String, Boolean> resolveKeyColumnMap(
             String username,
@@ -89,38 +78,7 @@ public class SchemaDiscoveryService {
             return Map.of();
         }
 
-        User user =
-                userRepository.findByUsername(username)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy user"
-                                )
-                        );
-
-        DatabaseConnection connection =
-                connectionRepository.findById(connectionId)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy connection"
-                                )
-                        );
-
-        /*
-         * Ownership check.
-         *
-         * Không được bỏ qua.
-         *
-         * Nếu bỏ qua sẽ tạo IDOR:
-         *
-         * user A có thể đọc schema metadata
-         * của connection user B.
-         */
-        if (!connection.getUser().getId().equals(user.getId())) {
-
-            throw new IllegalArgumentException(
-                    "Bạn không có quyền truy cập connection này"
-            );
-        }
+        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(username, connectionId);
 
         return schemaRepository
                 .findByConnectionId(connectionId)
@@ -130,17 +88,8 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 2. BUILD KEY COLUMN MAP
+    //BUILD KEY COLUMN MAP
     // =========================================================
-
-    /**
-     * Tách riêng thành static method để QueryService
-     * có thể tái sử dụng trực tiếp với fullSchema
-     * đã có sẵn trong bộ nhớ.
-     *
-     * Không query database.
-     * Không kiểm tra ownership.
-     */
     public static Map<String, Boolean> buildKeyColumnMap(
             DatabaseSchema schema
     ) {
@@ -209,14 +158,8 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 3. DISCOVER SCHEMA
+    //DISCOVER SCHEMA
     // =========================================================
-
-    /*
-     * CACHE: schema vua dong bo lai (bang/cot/mo ta co the da doi) -> BAT
-     * BUOC xoa cache "fullSchema" cua dung connectionId nay, neu khong
-     * QueryService se tiep tuc dung schema CU cho toi khi TTL het han.
-     */
     @CacheEvict(
             cacheNames = CacheConfig.FULL_SCHEMA_CACHE,
             cacheManager = "localCacheManager",
@@ -228,48 +171,7 @@ public class SchemaDiscoveryService {
             Long connectionId
     ) {
 
-        // -----------------------------------------------------
-        // 3.1 Load user
-        // -----------------------------------------------------
-
-        User user =
-                userRepository.findByUsername(username)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy user"
-                                )
-                        );
-
-
-        // -----------------------------------------------------
-        // 3.2 Load connection
-        // -----------------------------------------------------
-
-        DatabaseConnection connection =
-                connectionRepository.findById(connectionId)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy connection"
-                                )
-                        );
-
-
-        // -----------------------------------------------------
-        // 3.3 Ownership check
-        // -----------------------------------------------------
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-
-            throw new IllegalArgumentException(
-                    "Bạn không có quyền truy cập connection này"
-            );
-        }
-
-
-        // -----------------------------------------------------
-        // 3.4 Decrypt password
-        // -----------------------------------------------------
-
+        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(username, connectionId);
         String rawPassword =
                 encryptionUtil.decrypt(
                         connection.getEncryptedPassword()
@@ -277,7 +179,7 @@ public class SchemaDiscoveryService {
 
 
         // -----------------------------------------------------
-        // 3.5 Load existing schema
+        // Load existing schema
         // -----------------------------------------------------
 
         DatabaseSchema schema =
@@ -297,27 +199,8 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 3.6 BACKUP APPLICATION METADATA
+        //BACKUP APPLICATION METADATA
         // =====================================================
-        //
-        // Discovery sẽ tạo lại TableMetadata /
-        // ColumnMetadata.
-        //
-        // Nếu clear() trước khi backup:
-        //
-        //     description của user sẽ bị mất.
-        //
-        // Vì vậy phải lưu description trước.
-        //
-        // Table:
-        //
-        //     tableName
-        //
-        // Column:
-        //
-        //     tableName.columnName
-        // =====================================================
-
         Map<String, String> existingTableDescriptions =
                 new HashMap<>();
 
@@ -395,7 +278,7 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 3.7 CLEAR OLD TABLE METADATA
+        //CLEAR OLD TABLE METADATA
         // =====================================================
 
         List<TableMetadata> tables =
@@ -412,7 +295,7 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 3.8 OPEN TARGET DATABASE CONNECTION
+        // OPEN TARGET DATABASE CONNECTION
         // =====================================================
 
         try (Connection conn =
@@ -430,7 +313,7 @@ public class SchemaDiscoveryService {
 
 
             // =================================================
-            // 3.9 XÁC ĐỊNH CATALOG / SCHEMA
+            //XÁC ĐỊNH CATALOG / SCHEMA
             // =================================================
             //
             // MySQL:
@@ -460,7 +343,7 @@ public class SchemaDiscoveryService {
 
 
             // =================================================
-            // 3.10 DISCOVER TABLES
+            //DISCOVER TABLES
             // =================================================
 
             try (ResultSet tableRs =
@@ -540,7 +423,7 @@ public class SchemaDiscoveryService {
 
 
             // =================================================
-            // 3.11 UPDATE SYNC TIME
+            //UPDATE SYNC TIME
             // =================================================
 
             schema.setLastSyncedAt(
@@ -549,7 +432,7 @@ public class SchemaDiscoveryService {
 
 
             // =================================================
-            // 3.12 SAVE SCHEMA
+            //SAVE SCHEMA
             // =================================================
             //
             // Lưu trước để đảm bảo schema.id tồn tại.
@@ -567,7 +450,7 @@ public class SchemaDiscoveryService {
 
 
             // =================================================
-            // 3.13 SCHEMA RAG EMBEDDING
+            //SCHEMA RAG EMBEDDING
             // =================================================
 
             try {
@@ -611,7 +494,7 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 4. DISCOVER COLUMNS
+    //DISCOVER COLUMNS
     // =========================================================
 
     /**
@@ -657,7 +540,7 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 4.1 PRIMARY KEYS
+        //PRIMARY KEYS
         // =====================================================
 
         Set<String> primaryKeys =
@@ -688,7 +571,7 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 4.2 FOREIGN KEYS
+        //FOREIGN KEYS
         // =====================================================
 
         Map<String, String[]> foreignKeys =
@@ -734,7 +617,7 @@ public class SchemaDiscoveryService {
 
 
         // =====================================================
-        // 4.3 COLUMNS
+        //COLUMNS
         // =====================================================
 
         try (ResultSet colRs =
@@ -848,7 +731,7 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 5. PRESERVE DESCRIPTION
+    //PRESERVE DESCRIPTION
     // =========================================================
 
     /**
@@ -884,7 +767,7 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 6. BUILD COLUMN KEY
+    //BUILD COLUMN KEY
     // =========================================================
 
     /**
@@ -908,7 +791,7 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 7. NORMALIZE NAME
+    //NORMALIZE NAME
     // =========================================================
 
     /**
@@ -932,41 +815,8 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 8. GET JDBC CATALOG
+    //GET JDBC CATALOG
     // =========================================================
-
-    /**
-     * Xác định catalog truyền vào DatabaseMetaData.
-     *
-     * MySQL:
-     *
-     *     catalog = databaseName
-     *
-     * PostgreSQL:
-     *
-     *     catalog = null
-     *
-     * DuckDB/Excel:
-     *
-     *     catalog = TÊN CATALOG THẬT của connection hiện tại (lấy từ
-     *     metaData.getConnection().getCatalog()), KHÔNG PHẢI null.
-     *
-     *     FIX (audit Excel/DuckDB - "catalog naming"): trước đây luôn
-     *     trả về null cho DuckDB. Với JDBC, catalog=null nghĩa là "không
-     *     lọc theo catalog" - getTables/getColumns/... sẽ quét qua TẤT
-     *     CẢ catalog mà connection nhìn thấy được, bao gồm cả 2 catalog
-     *     nội bộ luôn tồn tại sẵn của DuckDB là "system" và "temp" (chứa
-     *     view/function hệ thống). Trước đây "chạy đúng" chỉ vì các
-     *     catalog đó tình cờ không có object kiểu TABLE trùng tên - đây
-     *     là hành vi MAY MẮN chứ không phải cố ý, dễ vỡ khi DuckDB thêm
-     *     object mới vào catalog hệ thống ở version sau.
-     *
-     *     Catalog THẬT của 1 file .duckdb luôn là tên file KHÔNG kèm
-     *     đuôi ".duckdb" (ví dụ file "abc123.duckdb" -> catalog
-     *     "abc123") - lấy trực tiếp từ chính connection đang mở thay vì
-     *     tự suy luận từ đường dẫn file, để không phụ thuộc vào quy ước
-     *     đặt tên nội bộ của driver duckdb_jdbc có thể đổi khác đi.
-     */
     private String getCatalog(
             DatabaseConnection connection,
             DatabaseMetaData metaData
@@ -991,27 +841,9 @@ public class SchemaDiscoveryService {
 
 
     // =========================================================
-    // 9. GET JDBC SCHEMA PATTERN
+    //GET JDBC SCHEMA PATTERN
     // =========================================================
 
-    /**
-     * Xác định schemaPattern truyền vào DatabaseMetaData.
-     *
-     * PostgreSQL:
-     *
-     *     public
-     *
-     * MySQL:
-     *
-     *     null
-     *
-     * DuckDB:
-     *
-     *     null
-     *
-     * Hiện tại MVP chỉ discover schema public
-     * của PostgreSQL.
-     */
     private String getSchemaPattern(
             DatabaseConnection connection
     ) {

@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
 import type { ConnectionPayload } from "../api/types";
 import { useToast } from "../context/ToastContext";
@@ -48,10 +48,9 @@ export function ConnectionFormPage() {
       .catch((reason) => {
         setMessage({
           type: "error",
-          text:
-            reason instanceof ApiError
-              ? reason.message
-              : "Không tải được connection.",
+          text: formatErrorWithSupportCode(
+            parseApiError(reason, "Không tải được connection."),
+          ),
         });
       })
       .finally(() => setLoading(false));
@@ -111,10 +110,9 @@ export function ConnectionFormPage() {
     } catch (reason) {
       setMessage({
         type: "error",
-        text:
-          reason instanceof ApiError
-            ? reason.message
-            : "Không thể kiểm tra kết nối.",
+        text: formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể kiểm tra kết nối."),
+        ),
       });
     } finally {
       setWorking(null);
@@ -140,10 +138,9 @@ export function ConnectionFormPage() {
     } catch (reason) {
       setMessage({
         type: "error",
-        text:
-          reason instanceof ApiError
-            ? reason.message
-            : "Không thể lưu connection.",
+        text: formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể lưu connection."),
+        ),
       });
     } finally {
       setWorking(null);

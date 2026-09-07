@@ -12,9 +12,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,6 +33,13 @@ class SchemaEmbeddingServiceTest {
     @Mock
     private TableEmbeddingRepository tableEmbeddingRepository;
 
+    // FIX (audit Redis caching): SchemaEmbeddingService giờ cần
+    // CacheManager (bean "sharedCacheManager") để tự tay evict cache
+    // "tableEmbeddings" khi embedding thật sự thay đổi - xem
+    // evictTableEmbeddingsCache() / getEmbeddingsByTableName().
+    @Mock
+    private CacheManager sharedCacheManager;
+
     private SchemaEmbeddingService service;
 
     private ObjectMapper objectMapper;
@@ -42,7 +52,8 @@ class SchemaEmbeddingServiceTest {
         service = new SchemaEmbeddingService(
                 llmClient,
                 tableEmbeddingRepository,
-                objectMapper
+                objectMapper,
+                sharedCacheManager
         );
 
         /*
@@ -397,6 +408,241 @@ class SchemaEmbeddingServiceTest {
          */
         verify(tableEmbeddingRepository, never())
                 .save(any());
+    }
+
+    // =========================================================
+    // 4. CACHE "tableEmbeddings" - EVICT CÓ ĐIỀU KIỆN
+    //    (FIX audit Redis caching)
+    // =========================================================
+
+    @Test
+    void shouldEvictTableEmbeddingsCache_whenNewEmbeddingCreated() {
+
+        DatabaseSchema schema = mock(DatabaseSchema.class);
+        TableMetadata table = mock(TableMetadata.class);
+
+        when(schema.getId()).thenReturn(1L);
+        when(schema.getTables()).thenReturn(List.of(table));
+
+        when(table.getName()).thenReturn("customers");
+        when(table.getDescription()).thenReturn("Danh sách khách hàng");
+        when(table.getColumns()).thenReturn(List.of());
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(List.of());
+
+        when(llmClient.generateEmbedding(anyString()))
+                .thenReturn(new float[]{0.1f, 0.2f, 0.3f});
+
+        Cache tableEmbeddingsCache = mock(Cache.class);
+        when(sharedCacheManager.getCache(com.example.aidatabaseassistant.config.CacheConfig.TABLE_EMBEDDINGS_CACHE))
+                .thenReturn(tableEmbeddingsCache);
+
+        // Act
+        service.ensureEmbeddings(schema);
+
+        // Assert: có embedding MỚI được tạo -> PHẢI evict cache của
+        // đúng schemaId=1L, không phải evict "tất cả" hay evict key khác.
+        verify(tableEmbeddingsCache).evict(1L);
+    }
+
+    @Test
+    void shouldNotEvictTableEmbeddingsCache_whenNothingChanged() {
+
+        DatabaseSchema schema = mock(DatabaseSchema.class);
+        TableMetadata table = mock(TableMetadata.class);
+
+        when(schema.getId()).thenReturn(1L);
+        when(schema.getTables()).thenReturn(List.of(table));
+
+        when(table.getName()).thenReturn("customers");
+        when(table.getDescription()).thenReturn("Danh sách khách hàng");
+        when(table.getColumns()).thenReturn(List.of());
+
+        String content = "Bảng: customers - Danh sách khách hàng. Cột: ";
+        String hash = sha256(content);
+
+        TableEmbedding existing =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("customers")
+                        .vectorJson("[0.1,0.2,0.3]")
+                        .contentHash(hash)
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(List.of(existing));
+
+        // Act
+        service.ensureEmbeddings(schema);
+
+        // Assert: KHÔNG có gì thay đổi (hash + model trùng) -> KHÔNG
+        // được đụng tới cache manager. Đây chính là điểm mấu chốt của
+        // fix "evict có điều kiện" - ensureEmbeddings() chạy trên MỌI
+        // câu hỏi (xem SchemaRetrievalService), nếu evict vô điều kiện
+        // ở đây sẽ vô hiệu hóa toàn bộ lợi ích của cache.
+        verifyNoInteractions(sharedCacheManager);
+    }
+
+    @Test
+    void shouldEvictTableEmbeddingsCache_whenStaleEmbeddingDeleted() {
+
+        DatabaseSchema schema = mock(DatabaseSchema.class);
+        TableMetadata table = mock(TableMetadata.class);
+
+        when(schema.getId()).thenReturn(1L);
+        when(schema.getTables()).thenReturn(List.of(table));
+
+        when(table.getName()).thenReturn("customers");
+        when(table.getDescription()).thenReturn(null);
+        when(table.getColumns()).thenReturn(List.of());
+
+        String currentContent = "Bảng: customers. Cột: ";
+        String currentHash = sha256(currentContent);
+
+        TableEmbedding current =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("customers")
+                        .vectorJson("[0.1,0.2]")
+                        .contentHash(currentHash)
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        TableEmbedding stale =
+                TableEmbedding.builder()
+                        .schema(schema)
+                        .tableName("old_orders")
+                        .vectorJson("[0.3,0.4]")
+                        .contentHash("old")
+                        .modelName("gemini-embedding-001")
+                        .build();
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(List.of(current, stale));
+
+        Cache tableEmbeddingsCache = mock(Cache.class);
+        when(sharedCacheManager.getCache(com.example.aidatabaseassistant.config.CacheConfig.TABLE_EMBEDDINGS_CACHE))
+                .thenReturn(tableEmbeddingsCache);
+
+        // Act
+        service.ensureEmbeddings(schema);
+
+        // Assert: "customers" không đổi, nhưng "old_orders" bị xóa vì
+        // stale -> vẫn tính là CÓ thay đổi -> PHẢI evict.
+        verify(tableEmbeddingsCache).evict(1L);
+    }
+
+    @Test
+    void shouldNotFail_whenCacheNotConfigured() {
+        // Neu sharedCacheManager.getCache(...) tra ve null (vi du ten
+        // cache chua duoc dang ky, hoac app.cache.provider=none), method
+        // KHONG duoc nem NullPointerException - phai bo qua nhe nhang,
+        // giong het idiom cua SchemaMetadataService.evictFullSchemaCache().
+        DatabaseSchema schema = mock(DatabaseSchema.class);
+        TableMetadata table = mock(TableMetadata.class);
+
+        when(schema.getId()).thenReturn(1L);
+        when(schema.getTables()).thenReturn(List.of(table));
+        when(table.getName()).thenReturn("customers");
+        when(table.getDescription()).thenReturn("Danh sách khách hàng");
+        when(table.getColumns()).thenReturn(List.of());
+
+        when(tableEmbeddingRepository.findBySchemaId(1L))
+                .thenReturn(List.of());
+        when(llmClient.generateEmbedding(anyString()))
+                .thenReturn(new float[]{0.1f, 0.2f});
+
+        when(sharedCacheManager.getCache(com.example.aidatabaseassistant.config.CacheConfig.TABLE_EMBEDDINGS_CACHE))
+                .thenReturn(null);
+
+        assertDoesNotThrow(() -> service.ensureEmbeddings(schema));
+    }
+
+    // =========================================================
+    // 5. getEmbeddingsByTableName() - cache read-through
+    //    (FIX audit Redis caching: method mới, dùng bởi
+    //    SchemaRetrievalService thay vì query repository trực tiếp)
+    // =========================================================
+
+    @Test
+    void getEmbeddingsByTableName_shouldReturnNormalizedMap() {
+
+        TableEmbedding customers =
+                TableEmbedding.builder()
+                        .tableName("Customers")   // chữ hoa lẫn lộn
+                        .vectorJson("[0.1,0.2]")
+                        .build();
+
+        TableEmbedding orders =
+                TableEmbedding.builder()
+                        .tableName("  orders  ")  // có khoảng trắng thừa
+                        .vectorJson("[0.3,0.4]")
+                        .build();
+
+        when(tableEmbeddingRepository.findBySchemaId(5L))
+                .thenReturn(List.of(customers, orders));
+
+        Map<String, float[]> result =
+                service.getEmbeddingsByTableName(5L);
+
+        assertEquals(2, result.size());
+
+        // Key PHẢI được chuẩn hóa giống hệt normalizeName() của
+        // SchemaRetrievalService (trim + lowercase) - nếu không, lookup
+        // ở SchemaRetrievalService sẽ luôn miss.
+        assertTrue(result.containsKey("customers"));
+        assertTrue(result.containsKey("orders"));
+
+        assertArrayEquals(
+                new float[]{0.1f, 0.2f},
+                result.get("customers")
+        );
+
+        assertArrayEquals(
+                new float[]{0.3f, 0.4f},
+                result.get("orders")
+        );
+    }
+
+    @Test
+    void getEmbeddingsByTableName_shouldSkipBlankTableNames() {
+
+        TableEmbedding blank =
+                TableEmbedding.builder()
+                        .tableName("   ")
+                        .vectorJson("[0.1,0.2]")
+                        .build();
+
+        when(tableEmbeddingRepository.findBySchemaId(5L))
+                .thenReturn(List.of(blank));
+
+        Map<String, float[]> result =
+                service.getEmbeddingsByTableName(5L);
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getEmbeddingsByTableName_shouldReturnNullVector_whenJsonInvalid() {
+        // Giống hanh vi cu cua SchemaRetrievalService.fromJson(): JSON
+        // loi -> tra null cho bang do, KHONG duoc lam crash ca method
+        // (retrieval se tu loai bo bang co vector null o buoc sau).
+        TableEmbedding corrupted =
+                TableEmbedding.builder()
+                        .tableName("customers")
+                        .vectorJson("{not-valid-json")
+                        .build();
+
+        when(tableEmbeddingRepository.findBySchemaId(5L))
+                .thenReturn(List.of(corrupted));
+
+        Map<String, float[]> result =
+                service.getEmbeddingsByTableName(5L);
+
+        assertTrue(result.containsKey("customers"));
+        assertNull(result.get("customers"));
     }
 
     // =========================================================

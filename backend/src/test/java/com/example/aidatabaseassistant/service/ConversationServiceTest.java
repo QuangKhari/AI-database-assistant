@@ -10,6 +10,9 @@ import com.example.aidatabaseassistant.entity.User;
 import com.example.aidatabaseassistant.repository.ConversationRepository;
 import com.example.aidatabaseassistant.repository.MessageRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +44,9 @@ class ConversationServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
+
     private ConversationService conversationService;
 
     private User owner;
@@ -53,7 +59,8 @@ class ConversationServiceTest {
         conversationService = new ConversationService(
                 conversationRepository,
                 messageRepository,
-                userRepository
+                userRepository,
+                connectionAccessGuard
         );
 
         owner = User.builder()
@@ -101,8 +108,8 @@ class ConversationServiceTest {
     @Test
     void getConversations_shouldReturnMappedConversations() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(conversationRepository.findByUserId(1L))
                 .thenReturn(List.of(conversation));
@@ -118,11 +125,11 @@ class ConversationServiceTest {
     @Test
     void getConversations_shouldThrow_whenUserNotFound() {
 
-        when(userRepository.findByUsername("ghost"))
-                .thenReturn(Optional.empty());
+        when(connectionAccessGuard.requireUser("ghost"))
+                .thenThrow(new ResourceNotFoundException("Không tìm thấy user"));
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> conversationService.getConversations("ghost")
         );
     }
@@ -134,8 +141,8 @@ class ConversationServiceTest {
 
         Message message = sampleMessage(true);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(conversationRepository.findById(100L))
                 .thenReturn(Optional.of(conversation));
@@ -154,31 +161,36 @@ class ConversationServiceTest {
     @Test
     void getMessages_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
+        when(connectionAccessGuard.requireUser("intruder"))
+                .thenReturn(otherUser);
 
         when(conversationRepository.findById(100L))
                 .thenReturn(Optional.of(conversation));
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        ForbiddenResourceException ex = assertThrows(
+                ForbiddenResourceException.class,
                 () -> conversationService.getMessages("intruder", 100L)
         );
 
         assertTrue(ex.getMessage().contains("không có quyền"));
+
+        verify(
+                messageRepository,
+                never()
+        ).findByConversationIdOrderByCreatedAtAsc(anyLong());
     }
 
     @Test
     void getMessages_shouldThrow_whenConversationNotFound() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(conversationRepository.findById(999L))
                 .thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> conversationService.getMessages("owner", 999L)
         );
     }
@@ -188,8 +200,8 @@ class ConversationServiceTest {
     @Test
     void deleteConversation_shouldDelete_whenRequestedByOwner() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(conversationRepository.findById(100L))
                 .thenReturn(Optional.of(conversation));
@@ -202,25 +214,30 @@ class ConversationServiceTest {
     @Test
     void deleteConversation_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
+        when(connectionAccessGuard.requireUser("intruder"))
+                .thenReturn(otherUser);
 
         when(conversationRepository.findById(100L))
                 .thenReturn(Optional.of(conversation));
 
-        assertThrows(
-                IllegalArgumentException.class,
+        ForbiddenResourceException ex = assertThrows(
+                ForbiddenResourceException.class,
                 () -> conversationService.deleteConversation("intruder", 100L)
         );
 
-        verify(conversationRepository, never()).delete(any());
+        assertTrue(ex.getMessage().contains("không có quyền"));
+
+        verify(
+                conversationRepository,
+                never()
+        ).delete(any());
     }
 
     @Test
     void deleteAllConversations_shouldDeleteAllOfThatUser() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(conversationRepository.findByUserId(1L))
                 .thenReturn(List.of(conversation));
@@ -230,23 +247,25 @@ class ConversationServiceTest {
         verify(conversationRepository).deleteAll(List.of(conversation));
     }
 
-    // ===== togglePin (MỚI - Mục 1) =====
+    // ===== togglePin =====
 
     @Test
     void togglePin_shouldSetPinnedTrue_whenCurrentlyUnpinned() {
 
         Message message = sampleMessage(false);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(messageRepository.findByIdWithOwner(5L))
                 .thenReturn(Optional.of(message));
 
-        MessageResponse response = conversationService.togglePin("owner", 5L);
+        MessageResponse response =
+                conversationService.togglePin("owner", 5L);
 
         assertTrue(response.getPinned());
         assertTrue(message.getPinned());
+
         verify(messageRepository).save(message);
     }
 
@@ -255,13 +274,14 @@ class ConversationServiceTest {
 
         Message message = sampleMessage(true);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(messageRepository.findByIdWithOwner(5L))
                 .thenReturn(Optional.of(message));
 
-        MessageResponse response = conversationService.togglePin("owner", 5L);
+        MessageResponse response =
+                conversationService.togglePin("owner", 5L);
 
         assertFalse(response.getPinned());
         assertFalse(message.getPinned());
@@ -270,8 +290,8 @@ class ConversationServiceTest {
     @Test
     void togglePin_shouldThrow_whenMessageNotFound() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(messageRepository.findByIdWithOwner(999L))
                 .thenReturn(Optional.empty());
@@ -281,7 +301,10 @@ class ConversationServiceTest {
                 () -> conversationService.togglePin("owner", 999L)
         );
 
-        verify(messageRepository, never()).save(any());
+        verify(
+                messageRepository,
+                never()
+        ).save(any());
     }
 
     @Test
@@ -289,30 +312,34 @@ class ConversationServiceTest {
 
         Message message = sampleMessage(false);
 
-        when(userRepository.findByUsername("intruder"))
-                .thenReturn(Optional.of(otherUser));
+        when(connectionAccessGuard.requireUser("intruder"))
+                .thenReturn(otherUser);
 
         when(messageRepository.findByIdWithOwner(5L))
                 .thenReturn(Optional.of(message));
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        ForbiddenResourceException ex = assertThrows(
+                ForbiddenResourceException.class,
                 () -> conversationService.togglePin("intruder", 5L)
         );
 
         assertTrue(ex.getMessage().contains("không có quyền"));
-        verify(messageRepository, never()).save(any());
+
+        verify(
+                messageRepository,
+                never()
+        ).save(any());
     }
 
-    // ===== getPinnedMessages (MỚI - Mục 1) =====
+    // ===== getPinnedMessages =====
 
     @Test
     void getPinnedMessages_shouldReturnOnlyPinnedMappedMessages() {
 
         Message pinned = sampleMessage(true);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(messageRepository.findPinnedByUserId(1L))
                 .thenReturn(List.of(pinned));
@@ -327,8 +354,8 @@ class ConversationServiceTest {
     @Test
     void getPinnedMessages_shouldReturnEmptyList_whenNoneArePinned() {
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
         when(messageRepository.findPinnedByUserId(1L))
                 .thenReturn(List.of());
@@ -339,30 +366,53 @@ class ConversationServiceTest {
         assertTrue(result.isEmpty());
     }
 
-    // ===== searchMessages (MỚI - Mục 1) =====
+    // ===== searchMessages =====
 
     @Test
     void searchMessages_shouldMapPageContentCorrectly() {
 
         Message message = sampleMessage(false);
+
         Pageable pageable = PageRequest.of(0, 10);
-        Page<Message> page = new PageImpl<>(List.of(message), pageable, 1);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        Page<Message> page =
+                new PageImpl<>(
+                        List.of(message),
+                        pageable,
+                        1
+                );
 
-        when(messageRepository.searchByUser(eq(1L), eq("doanh thu"), eq(false), eq(pageable)))
-                .thenReturn(page);
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
+
+        when(messageRepository.searchByUser(
+                eq(1L),
+                eq("doanh thu"),
+                eq(false),
+                eq(pageable)
+        )).thenReturn(page);
 
         Page<MessageSearchResultResponse> result =
-                conversationService.searchMessages("owner", "doanh thu", false, pageable);
+                conversationService.searchMessages(
+                        "owner",
+                        "doanh thu",
+                        false,
+                        pageable
+                );
 
         assertEquals(1, result.getTotalElements());
 
-        MessageSearchResultResponse item = result.getContent().get(0);
+        MessageSearchResultResponse item =
+                result.getContent().get(0);
+
         assertEquals(5L, item.getMessageId());
         assertEquals(100L, item.getConversationId());
-        assertEquals("Doanh thu theo tháng", item.getConversationTitle());
+
+        assertEquals(
+                "Doanh thu theo tháng",
+                item.getConversationTitle()
+        );
+
         assertFalse(item.getPinned());
     }
 
@@ -371,19 +421,39 @@ class ConversationServiceTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
-        when(messageRepository.searchByUser(anyLong(), anyString(), anyBoolean(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(messageRepository.searchByUser(
+                anyLong(),
+                anyString(),
+                anyBoolean(),
+                any()
+        )).thenReturn(
+                new PageImpl<>(List.of())
+        );
 
-        conversationService.searchMessages("owner", "  doanh thu  ", false, pageable);
+        conversationService.searchMessages(
+                "owner",
+                "  doanh thu  ",
+                false,
+                pageable
+        );
 
-        ArgumentCaptor<String> keywordCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> keywordCaptor =
+                ArgumentCaptor.forClass(String.class);
 
-        verify(messageRepository).searchByUser(eq(1L), keywordCaptor.capture(), eq(false), eq(pageable));
+        verify(messageRepository).searchByUser(
+                eq(1L),
+                keywordCaptor.capture(),
+                eq(false),
+                eq(pageable)
+        );
 
-        assertEquals("doanh thu", keywordCaptor.getValue());
+        assertEquals(
+                "doanh thu",
+                keywordCaptor.getValue()
+        );
     }
 
     @Test
@@ -391,14 +461,30 @@ class ConversationServiceTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
 
-        when(messageRepository.searchByUser(anyLong(), anyString(), anyBoolean(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(messageRepository.searchByUser(
+                anyLong(),
+                anyString(),
+                anyBoolean(),
+                any()
+        )).thenReturn(
+                new PageImpl<>(List.of())
+        );
 
-        conversationService.searchMessages("owner", null, true, pageable);
+        conversationService.searchMessages(
+                "owner",
+                null,
+                true,
+                pageable
+        );
 
-        verify(messageRepository).searchByUser(eq(1L), eq(""), eq(true), eq(pageable));
+        verify(messageRepository).searchByUser(
+                eq(1L),
+                eq(""),
+                eq(true),
+                eq(pageable)
+        );
     }
 }

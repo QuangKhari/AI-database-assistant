@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { authApi } from "../api/authApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import styles from "../styles/Form.module.css";
 import { validatePassword } from "../utils/validation";
 
@@ -40,9 +40,9 @@ export function ResetPasswordPage() {
       setForm({ password: "", confirmPassword: "" });
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể kết nối máy chủ. Vui lòng thử lại.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể kết nối máy chủ. Vui lòng thử lại."),
+        ),
       );
     } finally {
       setSubmitting(false);

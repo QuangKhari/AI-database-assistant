@@ -22,51 +22,16 @@ public class SchemaMetadataService {
     private final TableMetadataRepository tableMetadataRepository;
     private final ColumnMetadataRepository columnMetadataRepository;
     private final UserRepository userRepository;
-
-    /*
-     * GHI CHU MERGE (tich hop FE):
-     *
-     * Ban truoc cua file nay co field "DatabaseSchemaRepository
-     * databaseSchemaRepository" duoc them de phuc vu getSchema() - method
-     * moi cho endpoint GET /api/schema/connections/{connectionId} (FE goi
-     * moi lan mo trang xem schema cua 1 connection).
-     *
-     * Field do da bi XOA o day vi getSchema() ben duoi gio goi thang
-     * SchemaLoaderService.loadCompleteSchema(connectionId) thay vi tu
-     * query DatabaseSchemaRepository rieng - vua tranh trung lap logic
-     * (2 cach load full schema cung ton tai trong code), vua giup
-     * getSchema() duoc HUONG CACHE MIEN PHI (cung 1 cache "fullSchema"
-     * voi luong hoi-dap, cung key connectionId, cung co che evict).
-     *
-     * Anh huong duy nhat can luu y: neu connectionId chua tung
-     * discoverSchema(), thong bao loi tra ve FE gio la "Chưa discover
-     * schema cho connection này" (tu SchemaLoaderService) thay vi "Không
-     * tìm thấy schema" nhu truoc - chi khac text hien thi, van la
-     * IllegalArgumentException -> HTTP 400 nhu cu.
-     */
     private final SchemaLoaderService schemaLoaderService;
-
-    /*
-     * Khong dung @CacheEvict annotation o day vi connectionId KHONG PHAI
-     * la tham so cua 2 method ben duoi (chi co tableId/columnId) - phai
-     * load entity ra roi moi biet connectionId thuoc ve connection nao,
-     * nen evict bang code (CacheManager.getCache(...).evict(...)) sau
-     * khi da xac dinh duoc connectionId, thay vi dung SpEL key phuc tap.
-     *
-     * Ten bean "localCacheManager" phai trung voi ten bean khai bao trong
-     * CacheConfig - Spring se tu chon dung bean nay vi ten tham so
-     * constructor (do Lombok sinh ra) trung voi ten bean, khong can
-     * @Qualifier.
-     */
     private final CacheManager localCacheManager;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     @Transactional
     public void updateTableDescription(String username, Long tableId, String description) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         TableMetadata table = tableMetadataRepository.findById(tableId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy table metadata"));
+                .orElseThrow(() -> new com.example.aidatabaseassistant.exception.ResourceNotFoundException("Không tìm thấy table metadata"));
 
         DatabaseConnection connection = table.getSchema().getConnection();
         checkOwnership(user, connection);
@@ -79,11 +44,10 @@ public class SchemaMetadataService {
 
     @Transactional
     public void updateColumnDescription(String username, Long columnId, String description) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         ColumnMetadata column = columnMetadataRepository.findById(columnId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy column metadata"));
+                .orElseThrow(() -> new com.example.aidatabaseassistant.exception.ResourceNotFoundException("Không tìm thấy column metadata"));
 
         DatabaseConnection connection = column.getTable().getSchema().getConnection();
         checkOwnership(user, connection);
@@ -103,8 +67,7 @@ public class SchemaMetadataService {
     @Transactional(readOnly = true)
     public DatabaseSchema getSchema(String username, Long connectionId) {
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+        User user = connectionAccessGuard.requireUser(username);
 
         DatabaseSchema schema = schemaLoaderService.loadCompleteSchema(connectionId);
 
@@ -129,8 +92,6 @@ public class SchemaMetadataService {
     }
 
     private void checkOwnership(User user, DatabaseConnection connection) {
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập resource này");
-        }
+        connectionAccessGuard.requireOwnership(user, connection);
     }
 }

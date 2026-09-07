@@ -7,6 +7,9 @@ import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +45,9 @@ class SuggestedQuestionServiceTest {
     @Mock
     private LLMClient llmClient;
 
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
+
     // Dùng ObjectMapper THẬT (không mock) vì logic parse/serialize JSON
     // chính là điều cần test, giống cách SqlExplanationServiceTest đang làm.
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -62,7 +68,8 @@ class SuggestedQuestionServiceTest {
                 schemaRepository,
                 promptBuilder,
                 llmClient,
-                objectMapper
+                objectMapper,
+                connectionAccessGuard
         );
 
         owner = User.builder().id(1L).username("owner").build();
@@ -97,8 +104,7 @@ class SuggestedQuestionServiceTest {
     }
 
     private void stubOwnedConnectionAndSchema() {
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
         when(promptBuilder.buildSuggestedQuestionsPrompt(eq(schema), eq(8))).thenReturn("PROMPT");
     }
@@ -238,8 +244,7 @@ class SuggestedQuestionServiceTest {
         schema.setSuggestedQuestionsGeneratedAt(generatedAt);
         schema.setLastSyncedAt(generatedAt.minusMinutes(10)); // sync trước khi cache -> cache còn hợp lệ
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
 
         SuggestedQuestionsResponse response =
@@ -297,11 +302,11 @@ class SuggestedQuestionServiceTest {
     @Test
     void getSuggestions_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("intruder", 10L))
+                .thenThrow(new ForbiddenResourceException("Bạn không có quyền truy cập connection này"));
 
-        IllegalArgumentException ex = assertThrows(
-                IllegalArgumentException.class,
+        ForbiddenResourceException ex = assertThrows(
+                ForbiddenResourceException.class,
                 () -> suggestedQuestionService.getSuggestions("intruder", 10L, false)
         );
 
@@ -312,12 +317,11 @@ class SuggestedQuestionServiceTest {
     @Test
     void getSuggestions_shouldThrow_whenSchemaNotYetDiscovered() {
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> suggestedQuestionService.getSuggestions("owner", 10L, false)
         );
     }
@@ -327,8 +331,7 @@ class SuggestedQuestionServiceTest {
 
         schema.setTables(new ArrayList<>());
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
 
         assertThrows(
@@ -340,11 +343,11 @@ class SuggestedQuestionServiceTest {
     @Test
     void getSuggestions_shouldThrow_whenConnectionNotFound() {
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(999L)).thenReturn(Optional.empty());
+        when(connectionAccessGuard.requireOwnedConnection("owner", 999L))
+                .thenThrow(new ResourceNotFoundException("Không tìm thấy connection"));
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> suggestedQuestionService.getSuggestions("owner", 999L, false)
         );
     }

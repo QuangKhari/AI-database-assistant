@@ -211,9 +211,7 @@ class ConversationOwnershipIntegrationTest {
                                 )
                                 .contentType(APPLICATION_JSON)
                 )
-                .andExpect(
-                        status().isBadRequest()
-                );
+                .andExpect(status().isForbidden());
 
 
         /*
@@ -251,9 +249,7 @@ class ConversationOwnershipIntegrationTest {
                                         "Bearer " + tokenA
                                 )
                 )
-                .andExpect(
-                        status().isBadRequest()
-                );
+                .andExpect(status().isForbidden());
 
 
         /*

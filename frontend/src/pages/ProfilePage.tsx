@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authApi } from "../api/authApi";
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type { UserProfile } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import styles from "./ProfilePage.module.css";
@@ -25,9 +25,9 @@ export function ProfilePage() {
         setEmail(result.email);
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không thể tải thông tin hồ sơ.",
+          formatErrorWithSupportCode(
+            parseApiError(reason, "Không thể tải thông tin hồ sơ."),
+          ),
         );
       } finally {
         setLoading(false);
@@ -51,9 +51,9 @@ export function ProfilePage() {
       showToast("Đã cập nhật thông tin hồ sơ.", "success");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể cập nhật hồ sơ.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể cập nhật hồ sơ."),
+        ),
       );
     } finally {
       setSavingProfile(false);
@@ -87,7 +87,9 @@ export function ProfilePage() {
       showToast("Đổi mật khẩu thành công.", "success");
     } catch (reason) {
       setError(
-        reason instanceof ApiError ? reason.message : "Không thể đổi mật khẩu.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể đổi mật khẩu."),
+        ),
       );
     } finally {
       setChangingPassword(false);

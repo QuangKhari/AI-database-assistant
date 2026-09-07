@@ -7,9 +7,11 @@ import com.example.aidatabaseassistant.dto.ExplainSqlResponse;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.User;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,8 @@ class SqlExplanationServiceTest {
     private PromptBuilder promptBuilder;
     @Mock
     private LLMClient llmClient;
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
 
     private SqlExplanationService sqlExplanationService;
 
@@ -51,7 +55,7 @@ class SqlExplanationServiceTest {
         // parse JSON tra ve tu LLM.
         ObjectMapper objectMapper = new ObjectMapper();
         sqlExplanationService = new SqlExplanationService(
-                userRepository, connectionRepository, schemaRepository, promptBuilder, llmClient, objectMapper);
+                userRepository, connectionRepository, schemaRepository, promptBuilder, llmClient, objectMapper, connectionAccessGuard);
 
         owner = User.builder().id(1L).username("owner").build();
         otherUser = User.builder().id(2L).username("intruder").build();
@@ -112,53 +116,96 @@ class SqlExplanationServiceTest {
 
     @Test
     void explain_shouldUseSchemaContext_whenConnectionIdProvidedAndOwned() {
+
         ExplainSqlRequest request = new ExplainSqlRequest();
         request.setSql("SELECT * FROM customers");
         request.setDatabaseConnectionId(10L);
 
         DatabaseSchema schema = DatabaseSchema.builder().id(1L).connection(connection).build();
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "owner",
+                10L
+        )).thenReturn(connection);
+
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
+
         when(promptBuilder.buildExplanationPrompt(request.getSql(), schema)).thenReturn("prompt-with-schema");
-        when(llmClient.generateResponse("prompt-with-schema"))
-                .thenReturn("{\"summary\": \"ok\", \"steps\": []}");
+        when(llmClient.generateResponse("prompt-with-schema")).thenReturn("""
+                    {
+                      "summary": "ok",
+                      "steps": []
+                    }""");
 
         ExplainSqlResponse response = sqlExplanationService.explain("owner", request);
-
         assertEquals("ok", response.getSummary());
+        verify(connectionAccessGuard).requireOwnedConnection("owner", 10L);
         verify(promptBuilder).buildExplanationPrompt(request.getSql(), schema);
     }
 
     @Test
     void explain_shouldProceedWithoutSchema_whenSchemaNotYetDiscovered() {
+
         ExplainSqlRequest request = new ExplainSqlRequest();
         request.setSql("SELECT * FROM customers");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
-        when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.empty());
-        when(promptBuilder.buildExplanationPrompt(eq(request.getSql()), isNull())).thenReturn("prompt");
-        when(llmClient.generateResponse("prompt")).thenReturn("{\"summary\": \"ok\", \"steps\": []}");
+        when(connectionAccessGuard.requireOwnedConnection(
+                "owner",
+                10L
+        )).thenReturn(connection);
 
-        // Khong duoc nem loi du chua co schema - chi bo qua context
-        assertDoesNotThrow(() -> sqlExplanationService.explain("owner", request));
+        when(schemaRepository.findByConnectionId(10L))
+                .thenReturn(Optional.empty());
+
+        when(promptBuilder.buildExplanationPrompt(
+                eq(request.getSql()),
+                isNull()
+        )).thenReturn("prompt");
+
+        when(llmClient.generateResponse("prompt"))
+                .thenReturn("""
+                    {
+                      "summary": "ok",
+                      "steps": []
+                    }
+                    """);
+
+        assertDoesNotThrow(
+                () -> sqlExplanationService.explain(
+                        "owner",
+                        request
+                )
+        );
     }
 
     @Test
     void explain_shouldThrow_whenConnectionNotOwnedByUser_IDOR() {
+
         ExplainSqlRequest request = new ExplainSqlRequest();
         request.setSql("SELECT * FROM customers");
         request.setDatabaseConnectionId(10L);
 
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection(
+                "intruder",
+                10L
+        )).thenThrow(
+                new ForbiddenResourceException(
+                        "Bạn không có quyền truy cập connection này"
+                )
+        );
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> sqlExplanationService.explain("intruder", request)
+        ForbiddenResourceException ex =
+                assertThrows(
+                        ForbiddenResourceException.class,
+                        () -> sqlExplanationService.explain(
+                                "intruder",
+                                request
+                        )
+                );
+
+        assertTrue(
+                ex.getMessage().contains("không có quyền")
         );
 
         verifyNoInteractions(llmClient);

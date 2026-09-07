@@ -30,6 +30,7 @@ public class SqlExplanationService {
     private final PromptBuilder promptBuilder;
     private final LLMClient llmClient;
     private final ObjectMapper objectMapper;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     public ExplainSqlResponse explain(String username, ExplainSqlRequest request) {
         DatabaseSchema schema = null;
@@ -39,15 +40,8 @@ public class SqlExplanationService {
         // nhung neu chua discover schema thi bo qua context chu khong loi cung,
         // vi giai thich SQL van co gia tri du khong co schema.
         if (request.getDatabaseConnectionId() != null) {
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-            DatabaseConnection connection = connectionRepository.findById(request.getDatabaseConnectionId())
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-            if (!connection.getUser().getId().equals(user.getId())) {
-                throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-            }
+            DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(
+                    username, request.getDatabaseConnectionId());
 
             schema = schemaRepository.findByConnectionId(connection.getId()).orElse(null);
         }

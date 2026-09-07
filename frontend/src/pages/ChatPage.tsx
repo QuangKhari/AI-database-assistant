@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatApi } from "../api/chatApi";
-import { ApiError } from "../api/client";
 import { connectionApi } from "../api/connectionApi";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type {
   ChatMessage,
   Conversation,
@@ -90,9 +90,9 @@ export function ChatPage() {
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không tải được connections.",
+          formatErrorWithSupportCode(
+            parseApiError(reason, "Không tải được connections."),
+          ),
         );
       } finally {
         setLoading(false);
@@ -128,9 +128,9 @@ export function ChatPage() {
         setError("");
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không tải được conversations.",
+          formatErrorWithSupportCode(
+            parseApiError(reason, "Không tải được conversations."),
+          ),
         );
       } finally {
         setConversationsLoading(false);
@@ -175,9 +175,9 @@ export function ChatPage() {
       setError("");
     } catch (reason) {
       setError(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không tải được nội dung hội thoại.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được nội dung hội thoại."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -207,9 +207,9 @@ export function ChatPage() {
         );
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể tạo SQL preview.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể tạo SQL preview."),
+        ),
         "error",
       );
     } finally {
@@ -271,12 +271,10 @@ export function ChatPage() {
 
       setStreamStatus("Hoàn tất.");
     } catch (reason) {
+      const fallback =
+        reason instanceof Error ? reason.message : "Không thể thực thi SQL.";
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : reason instanceof Error
-            ? reason.message
-            : "Không thể thực thi SQL.",
+        formatErrorWithSupportCode(parseApiError(reason, fallback)),
         "error",
       );
     } finally {
@@ -294,9 +292,9 @@ export function ChatPage() {
       setSuggestedQuestions(result.questions);
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể làm mới câu hỏi gợi ý.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể làm mới câu hỏi gợi ý."),
+        ),
         "error",
       );
     } finally {
@@ -320,7 +318,9 @@ export function ChatPage() {
       URL.revokeObjectURL(url);
     } catch (reason) {
       showToast(
-        reason instanceof ApiError ? reason.message : "Không thể xuất Excel.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể xuất Excel."),
+        ),
         "error",
       );
     } finally {
@@ -344,9 +344,9 @@ export function ChatPage() {
       showToast("Đã xóa cuộc trò chuyện.", "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể xóa cuộc trò chuyện.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể xóa cuộc trò chuyện."),
+        ),
         "error",
       );
     }
@@ -386,9 +386,9 @@ export function ChatPage() {
       setExplainCache((prev) => ({ ...prev, [messageId]: result }));
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể giải thích SQL.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể giải thích SQL."),
+        ),
         "error",
       );
       setExplainOpenId(null);
@@ -422,7 +422,9 @@ export function ChatPage() {
       setOptimizeCache((prev) => ({ ...prev, [messageId]: result }));
     } catch (reason) {
       showToast(
-        reason instanceof ApiError ? reason.message : "Không thể tối ưu SQL.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể tối ưu SQL."),
+        ),
         "error",
       );
       setOptimizeOpenId(null);

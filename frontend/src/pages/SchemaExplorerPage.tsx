@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError } from "../api/client";
+import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
 import { schemaApi } from "../api/schemaApi";
 import type { DatabaseConnection, DatabaseSchema } from "../api/types";
@@ -42,9 +42,9 @@ export function SchemaExplorerPage() {
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
         setError(
-          reason instanceof ApiError
-            ? reason.message
-            : "Không tải được connections.",
+          formatErrorWithSupportCode(
+            parseApiError(reason, "Không tải được connections."),
+          ),
         );
       } finally {
         setLoading(false);
@@ -63,7 +63,9 @@ export function SchemaExplorerPage() {
     } catch (reason) {
       setSchema(null);
       setError(
-        reason instanceof ApiError ? reason.message : "Không tải được schema.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không tải được schema."),
+        ),
       );
     } finally {
       setLoading(false);
@@ -93,10 +95,9 @@ export function SchemaExplorerPage() {
 
       showToast(`Đã đồng bộ ${result.tables.length} bảng.`, "success");
     } catch (reason) {
-      const message =
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể đồng bộ schema.";
+      const message = formatErrorWithSupportCode(
+        parseApiError(reason, "Không thể đồng bộ schema."),
+      );
 
       setError(message);
       showToast(message, "error");
@@ -166,9 +167,9 @@ export function SchemaExplorerPage() {
       showToast("Đã cập nhật mô tả bảng.", "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể cập nhật mô tả bảng.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể cập nhật mô tả bảng."),
+        ),
         "error",
       );
     } finally {
@@ -243,9 +244,9 @@ export function SchemaExplorerPage() {
       showToast("Đã cập nhật mô tả cột.", "success");
     } catch (reason) {
       showToast(
-        reason instanceof ApiError
-          ? reason.message
-          : "Không thể cập nhật mô tả cột.",
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể cập nhật mô tả cột."),
+        ),
         "error",
       );
     } finally {

@@ -75,16 +75,9 @@ public class AuthService {
         userRepository.findByEmail(email).ifPresentOrElse(
                 user -> {
                     String rawToken = passwordResetTokenService.createToken(user);
-
-                    System.out.println("=================================");
-                    System.out.println("PASSWORD RESET TOKEN");
-                    System.out.println("User: " + user.getUsername());
-                    System.out.println("Email: " + user.getEmail());
-                    System.out.println("Token: " + rawToken);
-                    System.out.println("=================================");
+                    log.debug("Password reset token cho user={}: {}", user.getUsername(), rawToken);
                 },
-                () -> System.out.println(
-                        "Yeu cau forgot-password cho email khong ton tai: " + email)
+                () -> log.debug("Yêu cầu forgot-password cho email không tồn tại: {}", email)
         );
     }
 

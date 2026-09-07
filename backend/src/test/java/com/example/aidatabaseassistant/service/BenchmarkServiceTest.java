@@ -10,6 +10,9 @@ import com.example.aidatabaseassistant.entity.*;
 import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.repository.*;
+import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
+import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,6 +55,8 @@ class BenchmarkServiceTest {
     private QueryValidator queryValidator;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private ConnectionAccessGuard connectionAccessGuard;
 
     private BenchmarkService benchmarkService;
 
@@ -62,15 +67,9 @@ class BenchmarkServiceTest {
     @BeforeEach
     void setUp() {
         benchmarkService = new BenchmarkService(
-                benchmarkQuestionRepository,
-                benchmarkResultRepository,
-                connectionRepository,
-                schemaRepository,
-                encryptionUtil,
-                nl2SQLEngine,
-                queryExecutor,
-                queryValidator,
-                userRepository
+                benchmarkQuestionRepository, benchmarkResultRepository, connectionRepository,
+                schemaRepository, encryptionUtil, nl2SQLEngine, queryExecutor, queryValidator, userRepository,
+                connectionAccessGuard
         );
         ReflectionTestUtils.setField(benchmarkService, "modelUrl",
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
@@ -93,8 +92,7 @@ class BenchmarkServiceTest {
 
     @Test
     void addQuestion_shouldPersistQuestion_whenConnectionOwnedByUser() {
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
 
         BenchmarkQuestionRequest request = new BenchmarkQuestionRequest();
         request.setLanguage("VI");
@@ -118,8 +116,8 @@ class BenchmarkServiceTest {
 
     @Test
     void addQuestion_shouldThrow_whenConnectionNotOwnedByUser_IDOR() {
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("intruder", 10L))
+                .thenThrow(new ForbiddenResourceException("Bạn không có quyền truy cập connection này"));
 
         BenchmarkQuestionRequest request = new BenchmarkQuestionRequest();
         request.setLanguage("VI");
@@ -127,7 +125,7 @@ class BenchmarkServiceTest {
         request.setExpectedSql("SELECT 1");
 
         assertThrows(
-                IllegalArgumentException.class,
+                ForbiddenResourceException.class,
                 () -> benchmarkService.addQuestion("intruder", 10L, request)
         );
 
@@ -136,23 +134,22 @@ class BenchmarkServiceTest {
 
     @Test
     void runBenchmark_shouldThrow_whenSchemaNotDiscoveredYet() {
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                ResourceNotFoundException.class,
                 () -> benchmarkService.runBenchmark("owner", 10L)
         );
     }
 
     @Test
     void runBenchmark_shouldThrow_whenConnectionNotOwnedByUser_IDOR() {
-        when(userRepository.findByUsername("intruder")).thenReturn(Optional.of(otherUser));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("intruder", 10L))
+                .thenThrow(new ForbiddenResourceException("Bạn không có quyền truy cập connection này"));
 
         assertThrows(
-                IllegalArgumentException.class,
+                ForbiddenResourceException.class,
                 () -> benchmarkService.runBenchmark("intruder", 10L)
         );
 
@@ -169,8 +166,7 @@ class BenchmarkServiceTest {
                 .expectedSql("SELECT COUNT(*) AS total FROM customers")
                 .build();
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
         when(benchmarkQuestionRepository.findByConnectionId(10L)).thenReturn(List.of(question));
         when(encryptionUtil.decrypt("encrypted-secret")).thenReturn("plain-secret");
@@ -213,8 +209,7 @@ class BenchmarkServiceTest {
                 .expectedSql("SELECT * FROM customers WHERE city = 'Hanoi'")
                 .build();
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
         when(benchmarkQuestionRepository.findByConnectionId(10L)).thenReturn(List.of(question));
         when(encryptionUtil.decrypt("encrypted-secret")).thenReturn("plain-secret");
@@ -245,8 +240,7 @@ class BenchmarkServiceTest {
     void runBenchmark_shouldReturnZeroAccuracy_whenNoQuestionsExist() {
         DatabaseSchema schema = DatabaseSchema.builder().id(1L).connection(connection).databaseName("shop").build();
 
-        when(userRepository.findByUsername("owner")).thenReturn(Optional.of(owner));
-        when(connectionRepository.findById(10L)).thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L)).thenReturn(connection);
         when(schemaRepository.findByConnectionId(10L)).thenReturn(Optional.of(schema));
         when(benchmarkQuestionRepository.findByConnectionId(10L)).thenReturn(List.of());
 
@@ -274,11 +268,8 @@ class BenchmarkServiceTest {
                 .expectedSql("SELECT COUNT(*) FROM orders")
                 .build();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         when(schemaRepository.findByConnectionId(10L))
                 .thenReturn(Optional.of(schema));
@@ -339,11 +330,8 @@ class BenchmarkServiceTest {
                 .expectedSql("DELETE FROM orders")
                 .build();
 
-        when(userRepository.findByUsername("owner"))
-                .thenReturn(Optional.of(owner));
-
-        when(connectionRepository.findById(10L))
-                .thenReturn(Optional.of(connection));
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(connection);
 
         when(schemaRepository.findByConnectionId(10L))
                 .thenReturn(Optional.of(schema));

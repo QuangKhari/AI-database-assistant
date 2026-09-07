@@ -31,21 +31,14 @@ public class SuggestedQuestionService {
     private final PromptBuilder promptBuilder;
     private final LLMClient llmClient;
     private final ObjectMapper objectMapper;
+    private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     @Transactional
     public SuggestedQuestionsResponse getSuggestions(String username, Long connectionId, boolean refresh) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
-
-        DatabaseConnection connection = connectionRepository.findById(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy connection"));
-
-        if (!connection.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Bạn không có quyền truy cập connection này");
-        }
+        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(username, connectionId);
 
         DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
-                .orElseThrow(() -> new IllegalArgumentException(
+                .orElseThrow(() -> new com.example.aidatabaseassistant.exception.ResourceNotFoundException(
                         "Chưa có schema. Vui lòng đồng bộ schema (POST /api/connections/{id}/schema) trước."));
 
         if (schema.getTables() == null || schema.getTables().isEmpty()) {
