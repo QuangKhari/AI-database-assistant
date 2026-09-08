@@ -22,8 +22,31 @@ public class HistoryController {
     private final ConversationService conversationService;
 
     @GetMapping
-    public ResponseEntity<List<ConversationResponse>> getHistory(Authentication authentication) {
-        return ResponseEntity.ok(conversationService.getConversations(authentication.getName()));
+    public ResponseEntity<List<ConversationResponse>> getHistory(
+            Authentication authentication) {
+
+        return ResponseEntity.ok(
+                conversationService.getConversations(
+                        authentication.getName()
+                )
+        );
+    }
+
+    @GetMapping("/paged")
+    public ResponseEntity<Page<ConversationResponse>> getHistoryPaged(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        return ResponseEntity.ok(
+                conversationService.getConversationsPaged(
+                        authentication.getName(),
+                        null,
+                        pageable
+                )
+        );
     }
 
     @GetMapping("/{id}")

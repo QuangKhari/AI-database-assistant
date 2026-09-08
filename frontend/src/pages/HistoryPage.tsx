@@ -7,12 +7,16 @@ import type {
   HistorySearchResult,
 } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useApiError } from "../hook/useApiError";
 import styles from "./HistoryPage.module.css";
 
 type Tab = "all" | "pinned" | "search";
 
+const PAGE_SIZE = 10;
+
 export function HistoryPage() {
   const { showToast } = useToast();
+
   const [tab, setTab] = useState<Tab>("all");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -20,32 +24,47 @@ export function HistoryPage() {
   const [pinnedMessages, setPinnedMessages] = useState<ChatMessage[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState<HistorySearchResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  const loadConversations = useCallback(async () => {
-    setLoading(true);
-    try {
-      setConversations(await historyApi.list());
-      setError("");
-    } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không tải được lịch sử."),
-        ),
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+
+  const { error, handleError, setError } = useApiError();
+
+  /**
+   * Load conversations with server-side pagination.
+   *
+   * Spring Data pagination starts from page 0.
+   */
+  const loadConversations = useCallback(
+    async (page = 0) => {
+      setLoading(true);
+
+      try {
+        const result = await historyApi.listPaged(page, PAGE_SIZE);
+
+        setConversations(result.content);
+        setCurrentPage(result.number);
+        setTotalPages(result.totalPages);
+        setError("");
+      } catch (reason) {
+        handleError(reason, "Không tải được lịch sử.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleError, setError],
+  );
 
   useEffect(() => {
-    void loadConversations();
+    void loadConversations(0);
   }, [loadConversations]);
 
   async function openConversation(id: number) {
     setSelectedId(id);
     setLoading(true);
+
     try {
       setMessages(await historyApi.detail(id));
       setError("");
@@ -62,6 +81,7 @@ export function HistoryPage() {
 
   async function loadPinned() {
     setLoading(true);
+
     try {
       setPinnedMessages(await historyApi.pinned());
       setError("");
@@ -79,8 +99,14 @@ export function HistoryPage() {
   async function submitSearch(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
+
     try {
-      const page = await historyApi.search({ keyword: searchInput.trim() });
+      const page = await historyApi.search({
+        keyword: searchInput.trim(),
+        page: 0,
+        size: PAGE_SIZE,
+      });
+
       setSearchResults(page.content);
       setError("");
     } catch (reason) {
@@ -96,16 +122,24 @@ export function HistoryPage() {
 
   function switchTab(next: Tab) {
     setTab(next);
-    if (next === "pinned") void loadPinned();
+
+    if (next === "pinned") {
+      void loadPinned();
+    }
   }
 
   async function togglePin(messageId: number) {
     try {
       const updated = await historyApi.togglePin(messageId);
+
       setMessages((current) =>
         current.map((m) => (m.id === messageId ? updated : m)),
       );
-      if (tab === "pinned") await loadPinned();
+
+      if (tab === "pinned") {
+        await loadPinned();
+      }
+
       showToast(
         updated.pinned ? "Đã ghim tin nhắn." : "Đã bỏ ghim.",
         "success",
@@ -121,15 +155,29 @@ export function HistoryPage() {
   }
 
   async function removeConversation(item: Conversation) {
-    if (!window.confirm(`Xóa vĩnh viễn cuộc trò chuyện "${item.title}"?`))
+    if (!window.confirm(`Xóa vĩnh viễn cuộc trò chuyện "${item.title}"?`)) {
       return;
+    }
+
     try {
       await historyApi.remove(item.id);
+
       if (selectedId === item.id) {
         setSelectedId(null);
         setMessages([]);
       }
-      await loadConversations();
+
+      /*
+       * If this was the last conversation on the current page,
+       * move back one page when possible.
+       */
+      const nextPage =
+        conversations.length === 1 && currentPage > 0
+          ? currentPage - 1
+          : currentPage;
+
+      await loadConversations(nextPage);
+
       showToast("Đã xóa cuộc trò chuyện.", "success");
     } catch (reason) {
       showToast(
@@ -144,13 +192,20 @@ export function HistoryPage() {
       !window.confirm(
         "Xóa TOÀN BỘ lịch sử trò chuyện? Hành động này không thể hoàn tác.",
       )
-    )
+    ) {
       return;
+    }
+
     try {
       await historyApi.removeAll();
+
       setSelectedId(null);
       setMessages([]);
-      await loadConversations();
+      setCurrentPage(0);
+      setTotalPages(0);
+
+      await loadConversations(0);
+
       showToast("Đã xóa toàn bộ lịch sử.", "success");
     } catch (reason) {
       showToast(
@@ -162,6 +217,22 @@ export function HistoryPage() {
     }
   }
 
+  function goToPreviousPage() {
+    if (currentPage <= 0 || loading) {
+      return;
+    }
+
+    void loadConversations(currentPage - 1);
+  }
+
+  function goToNextPage() {
+    if (currentPage >= totalPages - 1 || loading) {
+      return;
+    }
+
+    void loadConversations(currentPage + 1);
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
@@ -170,6 +241,7 @@ export function HistoryPage() {
           <h1>Lịch sử trò chuyện</h1>
           <span>Xem lại, tìm kiếm và ghim các câu hỏi/kết quả trước đây.</span>
         </div>
+
         <button
           type="button"
           className={styles.dangerButton}
@@ -187,6 +259,7 @@ export function HistoryPage() {
         >
           Tất cả
         </button>
+
         <button
           type="button"
           className={tab === "pinned" ? styles.tabActive : ""}
@@ -194,6 +267,7 @@ export function HistoryPage() {
         >
           Đã ghim
         </button>
+
         <button
           type="button"
           className={tab === "search" ? styles.tabActive : ""}
@@ -217,33 +291,62 @@ export function HistoryPage() {
             ) : conversations.length === 0 ? (
               <p className={styles.center}>Chưa có cuộc trò chuyện nào.</p>
             ) : (
-              conversations.map((item) => (
-                <div
-                  className={
-                    item.id === selectedId ? styles.itemSelected : styles.item
-                  }
-                  key={item.id}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void openConversation(item.id)}
+              <>
+                {conversations.map((item) => (
+                  <div
+                    className={
+                      item.id === selectedId ? styles.itemSelected : styles.item
+                    }
+                    key={item.id}
                   >
-                    <strong>{item.title}</strong>
-                    <small>
-                      {new Date(item.updatedAt).toLocaleString("vi-VN")}
-                    </small>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Xóa ${item.title}`}
-                    onClick={() => void removeConversation(item)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
+                    <button
+                      type="button"
+                      onClick={() => void openConversation(item.id)}
+                    >
+                      <strong>{item.title}</strong>
+
+                      <small>
+                        {new Date(item.updatedAt).toLocaleString("vi-VN")}
+                      </small>
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={`Xóa ${item.title}`}
+                      onClick={() => void removeConversation(item)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+
+                {totalPages > 1 && (
+                  <div className={styles.pagination}>
+                    <button
+                      type="button"
+                      disabled={currentPage === 0 || loading}
+                      onClick={goToPreviousPage}
+                    >
+                      ← Trước
+                    </button>
+
+                    <span>
+                      Trang <strong>{currentPage + 1}</strong> / {totalPages}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages - 1 || loading}
+                      onClick={goToNextPage}
+                    >
+                      Sau →
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </aside>
+
           <section className={styles.detail}>
             {selectedId === null ? (
               <p className={styles.center}>
@@ -263,6 +366,7 @@ export function HistoryPage() {
                     <span>
                       {message.role === "user" ? "Bạn" : "AI QueryMate"}
                     </span>
+
                     <button
                       type="button"
                       onClick={() => void togglePin(message.id)}
@@ -270,7 +374,9 @@ export function HistoryPage() {
                       {message.pinned ? "★ Đã ghim" : "☆ Ghim"}
                     </button>
                   </header>
+
                   <p>{message.content}</p>
+
                   {message.generatedSql && (
                     <pre>
                       <code>{message.generatedSql}</code>
@@ -296,6 +402,7 @@ export function HistoryPage() {
                   <span>
                     {new Date(message.createdAt).toLocaleString("vi-VN")}
                   </span>
+
                   <button
                     type="button"
                     onClick={() => void togglePin(message.id)}
@@ -303,7 +410,9 @@ export function HistoryPage() {
                     Bỏ ghim
                   </button>
                 </header>
+
                 <p>{message.content}</p>
+
                 {message.generatedSql && (
                   <pre>
                     <code>{message.generatedSql}</code>
@@ -323,8 +432,10 @@ export function HistoryPage() {
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Tìm theo nội dung câu hỏi hoặc SQL…"
             />
+
             <button type="submit">Tìm</button>
           </form>
+
           <div className={styles.pinnedList}>
             {searchResults.length === 0 ? (
               <p className={styles.center}>
@@ -335,16 +446,20 @@ export function HistoryPage() {
                 <article className={styles.pinnedCard} key={result.messageId}>
                   <header>
                     <span>{result.conversationTitle}</span>
+
                     <span>
                       {new Date(result.createdAt).toLocaleString("vi-VN")}
                     </span>
                   </header>
+
                   <p>{result.content}</p>
+
                   {result.generatedSql && (
                     <pre>
                       <code>{result.generatedSql}</code>
                     </pre>
                   )}
+
                   <button
                     type="button"
                     onClick={() => {

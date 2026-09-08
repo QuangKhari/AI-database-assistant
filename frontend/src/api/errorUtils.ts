@@ -26,6 +26,7 @@ export interface ParsedApiError {
   fieldErrors?: Record<string, string>;
   correlationId?: string;
   retryAfterSeconds?: number;
+  wasAuthenticatedRequest: boolean;
   isRetryable: boolean;
 }
 export function parseApiError(
@@ -45,12 +46,14 @@ export function parseApiError(
       fieldErrors: error.fieldErrors,
       correlationId: error.correlationId,
       retryAfterSeconds: error.retryAfterSeconds,
+      wasAuthenticatedRequest: error.wasAuthenticatedRequest,
       isRetryable: error.status === 429 || error.status >= 500,
     };
   }
 
   return {
     message: fallbackMessage,
+    wasAuthenticatedRequest: false,
     isRetryable: false,
   };
 }

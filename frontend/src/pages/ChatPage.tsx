@@ -11,6 +11,7 @@ import type {
   QueryResponse,
 } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useApiError } from "../hook/useApiError";
 import styles from "./ChatPage.module.css";
 import {
   Bar,
@@ -48,7 +49,7 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [streamStatus, setStreamStatus] = useState("");
-  const [error, setError] = useState("");
+  const { error, handleError, setError } = useApiError();
   const [preview, setPreview] = useState<{
     generatedSql: string;
     valid: boolean;
@@ -89,11 +90,7 @@ export function ChatPage() {
         setConnections(available);
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
-        setError(
-          formatErrorWithSupportCode(
-            parseApiError(reason, "Không tải được connections."),
-          ),
-        );
+        handleError(reason, "Không tải được connections.");
       } finally {
         setLoading(false);
       }
@@ -127,11 +124,7 @@ export function ChatPage() {
         setConversationsTotalElements(result.totalElements);
         setError("");
       } catch (reason) {
-        setError(
-          formatErrorWithSupportCode(
-            parseApiError(reason, "Không tải được conversations."),
-          ),
-        );
+        handleError(reason, "Không tải được conversations.");
       } finally {
         setConversationsLoading(false);
       }
@@ -174,11 +167,7 @@ export function ChatPage() {
       setMessages(await chatApi.messages(id));
       setError("");
     } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không tải được nội dung hội thoại."),
-        ),
-      );
+      handleError(reason, "Không tải được nội dung hội thoại.");
     } finally {
       setLoading(false);
     }
