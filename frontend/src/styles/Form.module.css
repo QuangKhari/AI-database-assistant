@@ -172,3 +172,44 @@
   font-size: 11px;
   line-height: 1.65;
 }
+
+.passwordWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.passwordWrapper input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 28px;
+  height: 28px;
+  padding: 0;
+
+  border: none;
+  background: transparent;
+  color: #7a8a8a;
+
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  color: #087f7a;
+}
+
+.passwordToggle:focus-visible {
+  outline: 2px solid #087f7a;
+  outline-offset: 2px;
+  border-radius: 4px;
+}

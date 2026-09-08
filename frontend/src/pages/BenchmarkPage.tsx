@@ -9,7 +9,7 @@ import type {
   DatabaseConnection,
 } from "../api/types";
 import { useToast } from "../context/ToastContext";
-
+import { useApiError } from "../hook/useApiError";
 import styles from "./BenchmarkPage.module.css";
 
 type LanguageFilter = "ALL" | "VI" | "EN";
@@ -24,8 +24,7 @@ export function BenchmarkPage() {
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("ALL");
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
+  const { error, handleError, setError } = useApiError();
   const [showForm, setShowForm] = useState(false);
   const [language, setLanguage] = useState<"VI" | "EN">("VI");
   const [questionText, setQuestionText] = useState("");
@@ -46,11 +45,7 @@ export function BenchmarkPage() {
         setConnections(available);
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
-        setError(
-          formatErrorWithSupportCode(
-            parseApiError(reason, "Không tải được connections."),
-          ),
-        );
+        handleError(reason, "Không tải được connections.");
       } finally {
         setLoading(false);
       }
@@ -69,14 +64,7 @@ export function BenchmarkPage() {
         setQuestions(result);
         setError("");
       } catch (reason) {
-        setError(
-          formatErrorWithSupportCode(
-            parseApiError(
-              reason,
-              "Không tải được danh sách câu hỏi benchmark.",
-            ),
-          ),
-        );
+        handleError(reason, "Không tải được danh sách câu hỏi benchmark.");
       } finally {
         setLoading(false);
       }
@@ -316,7 +304,7 @@ export function BenchmarkPage() {
           <div className={styles.stats}>
             <div>
               <span>Độ chính xác</span>
-              <strong>{(runResult.accuracy * 100).toFixed(1)}%</strong>
+              <strong>{runResult.accuracy.toFixed(1)}%</strong>
             </div>
             <div>
               <span>Đúng / Tổng</span>

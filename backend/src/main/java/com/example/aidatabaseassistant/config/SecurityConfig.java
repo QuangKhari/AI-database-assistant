@@ -25,6 +25,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 import java.util.List;
+import jakarta.servlet.DispatcherType;
 
 @Configuration
 @EnableWebSecurity
@@ -115,18 +116,21 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth ->
                         auth
+                                // Authentication endpoints
                                 .requestMatchers("/api/auth/**").permitAll()
-                                // BẮT BUỘC public: Docker HEALTHCHECK / docker-compose
-                                // "condition: service_healthy" gọi endpoint này bằng
-                                // curl thuần, KHÔNG kèm JWT. Nếu endpoint này yêu cầu
-                                // auth, container sẽ bị Docker đánh dấu "unhealthy"
-                                // vĩnh viễn dù backend chạy hoàn toàn bình thường.
-                                // Không rò rỉ thông tin nhạy cảm vì
-                                // management.endpoint.health.show-details=never
-                                // (xem application-docker.properties) chỉ trả về
-                                // {"status":"UP"} chứ không chi tiết DB/disk/...
+
+                                // Docker health check
                                 .requestMatchers("/actuator/health").permitAll()
-                                .requestMatchers("/api/admin/**").hasRole("ADMIN")   // defense in depth
+
+                                // SSE/async dispatch:
+                                // request ban đầu vẫn phải authenticated,
+                                // chỉ cho phép async continuation tiếp tục.
+                                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
+
+                                // Admin endpoints
+                                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                                // Tất cả API còn lại bắt buộc đăng nhập
                                 .anyRequest().authenticated()
                 )
 

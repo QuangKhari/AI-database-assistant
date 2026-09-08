@@ -7,17 +7,6 @@ import type {
 } from "./types";
 
 const PAGE_SIZE = 20;
-
-// BE (AdminController) chỉ có:
-//   GET  /admin/users                  -> List<AdminUserResponse>
-//   GET  /admin/users/search?keyword=  -> List<AdminUserResponse>
-//   PATCH /admin/users/{id}/lock | /unlock
-//   GET  /admin/connections
-//   DELETE /admin/connections/{id}
-//   GET  /admin/stats
-// Không có phân trang server-side, nên FE tự cắt trang từ List trả về (đủ
-// dùng cho MVP; nếu dữ liệu lớn, chuyển sang Phase 10 "pagination
-// server-side" như kế hoạch đã ghi ở mục 9).
 function toPage(
   users: AdminUser[],
   page: number,
