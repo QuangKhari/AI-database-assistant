@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../api/adminApi";
-import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
+import { useApiError } from "../hook/useApiError";
 import { connectionApi } from "../api/connectionApi";
 import { historyApi } from "../api/historyApi";
 import type {
@@ -46,7 +46,7 @@ export function DashboardPage() {
   const [pinnedCount, setPinnedCount] = useState(0);
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { error, handleError, setError } = useApiError();
 
   useEffect(() => {
     let cancelled = false;
@@ -80,11 +80,7 @@ export function DashboardPage() {
         }
       } catch (reason) {
         if (!cancelled) {
-          setError(
-            formatErrorWithSupportCode(
-              parseApiError(reason, "Không tải được dữ liệu tổng quan."),
-            ),
-          );
+          handleError(reason, "Không tải được dữ liệu tổng quan.");
         }
       } finally {
         if (!cancelled) setLoading(false);

@@ -4,13 +4,14 @@ import { connectionApi } from "../api/connectionApi";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type { DatabaseConnection } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useApiError } from "../hook/useApiError";
 import styles from "./ConnectionsPage.module.css";
 
 export function ConnectionsPage() {
   const { showToast } = useToast();
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { error, handleError, setError } = useApiError();
   const [workingId, setWorkingId] = useState<number | null>(null);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [excelName, setExcelName] = useState("");
@@ -21,11 +22,7 @@ export function ConnectionsPage() {
       setConnections(await connectionApi.list());
       setError("");
     } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không tải được danh sách connection."),
-        ),
-      );
+      handleError(reason, "Không tải được danh sách connection.");
     } finally {
       setLoading(false);
     }

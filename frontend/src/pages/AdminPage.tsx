@@ -4,6 +4,7 @@ import { adminApi } from "../api/adminApi";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import type { AdminConnection, AdminStats, AdminUserPage } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useApiError } from "../hook/useApiError";
 
 import styles from "./AdminPage.module.css";
 
@@ -23,7 +24,7 @@ export function AdminPage() {
   const [deletingConnectionId, setDeletingConnectionId] = useState<
     number | null
   >(null);
-  const [error, setError] = useState("");
+  const { error, handleError, setError } = useApiError();
 
   /**
    * Đổi role USER <-> ADMIN
@@ -105,11 +106,7 @@ export function AdminPage() {
       setConnections(nextConnections);
       setError("");
     } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không tải được dữ liệu quản trị."),
-        ),
-      );
+      handleError(reason, "Không tải được dữ liệu quản trị.");
     } finally {
       setLoading(false);
     }

@@ -9,11 +9,10 @@ import java.net.UnknownHostException;
 @Component
 public class SsrfProtection {
 
-    // Mac dinh TRUE (an toan cho production/bao ve do an). CHI duoc de
-    // FALSE qua profile "local" khi can test thu cong voi MySQL Docker
-    // chay cung may - xem application-local.properties.
     @Value("${security.ssrf.block-private-hosts:true}")
     private boolean blockPrivateHosts;
+    @Value("${security.ssrf.allowed-hosts:}")
+    private String allowedHosts;
 
     public void validateHost(String host) {
         if (host == null || host.isBlank()) {
@@ -21,6 +20,10 @@ public class SsrfProtection {
         }
 
         String normalizedHost = host.trim();
+
+        if (isAllowedHost(normalizedHost)) {
+            return;
+        }
 
         if (blockPrivateHosts
                 && (normalizedHost.equalsIgnoreCase("localhost")
@@ -75,5 +78,16 @@ public class SsrfProtection {
         }
 
         return false;
+    }
+
+    private boolean isAllowedHost(String host) {
+        if (allowedHosts == null || allowedHosts.isBlank()) {
+            return false;
+        }
+
+        return java.util.Arrays.stream(allowedHosts.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .anyMatch(value -> value.equalsIgnoreCase(host));
     }
 }

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { useAuth } from "../context/AuthContext";
@@ -23,6 +24,8 @@ export function RegisterPage() {
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   if (user) return <Navigate to="/" replace />;
 
@@ -101,15 +104,25 @@ export function RegisterPage() {
         </div>
         <div className={styles.field}>
           <label htmlFor="password">Mật khẩu</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={form.password}
-            onChange={(e) => setField("password", e.target.value)}
-            aria-invalid={Boolean(errors.password)}
-            placeholder="Tạo mật khẩu"
-          />
+          <div className={styles.passwordWrapper}>
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={form.password}
+              onChange={(e) => setField("password", e.target.value)}
+              aria-invalid={Boolean(errors.password)}
+              placeholder="Tạo mật khẩu"
+            />
+            <button
+              type="button"
+              className={styles.passwordToggle}
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
           {errors.password && <p className={styles.error}>{errors.password}</p>}
           <ul className={styles.passwordRules}>
             <li>Từ 8 đến 72 ký tự</li>
@@ -118,15 +131,29 @@ export function RegisterPage() {
         </div>
         <div className={styles.field}>
           <label htmlFor="confirmPassword">Xác nhận mật khẩu</label>
-          <input
-            id="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            value={form.confirmPassword}
-            onChange={(e) => setField("confirmPassword", e.target.value)}
-            aria-invalid={Boolean(errors.confirmPassword)}
-            placeholder="Nhập lại mật khẩu"
-          />
+          <div className={styles.passwordWrapper}>
+            <input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={form.confirmPassword}
+              onChange={(e) => setField("confirmPassword", e.target.value)}
+              aria-invalid={Boolean(errors.confirmPassword)}
+              placeholder="Nhập lại mật khẩu"
+            />
+            <button
+              type="button"
+              className={styles.passwordToggle}
+              onClick={() => setShowConfirmPassword((current) => !current)}
+              aria-label={
+                showConfirmPassword
+                  ? "Ẩn xác nhận mật khẩu"
+                  : "Hiện xác nhận mật khẩu"
+              }
+            >
+              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
           {errors.confirmPassword && (
             <p className={styles.error}>{errors.confirmPassword}</p>
           )}

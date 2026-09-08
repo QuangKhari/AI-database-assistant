@@ -7,7 +7,7 @@ import com.example.aidatabaseassistant.dto.ExplainSqlResponse;
 import com.example.aidatabaseassistant.dto.SqlExplanationStep;
 import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
-import com.example.aidatabaseassistant.entity.User;
+import org.springframework.transaction.annotation.Transactional;
 import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
@@ -32,6 +32,7 @@ public class SqlExplanationService {
     private final ObjectMapper objectMapper;
     private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
+    @Transactional(readOnly = true)
     public ExplainSqlResponse explain(String username, ExplainSqlRequest request) {
         DatabaseSchema schema = null;
 
