@@ -10,8 +10,13 @@ export class ApiError extends Error {
   fieldErrors?: Record<string, string>;
   correlationId?: string;
   retryAfterSeconds?: number;
+  wasAuthenticatedRequest: boolean;
 
-  constructor(body: ApiErrorBody, retryAfterSeconds?: number) {
+  constructor(
+    body: ApiErrorBody,
+    retryAfterSeconds?: number,
+    wasAuthenticatedRequest = false,
+  ) {
     super(body.message);
     this.name = "ApiError";
     this.status = body.status;
@@ -19,6 +24,7 @@ export class ApiError extends Error {
     this.fieldErrors = body.fieldErrors;
     this.correlationId = body.correlationId;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.wasAuthenticatedRequest = wasAuthenticatedRequest;
   }
 }
 
@@ -85,7 +91,7 @@ export async function apiRequest<T>(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response));
+    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
   }
 
   if (response.status === 204) {
@@ -131,7 +137,7 @@ export async function apiRequestBlob(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response));
+    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
   }
 
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -213,7 +219,7 @@ export async function apiRequestSse(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response));
+    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
   }
 
   // Browser phải cung cấp ReadableStream.

@@ -6,14 +6,26 @@ import type {
   PageResult,
 } from "./types";
 
-// Khớp HistoryController.java (/api/history)
 export const historyApi = {
   list: () => apiRequest<Conversation[]>("/history"),
+
+  listPaged: (page = 0, size = 10) =>
+    apiRequest<PageResult<Conversation>>(
+      `/history/paged?page=${page}&size=${size}`,
+    ),
+
   detail: (conversationId: number) =>
     apiRequest<ChatMessage[]>(`/history/${conversationId}`),
+
   remove: (conversationId: number) =>
-    apiRequest<void>(`/history/${conversationId}`, { method: "DELETE" }),
-  removeAll: () => apiRequest<void>("/history", { method: "DELETE" }),
+    apiRequest<void>(`/history/${conversationId}`, {
+      method: "DELETE",
+    }),
+
+  removeAll: () =>
+    apiRequest<void>("/history", {
+      method: "DELETE",
+    }),
 
   togglePin: (messageId: number) =>
     apiRequest<ChatMessage>(`/history/messages/${messageId}/pin`, {
@@ -29,10 +41,18 @@ export const historyApi = {
     size?: number;
   }) => {
     const query = new URLSearchParams();
-    if (params.keyword) query.set("keyword", params.keyword);
-    if (params.pinnedOnly) query.set("pinnedOnly", "true");
+
+    if (params.keyword) {
+      query.set("keyword", params.keyword);
+    }
+
+    if (params.pinnedOnly) {
+      query.set("pinnedOnly", "true");
+    }
+
     query.set("page", String(params.page ?? 0));
     query.set("size", String(params.size ?? 20));
+
     return apiRequest<PageResult<HistorySearchResult>>(
       `/history/search?${query}`,
     );

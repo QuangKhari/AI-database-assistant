@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authApi } from "../api/authApi";
-import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
+import { useApiError } from "../hook/useApiError";
 import type { UserProfile } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import styles from "./ProfilePage.module.css";
@@ -14,7 +14,7 @@ export function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
-  const [error, setError] = useState("");
+  const { error, handleError, setError } = useApiError();
   useEffect(() => {
     async function loadProfile() {
       setLoading(true);
@@ -24,11 +24,7 @@ export function ProfilePage() {
         setProfile(result);
         setEmail(result.email);
       } catch (reason) {
-        setError(
-          formatErrorWithSupportCode(
-            parseApiError(reason, "Không thể tải thông tin hồ sơ."),
-          ),
-        );
+        handleError(reason, "Không thể tải thông tin hồ sơ.");
       } finally {
         setLoading(false);
       }
@@ -50,11 +46,7 @@ export function ProfilePage() {
       setEmail(result.email);
       showToast("Đã cập nhật thông tin hồ sơ.", "success");
     } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không thể cập nhật hồ sơ."),
-        ),
-      );
+      handleError(reason, "Không thể cập nhật hồ sơ.");
     } finally {
       setSavingProfile(false);
     }
@@ -86,11 +78,7 @@ export function ProfilePage() {
       setConfirmPassword("");
       showToast("Đổi mật khẩu thành công.", "success");
     } catch (reason) {
-      setError(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không thể đổi mật khẩu."),
-        ),
-      );
+      handleError(reason, "Không thể đổi mật khẩu.");
     } finally {
       setChangingPassword(false);
     }
