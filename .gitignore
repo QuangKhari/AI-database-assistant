@@ -17,6 +17,9 @@ dist/
 .env
 .env.*
 
+# Codex temporary files and local tool caches
+.codex-tmp/
+
 # OS
 .DS_Store
 Thumbs.db
