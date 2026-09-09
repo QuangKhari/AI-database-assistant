@@ -284,7 +284,8 @@
   gap: 6px;
 }
 
-.excelForm label > span {
+.excelForm label > span,
+.fileField > span {
   color: #718083;
   font-size: 11px;
   font-weight: 700;
@@ -299,12 +300,76 @@
   padding: 8px 10px;
 }
 
-.excelForm input[type="file"] {
+.fileField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filePicker {
+  display: flex !important;
+  min-width: 0;
   min-height: 40px;
-  box-sizing: border-box;
-  padding: 8px 0;
-  color: #64748b;
-  font-size: 12px;
+  overflow: hidden;
+  border: 1px solid #cfddda;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.filePicker:focus-within {
+  border-color: #0b8c83;
+  box-shadow: 0 0 0 3px rgb(11 140 131 / 10%);
+}
+
+.hiddenFileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.fileButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  color: #0b716c !important;
+  border-right: 1px solid #cfddda;
+  background: #edf8f6;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+.filePlaceholder,
+.selectedFile {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.filePlaceholder {
+  color: #829092 !important;
+}
+
+.selectedFile {
+  color: #294548 !important;
+}
+
+.filePicker:has(input:disabled) {
+  opacity: .6;
+  cursor: wait;
 }
 
 .excelForm button {

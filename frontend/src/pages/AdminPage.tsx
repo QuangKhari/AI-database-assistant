@@ -299,9 +299,14 @@ export function AdminPage() {
                       {/* ============================
                           ROLE
                           ============================ */}
-                      <td>
+                      <td className={styles.roleCell}>
                         <select
                           aria-label={`Vai trò của ${user.username}`}
+                          className={
+                            user.role === "ADMIN"
+                              ? styles.adminRole
+                              : styles.userRole
+                          }
                           value={user.role}
                           disabled={isWorking}
                           onChange={(event) =>
@@ -312,9 +317,9 @@ export function AdminPage() {
                             )
                           }
                         >
-                          <option value="USER">USER</option>
+                          <option value="USER">Người dùng</option>
 
-                          <option value="ADMIN">ADMIN</option>
+                          <option value="ADMIN">Quản trị viên</option>
                         </select>
                       </td>
 
@@ -443,9 +448,15 @@ export function AdminPage() {
 
                       <td>{connection.dbType}</td>
 
-                      <td>
-                        <strong>{connection.host || "—"}</strong>
-                        <span>{connection.databaseName}</span>
+                      <td className={styles.hostCell}>
+                        <div>
+                          <small>Host</small>
+                          <strong>{connection.host || "—"}</strong>
+                        </div>
+                        <div>
+                          <small>Database</small>
+                          <span>{connection.databaseName}</span>
+                        </div>
                       </td>
 
                       <td>{connection.ownerUsername}</td>

@@ -24,6 +24,17 @@
 .tableWrap td strong { color: #294346; font-size: 13px; }
 .tableWrap td span { color: #879496; font-size: 10px; }
 .tableWrap td:last-child { text-align: right; }
+.roleCell select { min-width: 120px; border: 1px solid transparent; border-radius: 999px; padding: 7px 30px 7px 11px; outline: none; cursor: pointer; font-size: 11px; font-weight: 750; }
+.roleCell select:focus { box-shadow: 0 0 0 3px rgb(11 140 131 / 12%); }
+.roleCell select:disabled { opacity: .6; cursor: wait; }
+.userRole { color: #365c68; border-color: #cddde2 !important; background-color: #eef5f7; }
+.adminRole { color: #74520b; border-color: #ead79f !important; background-color: #fff8df; }
+.hostCell { display: grid; gap: 7px; min-width: 170px; }
+.hostCell > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.hostCell > div + div { padding-top: 6px; border-top: 1px dashed #e3eae8; }
+.hostCell small { color: #98a4a5; font-size: 9px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.hostCell strong, .hostCell span { overflow-wrap: anywhere; }
+.hostCell span { color: #526568 !important; font-size: 11px !important; font-weight: 650; }
 .tableWrap b { display: inline-block; padding: 5px 8px; border-radius: 999px; font-size: 10px; }
 .active { color: #147157; background: #e5f7f0; }
 .locked { color: #a52b41; background: #ffedf0; }

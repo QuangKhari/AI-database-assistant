@@ -46,6 +46,20 @@ public class User {
     @Builder.Default
     private Role role = Role.USER;
 
+    /**
+     * Giữ tương thích với các System Database đã được tạo từ phiên bản cũ.
+     * Việc khóa/mở khóa tài khoản hiện được điều khiển bởi trường {@code locked};
+     * tuy nhiên cột {@code enabled} cũ vẫn là NOT NULL ở một số database nên
+     * Hibernate phải ghi giá trị này khi tạo user mới.
+     */
+    @Column(
+            name = "enabled",
+            nullable = false,
+            columnDefinition = "BOOLEAN NOT NULL DEFAULT TRUE"
+    )
+    @Builder.Default
+    private boolean enabled = true;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

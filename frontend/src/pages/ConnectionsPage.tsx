@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { FileSpreadsheet, Upload } from "lucide-react";
 import { Link } from "react-router-dom";
 import { connectionApi } from "../api/connectionApi";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
@@ -159,17 +160,32 @@ export function ConnectionsPage() {
             />
           </label>
 
-          <label>
+          <div className={styles.fileField}>
             <span>File Excel</span>
-            <input
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(event) =>
-                setExcelFile(event.target.files?.[0] ?? null)
-              }
-              disabled={uploadingExcel}
-            />
-          </label>
+            <label className={styles.filePicker}>
+              <input
+                aria-label="Chọn file Excel"
+                className={styles.hiddenFileInput}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) =>
+                  setExcelFile(event.target.files?.[0] ?? null)
+                }
+                disabled={uploadingExcel}
+              />
+              <span className={styles.fileButton}>
+                <Upload size={16} aria-hidden="true" />
+                Chọn file
+              </span>
+              <span
+                className={excelFile ? styles.selectedFile : styles.filePlaceholder}
+                title={excelFile?.name}
+              >
+                <FileSpreadsheet size={16} aria-hidden="true" />
+                {excelFile?.name ?? "Chưa chọn file .xlsx"}
+              </span>
+            </label>
+          </div>
 
           <button
             type="button"

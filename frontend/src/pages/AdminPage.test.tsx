@@ -79,6 +79,11 @@ describe("AdminPage", () => {
     // "Found multiple elements with the text: student".
     expect((await screen.findAllByText("student")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("combobox", { name: "Vai trò của student" }),
+    ).toHaveDisplayValue("Người dùng");
+    expect(screen.getByText("Host")).toBeInTheDocument();
+    expect(screen.getByText("Database")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Khóa" }));
 
     await waitFor(() => expect(adminApi.lock).toHaveBeenCalledWith(8));
