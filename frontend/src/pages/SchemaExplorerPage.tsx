@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Columns3,
+  Database,
+  Pencil,
+  RefreshCw,
+  Search,
+  Table2,
+} from "lucide-react";
 
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
@@ -30,6 +40,7 @@ export function SchemaExplorerPage() {
 
   // ID đang lưu description
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [expandedTableIds, setExpandedTableIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     async function loadConnections() {
@@ -58,7 +69,15 @@ export function SchemaExplorerPage() {
     setLoading(true);
 
     try {
-      setSchema(await schemaApi.get(selectedId));
+      const result = await schemaApi.get(selectedId);
+      setSchema(result);
+      setExpandedTableIds(
+        new Set(
+          result.tables.length <= 4
+            ? result.tables.map((table) => table.id)
+            : result.tables.slice(0, 1).map((table) => table.id),
+        ),
+      );
       setError("");
     } catch (reason) {
       setSchema(null);
@@ -87,6 +106,13 @@ export function SchemaExplorerPage() {
       const result = await schemaApi.sync(connectionId);
 
       setSchema(result);
+      setExpandedTableIds(
+        new Set(
+          result.tables.length <= 4
+            ? result.tables.map((table) => table.id)
+            : result.tables.slice(0, 1).map((table) => table.id),
+        ),
+      );
       setError("");
 
       // Hủy trạng thái edit nếu đang đồng bộ
@@ -270,6 +296,28 @@ export function SchemaExplorerPage() {
     );
   }, [schema, search]);
 
+  useEffect(() => {
+    if (!search.trim()) return;
+    setExpandedTableIds((current) => {
+      const next = new Set(current);
+      visibleTables.forEach((table) => next.add(table.id));
+      return next;
+    });
+  }, [search, visibleTables]);
+
+  function toggleTable(tableId: number) {
+    setExpandedTableIds((current) => {
+      const next = new Set(current);
+      if (next.has(tableId)) next.delete(tableId);
+      else next.add(tableId);
+      return next;
+    });
+  }
+
+  function expandAllVisible() {
+    setExpandedTableIds(new Set(visibleTables.map((table) => table.id)));
+  }
+
   if (!loading && connections.length === 0) {
     return (
       <section className={styles.empty}>
@@ -283,12 +331,15 @@ export function SchemaExplorerPage() {
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
-        <div>
-          <p>Database metadata</p>
-
-          <h1>Schema Explorer</h1>
-
-          <span>Xem cấu trúc bảng, cột, khóa chính và khóa ngoại.</span>
+        <div className={styles.headingCopy}>
+          <span className={styles.headingIcon}>
+            <Database size={22} />
+          </span>
+          <div>
+            <p>Cấu trúc dữ liệu</p>
+            <h1>Schema Explorer</h1>
+            <span>Khám phá bảng, cột và quan hệ trong database của bạn.</span>
+          </div>
         </div>
 
         <button
@@ -296,6 +347,7 @@ export function SchemaExplorerPage() {
           onClick={syncSchema}
           disabled={syncing || connectionId === null}
         >
+          <RefreshCw size={16} className={syncing ? styles.spinning : ""} />
           {syncing ? "Đang đồng bộ…" : "Đồng bộ schema"}
         </button>
       </header>
@@ -316,12 +368,15 @@ export function SchemaExplorerPage() {
         </label>
 
         <label>
-          Tìm bảng hoặc cột
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Ví dụ: orders, customer_id"
-          />
+          Tìm trong schema
+          <span className={styles.searchBox}>
+            <Search size={16} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Tên bảng hoặc cột…"
+            />
+          </span>
         </label>
 
         <div className={styles.syncInfo}>
@@ -342,7 +397,7 @@ export function SchemaExplorerPage() {
       )}
 
       {loading ? (
-        <p className={styles.loading}>Đang đọc schema…</p>
+        <div className={styles.loading}><span className={styles.spinner} />Đang đọc cấu trúc database…</div>
       ) : !schema ? (
         <section className={styles.empty}>
           <h2>Schema chưa được đồng bộ</h2>
@@ -354,12 +409,13 @@ export function SchemaExplorerPage() {
         </section>
       ) : (
         <div className={styles.content}>
-          <aside>
-            <strong>{visibleTables.length}</strong>
-
-            <span>/ {schema.tables.length} bảng</span>
-
-            <small>{schema.databaseName}</small>
+          <aside className={styles.schemaSummary}>
+            <div><Table2 size={20} /><span><strong>{visibleTables.length}</strong> / {schema.tables.length} bảng</span></div>
+            <small title={schema.databaseName}>{schema.databaseName}</small>
+            <div className={styles.expandActions}>
+              <button type="button" onClick={expandAllVisible}>Mở tất cả</button>
+              <button type="button" onClick={() => setExpandedTableIds(new Set())}>Thu gọn</button>
+            </div>
           </aside>
 
           <div className={styles.tableList}>
@@ -369,161 +425,87 @@ export function SchemaExplorerPage() {
               </p>
             ) : (
               visibleTables.map((table) => (
-                <details
-                  className={styles.tableCard}
-                  key={table.id}
-                  open={visibleTables.length <= 4}
-                >
-                  <summary>
-                    <div>
-                      <strong>{table.name}</strong>
+                <article className={styles.tableCard} key={table.id}>
+                  <button
+                    type="button"
+                    className={styles.tableToggle}
+                    aria-expanded={expandedTableIds.has(table.id)}
+                    onClick={() => toggleTable(table.id)}
+                  >
+                    <span className={styles.tableIdentity}>
+                      <span className={styles.tableIcon}><Table2 size={17} /></span>
+                      <span><strong>{table.name}</strong><small>{table.columns.length} cột</small></span>
+                    </span>
+                    {expandedTableIds.has(table.id) ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </button>
 
-                      <span>{table.columns.length} cột</span>
-                    </div>
-
-                    <small>{table.description || "Chưa có mô tả"}</small>
-                  </summary>
-
-                  {/* ============================
-                      TABLE DESCRIPTION
-                      ============================ */}
-                  <div>
+                  {expandedTableIds.has(table.id) && <div className={styles.tableBody}>
+                  <section className={styles.descriptionPanel}>
+                    <div className={styles.descriptionHeading}><span>Mô tả bảng</span>{editingTableId !== table.id && <button type="button" disabled={savingId !== null} onClick={() => startEditTable(table.id, table.description)}><Pencil size={14} /> Sửa mô tả</button>}</div>
                     {editingTableId === table.id ? (
-                      <div>
+                      <div className={styles.descriptionEditor}>
                         <label>
-                          Mô tả bảng
+                          <span>Giúp AI hiểu bảng này dùng để lưu thông tin gì</span>
                           <textarea
                             value={tableDescription}
                             onChange={(event) =>
                               setTableDescription(event.target.value)
                             }
-                            placeholder="Nhập mô tả cho bảng..."
+                            placeholder="Ví dụ: Lưu thông tin đơn hàng của khách hàng"
                             rows={3}
                           />
                         </label>
-
-                        <div>
-                          <button
-                            type="button"
-                            disabled={savingId === table.id}
-                            onClick={() => void saveTableDescription(table.id)}
-                          >
-                            {savingId === table.id ? "Đang lưu…" : "Lưu"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={savingId === table.id}
-                            onClick={cancelEditTable}
-                          >
-                            Hủy
-                          </button>
+                        <div className={styles.editorActions}>
+                          <button type="button" className={styles.primaryButton} disabled={savingId === table.id} onClick={() => void saveTableDescription(table.id)}>{savingId === table.id ? "Đang lưu…" : "Lưu mô tả"}</button>
+                          <button type="button" disabled={savingId === table.id} onClick={cancelEditTable}>Hủy</button>
                         </div>
                       </div>
                     ) : (
-                      <div>
-                        <span>{table.description || "Chưa có mô tả"}</span>
-
-                        <button
-                          type="button"
-                          disabled={savingId !== null}
-                          onClick={() =>
-                            startEditTable(table.id, table.description)
-                          }
-                        >
-                          Sửa mô tả
-                        </button>
-                      </div>
+                      <p className={table.description ? styles.descriptionText : styles.descriptionEmpty}>{table.description || "Chưa có mô tả. Thêm mô tả để Gemini hiểu schema chính xác hơn."}</p>
                     )}
-                  </div>
+                  </section>
 
                   <div className={styles.columns}>
                     <div className={styles.columnHeader}>
-                      <span>Tên cột</span>
-
+                      <span>Tên cột và mô tả</span>
                       <span>Kiểu dữ liệu</span>
-
                       <span>Ràng buộc</span>
                     </div>
-
                     {table.columns.map((column) => (
                       <div className={styles.column} key={column.id}>
-                        <span>
-                          <strong>{column.name}</strong>
-
-                          {/* ========================
-                                COLUMN DESCRIPTION
-                                ======================== */}
+                        <div className={styles.columnInfo}>
+                          <strong><Columns3 size={14} />{column.name}</strong>
                           {editingColumnId === column.id ? (
-                            <div>
+                            <div className={styles.columnEditor}>
                               <textarea
                                 value={columnDescription}
                                 onChange={(event) =>
                                   setColumnDescription(event.target.value)
                                 }
-                                placeholder="Nhập mô tả cho cột..."
+                                placeholder="Mô tả ý nghĩa của cột…"
                                 rows={2}
                               />
-
-                              <div>
-                                <button
-                                  type="button"
-                                  disabled={savingId === column.id}
-                                  onClick={() =>
-                                    void saveColumnDescription(column.id)
-                                  }
-                                >
-                                  {savingId === column.id ? "Đang lưu…" : "Lưu"}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  disabled={savingId === column.id}
-                                  onClick={cancelEditColumn}
-                                >
-                                  Hủy
-                                </button>
+                              <div className={styles.editorActions}>
+                                <button type="button" className={styles.primaryButton} disabled={savingId === column.id} onClick={() => void saveColumnDescription(column.id)}>{savingId === column.id ? "Đang lưu…" : "Lưu"}</button>
+                                <button type="button" disabled={savingId === column.id} onClick={cancelEditColumn}>Hủy</button>
                               </div>
                             </div>
                           ) : (
-                            <small>
-                              {column.description || "Chưa có mô tả"}
-
-                              <button
-                                type="button"
-                                disabled={savingId !== null}
-                                onClick={() =>
-                                  startEditColumn(column.id, column.description)
-                                }
-                              >
-                                Sửa
-                              </button>
-                            </small>
+                            <span className={styles.columnDescription}>{column.description || "Chưa có mô tả"}<button type="button" aria-label={`Sửa mô tả cột ${column.name}`} disabled={savingId !== null} onClick={() => startEditColumn(column.id, column.description)}><Pencil size={12} /> Sửa</button></span>
                           )}
-                        </span>
-
+                        </div>
                         <code>{column.dataType}</code>
-
                         <span className={styles.badges}>
                           {column.primaryKey && <i>PK</i>}
-
                           {column.foreignKey && <i>FK</i>}
-
-                          {column.nullable && (
-                            <i className={styles.muted}>NULL</i>
-                          )}
-
-                          {column.foreignKey && (
-                            <small>
-                              → {column.referencedTable}.
-                              {column.referencedColumn}
-                            </small>
-                          )}
+                          {column.nullable && <i className={styles.muted}>Cho phép NULL</i>}
+                          {column.foreignKey && <small>→ {column.referencedTable}.{column.referencedColumn}</small>}
                         </span>
                       </div>
                     ))}
                   </div>
-                </details>
+                  </div>}
+                </article>
               ))
             )}
           </div>

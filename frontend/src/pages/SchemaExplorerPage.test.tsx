@@ -7,7 +7,12 @@ import { ToastProvider } from '../context/ToastContext'
 import { SchemaExplorerPage } from './SchemaExplorerPage'
 
 vi.mock('../api/connectionApi', () => ({ connectionApi: { list: vi.fn() } }))
-vi.mock('../api/schemaApi', () => ({ schemaApi: { get: vi.fn(), sync: vi.fn() } }))
+vi.mock('../api/schemaApi', () => ({ schemaApi: {
+  get: vi.fn(),
+  sync: vi.fn(),
+  updateTableDescription: vi.fn(),
+  updateColumnDescription: vi.fn(),
+} }))
 
 const schema = {
   id: 1, connectionId: 2, databaseName: 'shop', lastSyncedAt: '2026-08-27T10:00:00',
@@ -34,5 +39,20 @@ describe('SchemaExplorerPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Đồng bộ schema' }))
 
     await waitFor(() => expect(schemaApi.sync).toHaveBeenCalledWith(2))
+  })
+
+  it('lets the user collapse and reopen a table', async () => {
+    render(<ToastProvider><SchemaExplorerPage /></ToastProvider>)
+
+    const tableButton = await screen.findByRole('button', { name: /orders/i })
+    expect(tableButton).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('customer_id')).toBeInTheDocument()
+
+    await userEvent.click(tableButton)
+    expect(tableButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('customer_id')).not.toBeInTheDocument()
+
+    await userEvent.click(tableButton)
+    expect(screen.getByText('customer_id')).toBeInTheDocument()
   })
 })
