@@ -65,13 +65,23 @@ public class SchemaMetadataService {
      * schemaLoaderService phia tren.
      */
     @Transactional(readOnly = true)
-    public DatabaseSchema getSchema(String username, Long connectionId) {
+    public DatabaseSchema getSchema(
+            String username,
+            Long connectionId
+    ) {
 
-        User user = connectionAccessGuard.requireUser(username);
+        DatabaseConnection connection =
+                connectionAccessGuard.requireOwnedConnection(
+                        username,
+                        connectionId
+                );
 
-        DatabaseSchema schema = schemaLoaderService.loadCompleteSchema(connectionId);
+        DatabaseSchema schema =
+                schemaLoaderService.loadCompleteSchema(
+                        connectionId
+                );
 
-        checkOwnership(user, schema.getConnection());
+        schema.setConnection(connection);
 
         return schema;
     }

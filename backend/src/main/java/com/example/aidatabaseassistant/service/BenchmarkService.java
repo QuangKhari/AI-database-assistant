@@ -16,15 +16,73 @@ import com.example.aidatabaseassistant.entity.User;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class BenchmarkService {
+
+    @org.springframework.beans.factory.annotation.Value(
+            "${benchmark.max-questions-per-connection:10}")
+    private int maxQuestionsPerConnection = 10;
 
     @org.springframework.beans.factory.annotation.Value("${gemini.api.url}")
     private String modelUrl;
+
+    /**
+     * Khoảng nghỉ giữa 2 câu hỏi liên tiếp (trong CÙNG một luồng/lane).
+     *
+     * Mặc định 5000ms để né rate-limit 15 requests/phút của Gemini Free
+     * Tier. Nếu dùng API key trả phí (rate limit cao hơn nhiều), có thể
+     * hạ giá trị này trong application-local.properties, ví dụ:
+     *
+     *   benchmark.delay-between-questions-ms=500
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${benchmark.delay-between-questions-ms:3000}")
+    private long delayBetweenQuestionsMs = 3000;
+
+    /**
+     * Số lần thử lại tối đa khi Gemini trả về 429 (1 lần gọi ban đầu +
+     * (maxRetries - 1) lần retry).
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${benchmark.max-retries:3}")
+    private int maxRetries = 3;
+
+    /**
+     * Thời gian chờ trước khi retry sau khi bị 429.
+     *
+     * Free Tier reset theo cửa sổ 60s nên mặc định chờ 40s. Với API key
+     * trả phí có thể hạ xuống vài giây.
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${benchmark.retry-backoff-ms:10000}")
+    private long retryBackoffMs = 10000;
+
+    /**
+     * Số "lane" chạy song song khi runBenchmark.
+     *
+     * = 1 (mặc định): chạy tuần tự y hệt hành vi cũ, an toàn tuyệt đối
+     * cho Gemini Free Tier (15 requests/phút).
+     *
+     * > 1: các câu hỏi được chia đều vào N lane, mỗi lane tự chạy tuần
+     * tự và tự nghỉ delayBetweenQuestionsMs giữa các câu của lane đó,
+     * nên tổng thời gian chạy giảm gần đúng theo hệ số N. CHỈ nên tăng
+     * giá trị này khi dùng Gemini API key trả phí (rate limit cao hơn
+     * 15 RPM rất nhiều) - nếu vẫn dùng Free Tier, tăng song song sẽ làm
+     * tăng nguy cơ dính 429 vì nhiều lane cùng gọi Gemini gần như đồng
+     * thời.
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${benchmark.parallelism:1}")
+    private int parallelism = 1;
     private final BenchmarkQuestionRepository benchmarkQuestionRepository;
     private final BenchmarkResultRepository benchmarkResultRepository;
     private final DatabaseConnectionRepository connectionRepository;
@@ -34,6 +92,7 @@ public class BenchmarkService {
     private final QueryExecutor queryExecutor;
     private final QueryValidator queryValidator;
     private final UserRepository userRepository;
+    private final SchemaLoaderService schemaLoaderService;
     private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
     public BenchmarkQuestionResponse addQuestion( String username,
@@ -44,6 +103,21 @@ public class BenchmarkService {
         if (!language.equals("VI") && !language.equals("EN")) {
             throw new IllegalArgumentException( "Language phải là VI hoặc EN" );
         }
+
+        long currentCount =
+                benchmarkQuestionRepository.countByConnectionId(connectionId);
+        if (currentCount >= maxQuestionsPerConnection) {
+            throw new IllegalArgumentException(
+                    "Connection này đã đạt giới hạn tối đa "
+                            + maxQuestionsPerConnection
+                            + " câu hỏi benchmark. Vui lòng xóa bớt câu hỏi cũ"
+                            + " trước khi thêm mới - benchmark chạy đồng bộ và"
+                            + " gọi Gemini thật cho từng câu, nên số câu hỏi"
+                            + " càng nhiều thì 1 lần chạy càng lâu và càng tốn"
+                            + " token."
+            );
+        }
+
         BenchmarkQuestion question =
                 BenchmarkQuestion
                         .builder()
@@ -111,146 +185,292 @@ public class BenchmarkService {
                 .toList();
     }
 
-    public BenchmarkRunResponse runBenchmark(String username, Long connectionId) {
+    public void deleteQuestion(String username, Long connectionId, Long questionId) {
+        // Xác nhận connection tồn tại và thuộc về user gọi request.
+        getOwnedConnection(username, connectionId);
+
+        BenchmarkQuestion question = benchmarkQuestionRepository
+                .findByIdAndConnectionId(questionId, connectionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy câu hỏi benchmark này trong connection"
+                ));
+
+        // cascade = ALL + orphanRemoval trên BenchmarkQuestion.results nên
+        // các BenchmarkResult liên quan cũng tự động bị xoá theo, không cần
+        // xoá tay từng result trước.
+        benchmarkQuestionRepository.delete(question);
+    }
+
+    public BenchmarkRunResponse runBenchmark(String username, Long connectionId, String language) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
-        DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chưa discover schema cho connection này"));
+        DatabaseSchema schema =
+                schemaLoaderService.loadCompleteSchema(connectionId);
+
+        List<BenchmarkQuestion> allQuestions;
+
+        if (language == null || language.isBlank()) {
+
+            // ALL
+            allQuestions =
+                    benchmarkQuestionRepository
+                            .findByConnectionId(connectionId);
+
+        } else {
+
+            String normalizedLanguage =
+                    language.trim().toUpperCase();
+
+            if (!normalizedLanguage.equals("VI")
+                    && !normalizedLanguage.equals("EN")) {
+
+                throw new IllegalArgumentException(
+                        "Language phải là VI hoặc EN"
+                );
+            }
+
+            allQuestions =
+                    benchmarkQuestionRepository
+                            .findByConnectionIdAndLanguage(
+                                    connectionId,
+                                    normalizedLanguage
+                            );
+        }
 
         List<BenchmarkQuestion> questions =
-                benchmarkQuestionRepository.findByConnectionId(connectionId);
+                allQuestions.size() > maxQuestionsPerConnection
+                        ? allQuestions.subList(
+                        0,
+                        maxQuestionsPerConnection
+                )
+                        : allQuestions;
 
         String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
-        List<BenchmarkResultDetail> details = new ArrayList<>();
-        int correctCount = 0;
+        int effectiveParallelism = Math.max(
+                1,
+                Math.min(parallelism, Math.max(1, questions.size()))
+        );
 
-        for (BenchmarkQuestion question : questions) {
+        AtomicInteger correctCount = new AtomicInteger(0);
 
-            long startTime = System.currentTimeMillis();
+        // Giữ đúng thứ tự câu hỏi trong response dù chạy song song nhiều lane.
+        BenchmarkResultDetail[] orderedDetails =
+                new BenchmarkResultDetail[questions.size()];
 
-            String generatedSql = null;
-            String errorMessage = null;
+        if (effectiveParallelism == 1) {
+
+            // Hành vi tuần tự y hệt trước đây - an toàn tuyệt đối cho
+            // Gemini Free Tier.
+            for (int i = 0; i < questions.size(); i++) {
+
+                orderedDetails[i] = processQuestion(
+                        questions.get(i),
+                        schema,
+                        connection,
+                        rawPassword,
+                        correctCount
+                );
+
+                if (i < questions.size() - 1) {
+                    sleep(delayBetweenQuestionsMs);
+                }
+            }
+
+        } else {
+
+            // Chia câu hỏi round-robin vào N lane, mỗi lane chạy tuần tự
+            // và tự nghỉ delayBetweenQuestionsMs giữa các câu CỦA LANE ĐÓ
+            // -> tổng thời gian chạy giảm gần đúng theo hệ số N.
+            ExecutorService executor =
+                    Executors.newFixedThreadPool(effectiveParallelism);
 
             try {
-                // Gọi Gemini có retry khi gặp 429
-                generatedSql = generateSqlWithRetry(
-                        question.getQuestionText(),
-                        schema
+
+                List<Future<?>> futures = new ArrayList<>();
+
+                for (int lane = 0; lane < effectiveParallelism; lane++) {
+
+                    int laneIndex = lane;
+
+                    Callable<Void> task = () -> {
+
+                        for (int i = laneIndex;
+                             i < questions.size();
+                             i += effectiveParallelism) {
+
+                            orderedDetails[i] = processQuestion(
+                                    questions.get(i),
+                                    schema,
+                                    connection,
+                                    rawPassword,
+                                    correctCount
+                            );
+
+                            boolean hasNextInLane =
+                                    i + effectiveParallelism < questions.size();
+
+                            if (hasNextInLane) {
+                                sleep(delayBetweenQuestionsMs);
+                            }
+                        }
+
+                        return null;
+                    };
+
+                    futures.add(executor.submit(task));
+                }
+
+                // Chờ tất cả lane chạy xong trước khi trả kết quả.
+                for (Future<?> future : futures) {
+                    try {
+                        future.get();
+                    } catch (Exception e) {
+                        throw new RuntimeException(
+                                "Benchmark chạy song song bị lỗi", e
+                        );
+                    }
+                }
+
+            } finally {
+                executor.shutdown();
+                try {
+                    executor.awaitTermination(1, TimeUnit.MINUTES);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        List<BenchmarkResultDetail> details = List.of(orderedDetails);
+
+        double accuracy = questions.isEmpty()
+                ? 0
+                : (double) correctCount.get() / questions.size() * 100;
+
+        return new BenchmarkRunResponse(
+                questions.size(),
+                correctCount.get(),
+                accuracy,
+                details
+        );
+    }
+
+    /**
+     * Chạy 1 câu hỏi benchmark: gọi Gemini sinh SQL, validate, execute cả
+     * 2 SQL (generated + expected), so sánh kết quả, lưu BenchmarkResult
+     * và trả về BenchmarkResultDetail tương ứng.
+     *
+     * Tách riêng để dùng chung được cho cả chế độ tuần tự (parallelism=1)
+     * và chế độ nhiều lane song song (parallelism>1).
+     */
+    private BenchmarkResultDetail processQuestion(
+            BenchmarkQuestion question,
+            DatabaseSchema schema,
+            DatabaseConnection connection,
+            String rawPassword,
+            AtomicInteger correctCount) {
+
+        long startTime = System.currentTimeMillis();
+
+        String generatedSql = null;
+        String errorMessage = null;
+
+        try {
+            // Gọi Gemini có retry khi gặp 429
+            generatedSql = generateSqlWithRetry(
+                    question.getQuestionText(),
+                    schema
+            );
+
+        } catch (Exception e) {
+            errorMessage = e.getMessage();
+        }
+
+        long latencyMs = System.currentTimeMillis() - startTime;
+
+        boolean isCorrect = false;
+
+        QueryResultDto generatedResult;
+
+        // Chỉ execute SQL nếu AI sinh SQL thành công
+        if (generatedSql != null && !generatedSql.isBlank()) {
+
+            try {
+                // Validate cả 2 SQL trước khi execute bất kỳ câu nào
+                queryValidator.validate(generatedSql, schema);
+                queryValidator.validate(question.getExpectedSql(), schema);
+
+                // Chỉ execute sau khi cả 2 đều hợp lệ.
+                //
+                // QUAN TRỌNG: phải truyền connection.getDbType() - nếu
+                // dùng overload 6-tham-số (không có dbType) thì
+                // QueryExecutor sẽ MẶC ĐỊNH mở connection theo MySQL bất
+                // kể connection thực tế là PostgreSQL/Excel, khiến
+                // benchmark chạy sai driver và luôn lỗi trên các
+                // connection không phải MySQL.
+                generatedResult = queryExecutor.executeQuery(
+                        connection.getDbType(),
+                        connection.getHost(),
+                        connection.getPort(),
+                        connection.getDatabaseName(),
+                        connection.getUsername(),
+                        rawPassword,
+                        generatedSql
                 );
+
+                QueryResultDto expectedResult = queryExecutor.executeQuery(
+                        connection.getDbType(),
+                        connection.getHost(),
+                        connection.getPort(),
+                        connection.getDatabaseName(),
+                        connection.getUsername(),
+                        rawPassword,
+                        question.getExpectedSql()
+                );
+
+                isCorrect = compareResults(
+                        generatedResult,
+                        expectedResult
+                );
+
+                if (generatedResult.getError() != null) {
+                    errorMessage = generatedResult.getError();
+                }
 
             } catch (Exception e) {
                 errorMessage = e.getMessage();
             }
-
-            long latencyMs = System.currentTimeMillis() - startTime;
-
-            boolean isCorrect = false;
-
-            QueryResultDto generatedResult = null;
-
-            // Chỉ execute SQL nếu AI sinh SQL thành công
-            if (generatedSql != null && !generatedSql.isBlank()) {
-
-                try {
-                    // Validate cả 2 SQL trước khi execute bất kỳ câu nào
-                    queryValidator.validate(generatedSql, schema);
-                    queryValidator.validate(question.getExpectedSql(), schema);
-
-                    // Chỉ execute sau khi cả 2 đều hợp lệ.
-                    //
-                    // QUAN TRỌNG: phải truyền connection.getDbType() - nếu
-                    // dùng overload 6-tham-số (không có dbType) thì
-                    // QueryExecutor sẽ MẶC ĐỊNH mở connection theo MySQL bất
-                    // kể connection thực tế là PostgreSQL/Excel, khiến
-                    // benchmark chạy sai driver và luôn lỗi trên các
-                    // connection không phải MySQL.
-                    generatedResult = queryExecutor.executeQuery(
-                            connection.getDbType(),
-                            connection.getHost(),
-                            connection.getPort(),
-                            connection.getDatabaseName(),
-                            connection.getUsername(),
-                            rawPassword,
-                            generatedSql
-                    );
-
-                    QueryResultDto expectedResult = queryExecutor.executeQuery(
-                            connection.getDbType(),
-                            connection.getHost(),
-                            connection.getPort(),
-                            connection.getDatabaseName(),
-                            connection.getUsername(),
-                            rawPassword,
-                            question.getExpectedSql()
-                    );
-
-                    isCorrect = compareResults(
-                            generatedResult,
-                            expectedResult
-                    );
-
-                    if (generatedResult.getError() != null) {
-                        errorMessage = generatedResult.getError();
-                    }
-
-                } catch (Exception e) {
-                    errorMessage = e.getMessage();
-                }
-            }
-
-            if (isCorrect) {
-                correctCount++;
-            }
-
-            BenchmarkResult result = BenchmarkResult.builder()
-                    .benchmarkQuestion(question)
-                    .generatedSql(generatedSql)
-                    .expectedSql(question.getExpectedSql())
-                    .isCorrect(isCorrect)
-                    .latencyMs(latencyMs)
-                    .modelUsed(extractModelName(modelUrl))
-                    .build();
-
-            benchmarkResultRepository.save(result);
-
-            details.add(
-                    new BenchmarkResultDetail(
-                            question.getQuestionText(),
-                            generatedSql,
-                            question.getExpectedSql(),
-                            isCorrect,
-                            latencyMs,
-                            errorMessage
-                    )
-            );
-
-            /*
-             * Gemini Free Tier:
-             * 15 requests/phút
-             *
-             * Chờ 5 giây giữa các câu để giảm nguy cơ 429.
-             */
-            sleep(5000);
         }
 
-        double accuracy = questions.isEmpty()
-                ? 0
-                : (double) correctCount / questions.size() * 100;
+        if (isCorrect) {
+            correctCount.incrementAndGet();
+        }
 
-        return new BenchmarkRunResponse(
-                questions.size(),
-                correctCount,
-                accuracy,
-                details
+        BenchmarkResult result = BenchmarkResult.builder()
+                .benchmarkQuestion(question)
+                .generatedSql(generatedSql)
+                .expectedSql(question.getExpectedSql())
+                .isCorrect(isCorrect)
+                .latencyMs(latencyMs)
+                .modelUsed(extractModelName(modelUrl))
+                .build();
+
+        benchmarkResultRepository.save(result);
+
+        return new BenchmarkResultDetail(
+                question.getQuestionText(),
+                generatedSql,
+                question.getExpectedSql(),
+                isCorrect,
+                latencyMs,
+                errorMessage
         );
     }
 
     private String generateSqlWithRetry(
             String question,
             DatabaseSchema schema) {
-
-        int maxRetries = 3;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
 
@@ -282,8 +502,9 @@ public class BenchmarkService {
                     throw e;
                 }
 
-                // Chờ 40 giây trước khi retry
-                sleep(40000);
+                // Chờ trước khi retry (mặc định 40 giây, cấu hình được qua
+                // benchmark.retry-backoff-ms).
+                sleep(retryBackoffMs);
             }
         }
 
@@ -430,5 +651,38 @@ public class BenchmarkService {
                     e
             );
         }
+    }
+
+    public BenchmarkGenerateSqlResponse generateExpectedSql(
+            String username,
+            Long connectionId,
+            BenchmarkGenerateSqlRequest request) {
+
+        getOwnedConnection(username, connectionId);
+
+        DatabaseSchema schema =
+                schemaLoaderService.loadCompleteSchema(connectionId);
+
+        String question = request.getQuestionText().trim();
+
+        if (question.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Câu hỏi benchmark không được để trống"
+            );
+        }
+
+        String generatedSql =
+                generateSqlWithRetry(question, schema);
+
+        if (generatedSql == null || generatedSql.isBlank()) {
+            throw new IllegalArgumentException(
+                    "AI không tạo được SQL cho câu hỏi này"
+            );
+        }
+
+        // Chỉ kiểm tra SQL, KHÔNG thực thi.
+        queryValidator.validate(generatedSql, schema);
+
+        return new BenchmarkGenerateSqlResponse(generatedSql);
     }
 }

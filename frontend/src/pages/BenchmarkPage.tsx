@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-
 import { benchmarkApi } from "../api/benchmarkApi";
-import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 import { connectionApi } from "../api/connectionApi";
 import type {
   BenchmarkQuestion,
@@ -14,35 +12,97 @@ import styles from "./BenchmarkPage.module.css";
 
 type LanguageFilter = "ALL" | "VI" | "EN";
 
+const MAX_BENCHMARK_QUESTIONS = 30;
+
 export function BenchmarkPage() {
   const { showToast } = useToast();
 
+  // ============================================================
+  // CONNECTION
+  // ============================================================
+
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
+
   const [connectionId, setConnectionId] = useState<number | null>(null);
 
+  // ============================================================
+  // QUESTIONS
+  // ============================================================
+
   const [questions, setQuestions] = useState<BenchmarkQuestion[]>([]);
+
+  /**
+   * Tab đang được chọn.
+   *
+   * ALL -> tất cả
+   * VI  -> tiếng Việt
+   * EN  -> tiếng Anh
+   */
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("ALL");
 
+  // ============================================================
+  // LOADING / ERROR
+  // ============================================================
+
   const [loading, setLoading] = useState(true);
-  const { error, handleError, setError } = useApiError();
+
+  const { error, handleError, notifyError, setError } = useApiError();
+
+  // ============================================================
+  // ADD QUESTION FORM
+  // ============================================================
+
   const [showForm, setShowForm] = useState(false);
+
   const [language, setLanguage] = useState<"VI" | "EN">("VI");
+
   const [questionText, setQuestionText] = useState("");
+
+  /**
+   * SQL mong đợi.
+   *
+   * Ban đầu rỗng.
+   *
+   * AI sẽ đề xuất SQL.
+   * Người dùng có thể chỉnh sửa.
+   * Sau đó mới lưu.
+   */
   const [expectedSql, setExpectedSql] = useState("");
+
   const [saving, setSaving] = useState(false);
 
+  /**
+   * Đang gọi AI để tạo SQL đề xuất.
+   */
+  const [generatingSql, setGeneratingSql] = useState(false);
+
+  // ============================================================
+  // BENCHMARK
+  // ============================================================
+
   const [running, setRunning] = useState(false);
+
   const [runResult, setRunResult] = useState<BenchmarkRunResponse | null>(null);
 
-  // Danh sách connection (chỉ connection đang active mới chạy được benchmark
-  // vì cần thực thi SQL thật để so sánh với expectedSql).
+  // ============================================================
+  // DELETE
+  // ============================================================
+
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // ============================================================
+  // LOAD CONNECTIONS
+  // ============================================================
+
   useEffect(() => {
     async function loadConnections() {
       try {
         const available = (await connectionApi.list()).filter(
           (item) => item.active,
         );
+
         setConnections(available);
+
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
         handleError(reason, "Không tải được connections.");
@@ -50,17 +110,24 @@ export function BenchmarkPage() {
         setLoading(false);
       }
     }
+
     void loadConnections();
-  }, []);
+  }, [handleError]);
+
+  // ============================================================
+  // LOAD QUESTIONS
+  // ============================================================
 
   const loadQuestions = useCallback(
     async (selectedConnectionId: number, filter: LanguageFilter) => {
       setLoading(true);
+
       try {
         const result = await benchmarkApi.questions(
           selectedConnectionId,
           filter === "ALL" ? undefined : filter,
         );
+
         setQuestions(result);
         setError("");
       } catch (reason) {
@@ -69,291 +136,721 @@ export function BenchmarkPage() {
         setLoading(false);
       }
     },
-    [],
+    [handleError, setError],
   );
+
+  // ============================================================
+  // CONNECTION / FILTER CHANGED
+  // ============================================================
 
   useEffect(() => {
     setRunResult(null);
+
     if (connectionId !== null) {
       void loadQuestions(connectionId, languageFilter);
     }
   }, [connectionId, languageFilter, loadQuestions]);
 
-  async function addQuestion(event: React.FormEvent) {
-    event.preventDefault();
-    if (connectionId === null) return;
+  // ============================================================
+  // RESET FORM
+  // ============================================================
+
+  function resetForm() {
+    setLanguage("VI");
+    setQuestionText("");
+    setExpectedSql("");
+    setGeneratingSql(false);
+    setSaving(false);
+  }
+
+  // ============================================================
+  // OPEN FORM
+  // ============================================================
+
+  function openAddForm() {
+    if (questions.length >= MAX_BENCHMARK_QUESTIONS) {
+      showToast(
+        `Đã đạt giới hạn tối đa ${MAX_BENCHMARK_QUESTIONS} câu hỏi benchmark cho connection này.`,
+        "error",
+      );
+      return;
+    }
+
+    resetForm();
+    setShowForm(true);
+  }
+
+  // ============================================================
+  // CLOSE FORM
+  // ============================================================
+
+  function closeAddForm() {
+    if (saving || generatingSql) {
+      return;
+    }
+
+    resetForm();
+    setShowForm(false);
+  }
+
+  // ============================================================
+  // AI GENERATE EXPECTED SQL
+  // ============================================================
+
+  async function generateExpectedSql() {
+    if (connectionId === null) {
+      showToast("Vui lòng chọn connection.", "error");
+      return;
+    }
 
     const cleanQuestion = questionText.trim();
+
+    if (!cleanQuestion) {
+      showToast("Vui lòng nhập câu hỏi trước.", "error");
+      return;
+    }
+
+    setGeneratingSql(true);
+
+    try {
+      const result = await benchmarkApi.generateExpectedSql(
+        connectionId,
+        cleanQuestion,
+      );
+
+      const generatedSql = result.sql?.trim() ?? "";
+
+      if (!generatedSql) {
+        showToast("AI không tạo được SQL.", "error");
+        return;
+      }
+
+      /**
+       * AI chỉ đề xuất.
+       *
+       * Người dùng vẫn có thể chỉnh sửa
+       * trực tiếp trong textarea.
+       */
+      setExpectedSql(generatedSql);
+
+      showToast(
+        "AI đã tạo SQL đề xuất. Hãy kiểm tra hoặc chỉnh sửa trước khi lưu.",
+        "success",
+      );
+    } catch (reason) {
+      notifyError(reason, "Không thể tạo SQL bằng AI.");
+    } finally {
+      setGeneratingSql(false);
+    }
+  }
+
+  // ============================================================
+  // ADD QUESTION
+  // ============================================================
+
+  async function addQuestion(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (connectionId === null) {
+      return;
+    }
+
+    const cleanQuestion = questionText.trim();
+
     const cleanSql = expectedSql.trim();
 
-    if (!cleanQuestion || !cleanSql) {
-      showToast("Vui lòng nhập đủ câu hỏi và SQL mong đợi.", "error");
+    // -------------------------
+    // VALIDATE QUESTION
+    // -------------------------
+
+    if (!cleanQuestion) {
+      showToast("Vui lòng nhập câu hỏi benchmark.", "error");
+      return;
+    }
+
+    // -------------------------
+    // VALIDATE SQL
+    // -------------------------
+
+    if (!cleanSql) {
+      showToast("Vui lòng tạo hoặc nhập SQL mong đợi.", "error");
+      return;
+    }
+
+    // -------------------------
+    // LIMIT
+    // -------------------------
+
+    if (questions.length >= MAX_BENCHMARK_QUESTIONS) {
+      showToast(
+        `Đã đạt giới hạn tối đa ${MAX_BENCHMARK_QUESTIONS} câu hỏi benchmark cho connection này.`,
+        "error",
+      );
       return;
     }
 
     setSaving(true);
+
     try {
       await benchmarkApi.addQuestion(connectionId, {
         language,
         questionText: cleanQuestion,
         expectedSql: cleanSql,
       });
+
       setQuestionText("");
       setExpectedSql("");
+      setLanguage("VI");
       setShowForm(false);
-      showToast("Đã thêm câu hỏi benchmark.", "success");
+
+      showToast("Đã lưu câu hỏi benchmark.", "success");
+
       await loadQuestions(connectionId, languageFilter);
     } catch (reason) {
-      showToast(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không thể thêm câu hỏi benchmark."),
-        ),
-        "error",
-      );
+      notifyError(reason, "Không thể thêm câu hỏi benchmark.");
     } finally {
       setSaving(false);
     }
   }
 
+  // ============================================================
+  // DELETE
+  // ============================================================
+
+  async function deleteQuestion(questionId: number) {
+    if (connectionId === null) {
+      return;
+    }
+
+    if (!window.confirm("Xoá câu hỏi benchmark này?")) {
+      return;
+    }
+
+    setDeletingId(questionId);
+
+    try {
+      await benchmarkApi.deleteQuestion(connectionId, questionId);
+
+      setQuestions((current) =>
+        current.filter((item) => item.id !== questionId),
+      );
+
+      setRunResult(null);
+
+      showToast("Đã xoá câu hỏi benchmark.", "success");
+    } catch (reason) {
+      notifyError(reason, "Không thể xoá câu hỏi benchmark.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  // ============================================================
+  // RUN BENCHMARK
+  // ============================================================
+
   async function runBenchmark() {
-    if (connectionId === null) return;
+    if (connectionId === null) {
+      return;
+    }
+
     if (questions.length === 0) {
-      showToast("Chưa có câu hỏi benchmark nào cho connection này.", "error");
+      showToast("Chưa có câu hỏi benchmark nào cho bộ lọc hiện tại.", "error");
       return;
     }
 
     setRunning(true);
     setRunResult(null);
+
     try {
-      const result = await benchmarkApi.run(connectionId);
+      /**
+       * ĐÂY LÀ ĐIỂM QUAN TRỌNG.
+       *
+       * ALL:
+       *   language = undefined
+       *   -> backend chạy tất cả.
+       *
+       * VI:
+       *   language = "VI"
+       *   -> backend chỉ chạy VI.
+       *
+       * EN:
+       *   language = "EN"
+       *   -> backend chỉ chạy EN.
+       */
+      const result = await benchmarkApi.run(
+        connectionId,
+        languageFilter === "ALL" ? undefined : languageFilter,
+      );
+
       setRunResult(result);
+
       showToast(
         `Hoàn tất: ${result.correctCount}/${result.totalQuestions} câu đúng.`,
         "success",
       );
     } catch (reason) {
-      showToast(
-        formatErrorWithSupportCode(
-          parseApiError(reason, "Không thể chạy benchmark."),
-        ),
-        "error",
-      );
+      notifyError(reason, "Không thể chạy benchmark.");
     } finally {
       setRunning(false);
     }
   }
 
-  if (!loading && connections.length === 0) {
+  // ============================================================
+  // LOADING
+  // ============================================================
+
+  if (loading && connections.length === 0) {
     return (
-      <section className={styles.empty}>
-        <h1>Chưa có connection hoạt động</h1>
-        <p>
-          Hãy tạo và đồng bộ ít nhất một connection trước khi chạy benchmark
-          NL2SQL.
-        </p>
-      </section>
+      <div className={styles.page}>
+        <div className={styles.loading}>Đang tải...</div>
+      </div>
     );
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <div className={styles.page}>
-      <header className={styles.heading}>
+      {/* ====================================================== */}
+      {/* HEADER */}
+      {/* ====================================================== */}
+
+      <div className={styles.header}>
         <div>
-          <p>Đánh giá độ chính xác</p>
-          <h1>Benchmark NL2SQL</h1>
-          <span>
-            So sánh SQL do AI sinh ra với SQL mong đợi trên một bộ câu hỏi cố
-            định
-          </span>
+          <h1>Benchmark</h1>
+
+          <p>
+            Đánh giá độ chính xác của AI khi chuyển câu hỏi tự nhiên thành SQL.
+          </p>
         </div>
-        <label>
-          Database
+
+        <div className={styles.headerActions}>
+          {/* CONNECTION */}
+
           <select
             value={connectionId ?? ""}
-            onChange={(event) => setConnectionId(Number(event.target.value))}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+
+              setConnectionId(Number.isFinite(value) ? value : null);
+            }}
+            disabled={running || saving || generatingSql}
           >
+            <option value="">Chọn connection</option>
+
             {connections.map((connection) => (
               <option key={connection.id} value={connection.id}>
-                {connection.name} — {connection.databaseName}
+                {connection.name}
               </option>
             ))}
           </select>
-        </label>
-      </header>
 
-      {error && (
-        <div className={styles.error} role="alert">
-          {error}
-        </div>
-      )}
+          {/* ADD */}
 
-      <div className={styles.toolbar}>
-        <div className={styles.tabs}>
-          {(["ALL", "VI", "EN"] as LanguageFilter[]).map((option) => (
-            <button
-              type="button"
-              key={option}
-              className={
-                languageFilter === option ? styles.tabActive : styles.tab
-              }
-              onClick={() => setLanguageFilter(option)}
-            >
-              {option === "ALL" ? "Tất cả" : option}
-            </button>
-          ))}
-        </div>
-
-        <div className={styles.toolbarActions}>
           <button
             type="button"
-            onClick={() => setShowForm((current) => !current)}
+            onClick={openAddForm}
+            disabled={
+              connectionId === null ||
+              running ||
+              saving ||
+              generatingSql ||
+              questions.length >= MAX_BENCHMARK_QUESTIONS
+            }
           >
-            {showForm ? "Đóng" : "+ Thêm câu hỏi"}
+            + Thêm câu hỏi
           </button>
+
+          {/* RUN */}
+
           <button
             type="button"
-            className={styles.primary}
-            onClick={() => void runBenchmark()}
-            disabled={running || questions.length === 0}
+            onClick={runBenchmark}
+            disabled={
+              connectionId === null ||
+              running ||
+              saving ||
+              generatingSql ||
+              questions.length === 0
+            }
           >
-            {running
-              ? "Đang chạy…"
-              : `▶ Chạy Benchmark (${questions.length} câu)`}
+            {running ? "⏳ Đang chạy..." : "▶ Chạy Benchmark"}
           </button>
         </div>
       </div>
 
-      {showForm && (
-        <form className={styles.form} onSubmit={addQuestion}>
-          <label>
-            Ngôn ngữ
-            <select
-              value={language}
-              onChange={(event) =>
-                setLanguage(event.target.value as "VI" | "EN")
-              }
-            >
-              <option value="VI">Tiếng Việt</option>
-              <option value="EN">English</option>
-            </select>
-          </label>
-          <label>
-            Câu hỏi
-            <textarea
-              value={questionText}
-              onChange={(event) => setQuestionText(event.target.value)}
-              rows={2}
-              placeholder="Ví dụ: Liệt kê 10 khách hàng có tổng đơn hàng cao nhất"
-              disabled={saving}
-            />
-          </label>
-          <label>
-            SQL mong đợi (expected SQL)
-            <textarea
-              value={expectedSql}
-              onChange={(event) => setExpectedSql(event.target.value)}
-              rows={3}
-              placeholder="SELECT ..."
-              disabled={saving}
-              className={styles.mono}
-            />
-          </label>
-          <button type="submit" disabled={saving}>
-            {saving ? "Đang lưu…" : "Lưu câu hỏi"}
-          </button>
-        </form>
-      )}
+      {/* ====================================================== */}
+      {/* ERROR */}
+      {/* ====================================================== */}
 
-      <section className={styles.panel}>
-        <div className={styles.panelHeader}>
-          <strong>Bộ câu hỏi benchmark</strong>
-          <span>{questions.length} câu</span>
+      {error && <div className={styles.error}>{error}</div>}
+
+      {/* ====================================================== */}
+      {/* LANGUAGE FILTER */}
+      {/* ====================================================== */}
+
+      <div className={styles.toolbar}>
+        <div className={styles.tabs}>
+          <button
+            type="button"
+            className={languageFilter === "ALL" ? styles.activeTab : ""}
+            onClick={() => setLanguageFilter("ALL")}
+            disabled={running}
+          >
+            Tất cả
+          </button>
+
+          <button
+            type="button"
+            className={languageFilter === "VI" ? styles.activeTab : ""}
+            onClick={() => setLanguageFilter("VI")}
+            disabled={running}
+          >
+            Tiếng Việt
+          </button>
+
+          <button
+            type="button"
+            className={languageFilter === "EN" ? styles.activeTab : ""}
+            onClick={() => setLanguageFilter("EN")}
+            disabled={running}
+          >
+            English
+          </button>
         </div>
 
-        {loading ? (
-          <p className={styles.loadingText}>Đang tải…</p>
-        ) : questions.length === 0 ? (
-          <p className={styles.noResult}>
-            Chưa có câu hỏi nào. Nhấn "+ Thêm câu hỏi" để bắt đầu — nên có ít
-            nhất 20 câu, bao gồm cả câu hỏi mới không nằm trong few-shot
-            examples, để số liệu đánh giá đáng tin cậy.
-          </p>
-        ) : (
-          <ul className={styles.questionList}>
-            {questions.map((item) => (
-              <li key={item.id}>
-                <div className={styles.questionRow}>
-                  <span className={styles.badge}>{item.language}</span>
-                  <p>{item.questionText}</p>
+        <div className={styles.questionCount}>
+          {questions.length}/{MAX_BENCHMARK_QUESTIONS} câu hỏi
+        </div>
+      </div>
+
+      {/* ====================================================== */}
+      {/* ADD FORM */}
+      {/* ====================================================== */}
+
+      {showForm && (
+        <div className={styles.formCard}>
+          <div className={styles.formHeader}>
+            <div>
+              <h2>Thêm câu hỏi benchmark</h2>
+
+              <p>
+                AI đề xuất SQL → người dùng kiểm tra/chỉnh sửa → lưu làm SQL
+                mong đợi.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeAddForm}
+              disabled={saving || generatingSql}
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={addQuestion} className={styles.form}>
+            {/* LANGUAGE */}
+
+            <div className={styles.field}>
+              <label htmlFor="benchmark-language">Ngôn ngữ</label>
+
+              <select
+                id="benchmark-language"
+                value={language}
+                onChange={(event) =>
+                  setLanguage(event.target.value as "VI" | "EN")
+                }
+                disabled={saving || generatingSql}
+              >
+                <option value="VI"> Tiếng Việt</option>
+
+                <option value="EN"> English</option>
+              </select>
+            </div>
+
+            {/* QUESTION */}
+
+            <div className={styles.field}>
+              <label htmlFor="benchmark-question">Câu hỏi</label>
+
+              <textarea
+                id="benchmark-question"
+                value={questionText}
+                onChange={(event) => setQuestionText(event.target.value)}
+                placeholder={
+                  language === "VI"
+                    ? "Ví dụ: Liệt kê 10 khách hàng có tổng giá trị đơn hàng cao nhất"
+                    : "Example: List the 10 customers with the highest total order value"
+                }
+                rows={4}
+                disabled={saving || generatingSql}
+              />
+            </div>
+
+            {/* EXPECTED SQL */}
+
+            <div className={styles.sqlSection}>
+              <div className={styles.sqlHeader}>
+                <div>
+                  <label htmlFor="expected-sql">SQL mong đợi</label>
+
+                  <p>
+                    AI đề xuất SQL để bạn kiểm tra. Bạn có thể chỉnh sửa trực
+                    tiếp trước khi lưu.
+                  </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={generateExpectedSql}
+                  disabled={
+                    connectionId === null ||
+                    saving ||
+                    generatingSql ||
+                    !questionText.trim()
+                  }
+                >
+                  {generatingSql
+                    ? "⏳ AI đang tạo SQL..."
+                    : "✨ AI tạo SQL mong đợi"}
+                </button>
+              </div>
+
+              <textarea
+                id="expected-sql"
+                className={styles.expectedSqlInput}
+                value={expectedSql}
+                onChange={(event) => setExpectedSql(event.target.value)}
+                placeholder="SQL mong đợi ..."
+                rows={10}
+                spellCheck={false}
+                disabled={saving || generatingSql}
+              />
+
+              <div className={styles.sqlHint}>
+                ⚠️ Đây là SQL chuẩn dùng để đánh giá kết quả AI khi chạy
+                Benchmark.
+              </div>
+            </div>
+
+            {/* FORM ACTIONS */}
+
+            <div className={styles.formActions}>
+              <button
+                type="button"
+                onClick={closeAddForm}
+                disabled={saving || generatingSql}
+              >
+                Huỷ
+              </button>
+
+              <button
+                type="submit"
+                disabled={
+                  saving ||
+                  generatingSql ||
+                  !questionText.trim() ||
+                  !expectedSql.trim()
+                }
+              >
+                {saving ? "⏳ Đang lưu..." : "✓ Lưu câu hỏi"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ====================================================== */}
+      {/* EMPTY */}
+      {/* ====================================================== */}
+
+      {!loading && questions.length === 0 && (
+        <div className={styles.empty}>
+          <div>
+            <h2>Chưa có câu hỏi benchmark</h2>
+
+            <p>Không có câu hỏi phù hợp với bộ lọc hiện tại.</p>
+
+            <button
+              type="button"
+              onClick={openAddForm}
+              disabled={connectionId === null}
+            >
+              + Thêm câu hỏi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================== */}
+      {/* QUESTION LIST */}
+      {/* ====================================================== */}
+
+      {questions.length > 0 && (
+        <div className={styles.questionList}>
+          {questions.map((question, index) => (
+            <div key={question.id} className={styles.questionCard}>
+              {/* HEADER */}
+
+              <div className={styles.questionHeader}>
+                <div className={styles.questionMeta}>
+                  <span className={styles.questionNumber}>#{index + 1}</span>
+
+                  <span className={styles.languageBadge}>
+                    {question.language === "EN" ? "🇬🇧 EN" : "🇻🇳 VI"}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => deleteQuestion(question.id)}
+                  disabled={deletingId === question.id || running}
+                >
+                  {deletingId === question.id ? "⏳" : "🗑 Xoá"}
+                </button>
+              </div>
+
+              {/* QUESTION */}
+
+              <div className={styles.questionText}>{question.questionText}</div>
+
+              {/* EXPECTED SQL */}
+
+              <div className={styles.expectedSql}>
+                <div className={styles.expectedSqlHeader}>
+                  <strong>SQL mong đợi</strong>
+
+                  <span>Ground truth</span>
+                </div>
+
                 <pre>
-                  <code>{item.expectedSql}</code>
+                  <code>{question.expectedSql}</code>
                 </pre>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ====================================================== */}
+      {/* BENCHMARK RESULT */}
+      {/* ====================================================== */}
 
       {runResult && (
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <strong>Kết quả chạy gần nhất</strong>
+        <div className={styles.resultSection}>
+          <div className={styles.resultHeader}>
+            <div>
+              <h2>
+                Kết quả Benchmark
+                {languageFilter === "VI"
+                  ? " — Tiếng Việt"
+                  : languageFilter === "EN"
+                    ? " — English"
+                    : " — Tất cả"}
+              </h2>
+
+              <p>AI được gọi lại độc lập để sinh SQL cho từng câu hỏi.</p>
+            </div>
           </div>
 
-          <div className={styles.stats}>
-            <div>
+          {/* SUMMARY */}
+
+          <div className={styles.resultSummary}>
+            <div className={styles.resultStat}>
               <span>Độ chính xác</span>
+
+              {/*
+               * Backend hiện tại tính:
+               *
+               * correctCount / total * 100
+               *
+               * nên KHÔNG nhân thêm 100 ở FE.
+               */}
               <strong>{runResult.accuracy.toFixed(1)}%</strong>
             </div>
-            <div>
-              <span>Đúng / Tổng</span>
-              <strong>
-                {runResult.correctCount}/{runResult.totalQuestions}
-              </strong>
+
+            <div className={styles.resultStat}>
+              <span>Đúng</span>
+
+              <strong>{runResult.correctCount}</strong>
+            </div>
+
+            <div className={styles.resultStat}>
+              <span>Tổng số câu</span>
+
+              <strong>{runResult.totalQuestions}</strong>
             </div>
           </div>
 
-          <ul className={styles.detailList}>
-            {runResult.details.map((detail, index) => (
-              <li
-                key={`${detail.questionText}-${index}`}
-                className={detail.correct ? styles.detailOk : styles.detailFail}
+          {/* DETAILS */}
+
+          <div className={styles.resultDetails}>
+            {runResult.details?.map((detail, index) => (
+              <div
+                key={index}
+                className={
+                  detail.correct
+                    ? styles.resultItemCorrect
+                    : styles.resultItemWrong
+                }
               >
-                <div className={styles.detailHeader}>
-                  <span
-                    className={
-                      detail.correct ? styles.badgeOk : styles.badgeFail
-                    }
-                  >
-                    {detail.correct ? "✓ Đúng" : "✗ Sai"}
-                  </span>
-                  <p>{detail.questionText}</p>
-                  <small>{detail.latencyMs} ms</small>
+                {/* DETAIL HEADER */}
+
+                <div className={styles.resultItemHeader}>
+                  <span>#{index + 1}</span>
+
+                  <strong>{detail.correct ? "✓ Đúng" : "✕ Sai"}</strong>
+
+                  <span>{detail.latencyMs} ms</span>
                 </div>
 
-                <div className={styles.sqlCompare}>
-                  <div>
-                    <span>SQL mong đợi</span>
-                    <pre>
-                      <code>{detail.expectedSql}</code>
-                    </pre>
-                  </div>
-                  <div>
-                    <span>SQL AI sinh ra</span>
-                    <pre>
-                      <code>{detail.generatedSql ?? "(không có)"}</code>
-                    </pre>
-                  </div>
+                {/* QUESTION */}
+
+                <div className={styles.resultQuestion}>
+                  {detail.questionText}
                 </div>
+
+                {/* GENERATED SQL */}
+
+                <div className={styles.resultSqlBlock}>
+                  <div>
+                    <strong>SQL AI sinh ra</strong>
+                  </div>
+
+                  <pre>
+                    <code>
+                      {detail.generatedSql || "AI không tạo được SQL"}
+                    </code>
+                  </pre>
+                </div>
+
+                {/* EXPECTED SQL */}
+
+                <div className={styles.resultSqlBlock}>
+                  <div>
+                    <strong>SQL mong đợi</strong>
+                  </div>
+
+                  <pre>
+                    <code>{detail.expectedSql}</code>
+                  </pre>
+                </div>
+
+                {/* ERROR */}
 
                 {detail.errorMessage && (
-                  <p className={styles.detailError}>{detail.errorMessage}</p>
+                  <div className={styles.resultError}>
+                    <strong>Lỗi:</strong> {detail.errorMessage}
+                  </div>
                 )}
-              </li>
+              </div>
             ))}
-          </ul>
-        </section>
+          </div>
+        </div>
       )}
     </div>
   );

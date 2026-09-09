@@ -30,17 +30,20 @@ public class SchemaLoaderService {
     @Transactional(readOnly = true)
     public DatabaseSchema loadCompleteSchema(Long connectionId) {
 
-        DatabaseSchema schema = schemaRepository.findByConnectionId(connectionId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Chưa discover schema cho connection này"));
+        DatabaseSchema schema =
+                schemaRepository
+                        .findByConnectionId(connectionId)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Chưa discover schema cho connection này"
+                                ));
 
-        /*
-         * Query riêng để fetch columns.
-         * Không fetch tables + columns trong cùng một JPQL query
-         * vì cả hai đều là List/Bag.
-         */
-        tableMetadataRepository.findBySchemaIdWithColumns(schema.getId());
+        schema.getConnection().getId();
+        schema.getConnection().getDatabaseName();
+
+        tableMetadataRepository.findBySchemaIdWithColumns(
+                schema.getId()
+        );
 
         return schema;
     }

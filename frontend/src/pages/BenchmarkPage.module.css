@@ -1,358 +1,1007 @@
+/* =========================================================
+   Benchmark Page
+   ========================================================= */
+
 .page {
-  display: grid;
-  gap: 22px;
+  min-height: 100%;
+  padding: 28px;
+  box-sizing: border-box;
+  background: #f6f8fc;
+  color: #172033;
 }
 
-.heading {
+/* =========================================================
+   Loading
+   ========================================================= */
+
+.loading {
+  min-height: 400px;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 15px;
+}
+
+/* =========================================================
+   Header
+   ========================================================= */
+
+.header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: end;
-  gap: 20px;
+  gap: 24px;
+  margin-bottom: 24px;
 }
-.heading p {
-  margin: 0 0 6px;
-  color: #0b7a75;
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.heading h1 {
+
+.header h1 {
   margin: 0 0 8px;
-  color: #1e393c;
   font-size: 30px;
+  line-height: 1.2;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  color: #111827;
 }
-.heading span {
-  color: #718083;
+
+.header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
 }
-.heading label {
-  display: grid;
-  gap: 7px;
-  min-width: 270px;
-  color: #718083;
-  font-size: 11px;
-  font-weight: 700;
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
-.heading select {
+
+.headerActions button {
   min-height: 42px;
-  border: 1px solid #cfddda;
-  border-radius: 9px;
-  padding: 9px 11px;
-  color: #2d474a;
-  background: #fff;
+  padding: 0 17px;
+  border: 1px solid #d7deea;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
+
+.headerActions button:hover {
+  background: #f8fafc;
+  border-color: #b9c4d5;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+}
+
+.headerActions button:active {
+  transform: translateY(1px);
+}
+
+.headerActions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* =========================================================
+   Error
+   ========================================================= */
 
 .error {
-  padding: 12px 14px;
-  border: 1px solid #f1c2ca;
+  margin-bottom: 20px;
+  padding: 13px 16px;
+  border: 1px solid #fecaca;
   border-radius: 10px;
-  color: #a42b40;
-  background: #fff0f2;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+  line-height: 1.5;
 }
+
+/* =========================================================
+   Toolbar
+   ========================================================= */
 
 .toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 18px;
-  border: 1px solid #dfe8e5;
-  border-radius: 14px;
-  background: #fff;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .tabs {
   display: flex;
-  gap: 6px;
-}
-.tab,
-.tabActive {
-  border: 1px solid #cfddda;
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  background: #fff;
-  color: #4e6265;
-}
-.tabActive {
-  border-color: #0b7a75;
-  color: #fff;
-  background: #0b7a75;
+  align-items: center;
+  gap: 4px;
 }
 
-.toolbarActions {
-  display: flex;
-  gap: 10px;
-}
-.toolbarActions button {
-  border: 1px solid #cfddda;
+.tabs button {
+  min-width: 72px;
+  height: 38px;
+  padding: 0 15px;
+  border: 0;
   border-radius: 9px;
-  padding: 9px 16px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  background: #fff;
-  color: #2d474a;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
-.toolbarActions button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+
+.tabs button:hover {
+  background: #f1f5f9;
+  color: #334155;
 }
-.primary {
-  border: 0 !important;
-  color: #fff !important;
-  background: #0b7a75 !important;
+
+.tabs .activeTab {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.questionCount {
+  padding: 0 12px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* =========================================================
+   Form Card
+   ========================================================= */
+
+.formCard {
+  margin-bottom: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.045),
+    0 1px 3px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+}
+
+.formHeader {
+  padding: 20px 22px;
+  border-bottom: 1px solid #edf1f6;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.formHeader h2 {
+  margin: 0 0 5px;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.formHeader p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .form {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid #dfe8e5;
-  border-radius: 14px;
-  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 22px;
 }
-.form label {
-  display: grid;
-  gap: 7px;
-  color: #718083;
-  font-size: 11px;
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field label {
+  color: #334155;
+  font-size: 13px;
   font-weight: 700;
 }
-.form select,
-.form textarea {
-  border: 1px solid #cfddda;
-  border-radius: 9px;
-  padding: 10px 11px;
-  color: #2d474a;
-  font-size: 13px;
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d5dce7;
+  border-radius: 10px;
+  outline: none;
+  background: #ffffff;
+  color: #172033;
   font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.field input,
+.field select {
+  min-height: 44px;
+  padding: 0 13px;
+}
+
+.field textarea {
+  min-height: 120px;
+  padding: 13px 14px;
   resize: vertical;
 }
-.form .mono {
-  font-family: "SFMono-Regular", Consolas, monospace;
-}
-.form button {
-  justify-self: start;
-  border: 0;
-  border-radius: 9px;
-  padding: 10px 18px;
-  color: #fff;
-  background: #0b7a75;
-  font-weight: 750;
-  cursor: pointer;
-}
-.form button:disabled {
-  opacity: 0.6;
-  cursor: wait;
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #94a3b8;
 }
 
-.panel {
-  padding: 18px;
-  border: 1px solid #dfe8e5;
-  border-radius: 14px;
-  background: #fff;
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.11);
 }
-.panelHeader {
+
+.field input:disabled,
+.field textarea:disabled,
+.field select:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   SQL Section
+   ========================================================= */
+
+.sqlSection {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sqlHeader {
+  display: flex;
   align-items: center;
-  margin-bottom: 14px;
+  justify-content: space-between;
+  gap: 12px;
 }
-.panelHeader strong {
-  color: #1e393c;
-  font-size: 15px;
+
+.sqlHeader strong {
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 750;
 }
-.panelHeader span {
-  color: #899698;
+
+.sqlHint {
+  color: #64748b;
   font-size: 12px;
-}
-
-.loadingText {
-  color: #718083;
-}
-.noResult {
-  padding: 20px;
-  color: #7c898b;
-  text-align: center;
-}
-
-.questionList {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.questionList > li {
-  padding: 14px 16px;
-  border: 1px solid #eef2f1;
-  border-radius: 12px;
-  background: #f8faf9;
-}
-.questionRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.questionRow p {
-  margin: 0;
-  color: #2d474a;
-  font-size: 13px;
-}
-.badge {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  color: #08756f;
-  background: #e3f6f2;
-  font-size: 9px;
-  font-weight: 800;
-}
-.questionList pre {
-  overflow-x: auto;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: #376064;
-  background: #eef5f3;
-  font-size: 12px;
-}
-
-.stats {
-  display: flex;
-  gap: 26px;
-  margin-bottom: 18px;
-}
-.stats > div {
-  display: grid;
-  gap: 4px;
-}
-.stats span {
-  color: #899698;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-.stats strong {
-  color: #1e393c;
-  font-size: 24px;
-}
-
-.detailList {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.detailOk,
-.detailFail {
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid #eef2f1;
-}
-.detailOk {
-  background: #f1fbf7;
-  border-color: #bfe9d6;
-}
-.detailFail {
-  background: #fff5f6;
-  border-color: #f3c6cc;
-}
-.detailHeader {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.detailHeader p {
-  flex: 1;
-  margin: 0;
-  color: #2d474a;
-  font-size: 13px;
-}
-.detailHeader small {
-  flex-shrink: 0;
-  color: #899698;
-  font-size: 11px;
-}
-.badgeOk,
-.badgeFail {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 800;
-}
-.badgeOk {
-  color: #0a7a4f;
-  background: #d6f5e6;
-}
-.badgeFail {
-  color: #a42b40;
-  background: #fbdde2;
-}
-
-.sqlCompare {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.sqlCompare > div {
-  display: grid;
-  gap: 6px;
-}
-.sqlCompare span {
-  color: #899698;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-.sqlCompare pre {
-  overflow-x: auto;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: #d9f4ef;
-  background: #173639;
-  font-size: 11px;
   line-height: 1.5;
-  white-space: pre-wrap;
 }
 
-.detailError {
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  color: #a42b40;
-  background: #fff0f2;
-  font-size: 12px;
+/* =========================================================
+   Expected SQL input
+   ========================================================= */
+
+.expectedSqlInput {
+  width: 100%;
+  min-height: 250px;
+  box-sizing: border-box;
+
+  padding: 18px 20px;
+
+  border: 1px solid #334155;
+  border-radius: 11px;
+
+  background: #0f172a;
+  color: #e2e8f0;
+
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New",
+    monospace;
+
+  /* SQL dễ đọc hơn */
+  font-size: 15px;
+  line-height: 1.75;
+  font-weight: 500;
+
+  resize: vertical;
+  outline: none;
+
+  white-space: pre;
+  tab-size: 2;
+
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
+
+.expectedSqlInput::placeholder {
+  color: #64748b;
+}
+
+.expectedSqlInput:focus {
+  border-color: #818cf8;
+  box-shadow:
+    0 0 0 3px rgba(99, 102, 241, 0.13),
+    0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.expectedSqlInput:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+/* Scrollbar SQL input */
+
+.expectedSqlInput::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.expectedSqlInput::-webkit-scrollbar-track {
+  background: #172033;
+}
+
+.expectedSqlInput::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
+}
+
+.expectedSqlInput::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Firefox */
+.expectedSqlInput {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #172033;
+}
+
+/* =========================================================
+   Form Actions
+   ========================================================= */
+
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.formActions button {
+  min-height: 42px;
+  padding: 0 17px;
+
+  border: 1px solid #d5dce7;
+  border-radius: 10px;
+
+  background: #ffffff;
+  color: #334155;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.formActions button:hover {
+  background: #f8fafc;
+  border-color: #b8c2d2;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+}
+
+.formActions button:active {
+  transform: translateY(1px);
+}
+
+.formActions button:last-child {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.18);
+}
+
+.formActions button:last-child:hover {
+  border-color: #4338ca;
+  background: #4338ca;
+  box-shadow: 0 6px 15px rgba(79, 70, 229, 0.25);
+}
+
+.formActions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* =========================================================
+   Empty State
+   ========================================================= */
 
 .empty {
-  padding: 60px 22px;
-  border: 1px dashed #b9ceca;
-  border-radius: 16px;
+  padding: 45px 24px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #64748b;
   text-align: center;
-  background: #ffffff90;
-}
-.empty h1 {
-  color: #294245;
-}
-.empty p {
-  color: #7c898b;
+  font-size: 14px;
 }
 
-@media (max-width: 760px) {
-  .sqlCompare {
+/* =========================================================
+   Question List
+   ========================================================= */
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.questionCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 15px;
+  background: #ffffff;
+  overflow: hidden;
+
+  box-shadow:
+    0 3px 10px rgba(15, 23, 42, 0.035),
+    0 1px 2px rgba(15, 23, 42, 0.025);
+
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.questionCard:hover {
+  border-color: #d4dbea;
+  box-shadow:
+    0 7px 20px rgba(15, 23, 42, 0.065),
+    0 2px 5px rgba(15, 23, 42, 0.035);
+  transform: translateY(-1px);
+}
+
+.questionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+
+  padding: 14px 18px;
+
+  border-bottom: 1px solid #edf1f6;
+  background: #fbfcfe;
+}
+
+.questionMeta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.questionNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+
+  border-radius: 8px;
+
+  background: #eef2ff;
+  color: #4f46e5;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.languageBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 34px;
+  height: 24px;
+  padding: 0 8px;
+
+  border-radius: 999px;
+
+  background: #f1f5f9;
+  color: #475569;
+
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.questionHeader button {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.questionHeader button:hover {
+  color: #dc2626;
+}
+
+.questionText {
+  padding: 18px 20px 8px;
+
+  color: #1e293b;
+  font-size: 15px;
+  line-height: 1.7;
+  font-weight: 550;
+}
+
+.questionText p {
+  margin: 0;
+}
+
+/* =========================================================
+   Expected SQL display
+   ========================================================= */
+
+.expectedSql {
+  margin: 12px 18px 18px;
+
+  border: 1px solid #334155;
+  border-radius: 12px;
+
+  overflow: hidden;
+  background: #0f172a;
+
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+}
+
+.expectedSqlHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  padding: 11px 16px;
+
+  border-bottom: 1px solid #334155;
+
+  background: #1e293b;
+}
+
+.expectedSqlHeader strong {
+  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.expectedSqlHeader span {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 4px 9px;
+
+  border-radius: 999px;
+
+  background: #334155;
+  color: #cbd5e1;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.expectedSql pre {
+  margin: 0;
+  padding: 18px 20px;
+
+  overflow-x: auto;
+
+  background: #0f172a;
+}
+
+.expectedSql code {
+  display: block;
+
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New",
+    monospace;
+
+  /* Tăng kích thước SQL */
+  font-size: 15px;
+  line-height: 1.75;
+  font-weight: 500;
+
+  color: #e2e8f0;
+
+  white-space: pre;
+  tab-size: 2;
+}
+
+.expectedSql pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.expectedSql pre::-webkit-scrollbar-track {
+  background: #172033;
+}
+
+.expectedSql pre::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
+}
+
+.expectedSql pre::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* =========================================================
+   Result Section
+   ========================================================= */
+
+.resultSection {
+  margin-top: 28px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.045),
+    0 1px 3px rgba(15, 23, 42, 0.03);
+
+  overflow: hidden;
+}
+
+.resultHeader {
+  padding: 20px 22px;
+  border-bottom: 1px solid #edf1f6;
+
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.resultHeader h2 {
+  margin: 0;
+
+  color: #111827;
+  font-size: 18px;
+  font-weight: 750;
+}
+
+/* =========================================================
+   Result Summary
+   ========================================================= */
+
+.resultSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+
+  padding: 18px 22px;
+
+  border-bottom: 1px solid #edf1f6;
+}
+
+.resultStat {
+  padding: 16px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+
+  background: #f8fafc;
+}
+
+.resultStat span {
+  display: block;
+  margin-bottom: 5px;
+
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.resultStat strong {
+  display: block;
+
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+/* =========================================================
+   Result Details
+   ========================================================= */
+
+.resultDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  padding: 20px 22px 22px;
+}
+
+.resultItemCorrect,
+.resultItemWrong {
+  padding: 16px;
+
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.resultItemCorrect {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.resultItemWrong {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.resultItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 9px;
+}
+
+.resultItemHeader strong {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.resultItemCorrect .resultItemHeader strong {
+  color: #15803d;
+}
+
+.resultItemWrong .resultItemHeader strong {
+  color: #b91c1c;
+}
+
+.resultQuestion {
+  margin-bottom: 12px;
+
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 550;
+}
+
+/* =========================================================
+   Result SQL
+   ========================================================= */
+
+.resultSqlBlock {
+  margin-top: 14px;
+
+  border: 1px solid #334155;
+  border-radius: 12px;
+
+  overflow: hidden;
+
+  background: #0f172a;
+
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.resultSqlBlock > div {
+  padding: 11px 16px;
+
+  border-bottom: 1px solid #334155;
+
+  background: #1e293b;
+}
+
+.resultSqlBlock > div strong {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.resultSqlBlock pre {
+  margin: 0;
+
+  padding: 18px 20px;
+
+  overflow-x: auto;
+}
+
+.resultSqlBlock code {
+  display: block;
+
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New",
+    monospace;
+
+  font-size: 15px;
+  line-height: 1.75;
+  font-weight: 500;
+
+  color: #e2e8f0;
+
+  white-space: pre;
+  tab-size: 2;
+}
+
+.resultSqlBlock pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.resultSqlBlock pre::-webkit-scrollbar-track {
+  background: #172033;
+}
+
+.resultSqlBlock pre::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
+}
+
+.resultSqlBlock pre::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* =========================================================
+   Result Error
+   ========================================================= */
+
+.resultError {
+  margin-top: 12px;
+
+  padding: 12px 14px;
+
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+
+  background: #fff1f2;
+  color: #b91c1c;
+
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+
+  font-size: 12px;
+  line-height: 1.6;
+
+  overflow-x: auto;
+}
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .page {
+    padding: 20px;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions button {
+    flex: 1;
+  }
+
+  .resultSummary {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 14px;
+  }
+
+  .header {
+    gap: 15px;
+    margin-bottom: 18px;
+  }
+
+  .header h1 {
+    font-size: 24px;
+  }
+
   .toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .tabs {
+    width: 100%;
+  }
+
+  .tabs button {
+    flex: 1;
+  }
+
+  .questionCount {
+    padding: 4px 8px 8px;
+    text-align: center;
+  }
+
+  .form {
+    padding: 16px;
+  }
+
+  .formHeader {
+    padding: 17px;
+  }
+
+  .formActions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .formActions button {
+    width: 100%;
+  }
+
+  .questionHeader {
+    padding: 12px 14px;
+  }
+
+  .questionText {
+    padding: 15px 15px 6px;
+  }
+
+  .expectedSql {
+    margin: 10px 14px 14px;
+  }
+
+  .expectedSql pre,
+  .resultSqlBlock pre {
+    padding: 15px;
+  }
+
+  .expectedSql code,
+  .resultSqlBlock code {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .resultHeader {
+    padding: 17px;
+  }
+
+  .resultDetails {
+    padding: 15px;
+  }
+
+  .resultSummary {
+    padding: 15px;
   }
 }

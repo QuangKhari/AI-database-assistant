@@ -10,7 +10,7 @@ import java.util.Optional;
 public interface DatabaseSchemaRepository extends JpaRepository<DatabaseSchema, Long> {
 
     @Query("SELECT DISTINCT s FROM DatabaseSchema s " +
-            "LEFT JOIN FETCH s.tables " +
+            "LEFT JOIN FETCH s.tables t " +
             "WHERE s.connection.id = :connectionId")
     Optional<DatabaseSchema> findByConnectionId(@Param("connectionId") Long connectionId);
 }
