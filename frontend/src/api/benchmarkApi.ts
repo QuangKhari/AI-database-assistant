@@ -1,16 +1,23 @@
 import { apiRequest } from "./client";
 import type { BenchmarkQuestion, BenchmarkRunResponse } from "./types";
 
-// Khớp BenchmarkController.java (/api/benchmark):
-//   GET  /benchmark/questions/{connectionId}?language=VI|EN
-//   POST /benchmark/questions/{connectionId}   body: {language, questionText, expectedSql}
-//   POST /benchmark/run/{connectionId}
 export const benchmarkApi = {
   questions: (connectionId: number, language?: "VI" | "EN") =>
     apiRequest<BenchmarkQuestion[]>(
       `/benchmark/questions/${connectionId}${
         language ? `?language=${language}` : ""
       }`,
+    ),
+
+  generateExpectedSql: (connectionId: number, questionText: string) =>
+    apiRequest<{ sql: string }>(
+      `/benchmark/questions/${connectionId}/generate-sql`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          questionText,
+        }),
+      },
     ),
 
   addQuestion: (
@@ -26,8 +33,18 @@ export const benchmarkApi = {
       body: JSON.stringify(payload),
     }),
 
-  run: (connectionId: number) =>
-    apiRequest<BenchmarkRunResponse>(`/benchmark/run/${connectionId}`, {
-      method: "POST",
+  deleteQuestion: (connectionId: number, questionId: number) =>
+    apiRequest<void>(`/benchmark/questions/${connectionId}/${questionId}`, {
+      method: "DELETE",
     }),
+
+  run: (connectionId: number, language?: "VI" | "EN") =>
+    apiRequest<BenchmarkRunResponse>(
+      `/benchmark/run/${connectionId}${
+        language ? `?language=${language}` : ""
+      }`,
+      {
+        method: "POST",
+      },
+    ),
 };

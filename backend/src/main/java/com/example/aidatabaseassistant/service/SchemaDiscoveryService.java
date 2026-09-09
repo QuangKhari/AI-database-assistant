@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.aidatabaseassistant.security.SsrfProtection;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -43,6 +44,7 @@ public class SchemaDiscoveryService {
     private final EncryptionUtil encryptionUtil;
     private final UserRepository userRepository;
     private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
+    private final SsrfProtection ssrfProtection;
 
     /*
      * Điểm duy nhất mở JDBC connection tới database
@@ -171,7 +173,19 @@ public class SchemaDiscoveryService {
             Long connectionId
     ) {
 
-        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(username, connectionId);
+        DatabaseConnection connection =
+                connectionAccessGuard.requireOwnedConnection(
+                        username,
+                        connectionId
+                );
+
+        if (!"excel".equalsIgnoreCase(connection.getDbType())) {
+
+            ssrfProtection.validateHost(
+                    connection.getHost()
+            );
+        }
+
         String rawPassword =
                 encryptionUtil.decrypt(
                         connection.getEncryptedPassword()
@@ -196,6 +210,8 @@ public class SchemaDiscoveryService {
                                         )
                                         .build()
                         );
+
+        schema.setConnection(connection);
 
 
         // =====================================================

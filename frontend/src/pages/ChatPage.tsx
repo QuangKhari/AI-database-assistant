@@ -255,6 +255,7 @@ export function ChatPage() {
       const finalResult = streamResult as QueryResponse;
 
       setMessages(await chatApi.messages(finalResult.conversationId));
+      setPreview(null);
 
       await loadConversations(connectionId);
 
@@ -1034,6 +1035,39 @@ export function ChatPage() {
                       </button>
                     </div>
 
+                    <div className={styles.sqlToolsRow}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void toggleExplain(
+                            queryResult.messageId,
+                            queryResult.generatedSql,
+                          )
+                        }
+                      >
+                        {explainOpenId === queryResult.messageId
+                          ? "▲ Đóng giải thích"
+                          : "🔍 Giải thích SQL"}
+                      </button>
+                      {canOptimize && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void toggleOptimize(
+                              queryResult.messageId,
+                              queryResult.generatedSql,
+                            )
+                          }
+                        >
+                          {optimizeOpenId === queryResult.messageId
+                            ? "▲ Đóng tối ưu"
+                            : "⚡ Tối ưu SQL"}
+                        </button>
+                      )}
+                    </div>
+                    {renderExplainPanel(queryResult.messageId)}
+                    {renderOptimizePanel(queryResult.messageId)}
+
                     {queryResult.dataInsight && (
                       <div className={styles.insightPanel}>
                         <strong>Nhận định dữ liệu</strong>
@@ -1117,28 +1151,29 @@ export function ChatPage() {
                       </div>
                     )}
 
-                    {queryResult.chartSuggestion && (
-                      <div className={styles.chartPanel}>
-                        <strong>
-                          Biểu đồ đề xuất:{" "}
-                          {queryResult.chartSuggestion.chartType}
-                        </strong>
+                    {queryResult.chartSuggestion &&
+                      queryResult.chartSuggestion.chartType !== "TABLE" && (
+                        <div className={styles.chartPanel}>
+                          <strong>
+                            Biểu đồ đề xuất:{" "}
+                            {queryResult.chartSuggestion.chartType}
+                          </strong>
 
-                        <p className={styles.chartReason}>
-                          {queryResult.chartSuggestion.reason}
-                        </p>
+                          <p className={styles.chartReason}>
+                            {queryResult.chartSuggestion.reason}
+                          </p>
 
-                        {queryResult.chartSuggestion.xAxisColumn && (
-                          <small className={styles.chartAxis}>
-                            Trục X: {queryResult.chartSuggestion.xAxisColumn}
-                          </small>
-                        )}
+                          {queryResult.chartSuggestion.xAxisColumn && (
+                            <small className={styles.chartAxis}>
+                              Trục X: {queryResult.chartSuggestion.xAxisColumn}
+                            </small>
+                          )}
 
-                        <div className={styles.chartContainer}>
-                          {renderChart()}
+                          <div className={styles.chartContainer}>
+                            {renderChart()}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                   </>
                 )}
               </div>

@@ -1,8 +1,6 @@
 package com.example.aidatabaseassistant.controller;
 
-import com.example.aidatabaseassistant.dto.BenchmarkQuestionRequest;
-import com.example.aidatabaseassistant.dto.BenchmarkQuestionResponse;
-import com.example.aidatabaseassistant.dto.BenchmarkRunResponse;
+import com.example.aidatabaseassistant.dto.*;
 import com.example.aidatabaseassistant.service.BenchmarkService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -60,10 +58,32 @@ public class BenchmarkController {
         );
     }
 
+    /**
+     * Xoá một câu hỏi benchmark.
+     *
+     * DELETE /api/benchmark/questions/{connectionId}/{questionId}
+     */
+    @DeleteMapping("/questions/{connectionId}/{questionId}")
+    public ResponseEntity<Void> deleteQuestion(
+            Authentication authentication,
+            @PathVariable Long connectionId,
+            @PathVariable Long questionId) {
+
+        benchmarkService.deleteQuestion(
+                authentication.getName(),
+                connectionId,
+                questionId
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/run/{connectionId}")
     public ResponseEntity<BenchmarkRunResponse> runBenchmark(
             Authentication authentication,
-            @PathVariable Long connectionId) {
+            @PathVariable Long connectionId,
+            @RequestParam(required = false) String language) {
+
         if (!rateLimitService.tryConsume(authentication.getName())) {
             throw new com.example.aidatabaseassistant.exception.RateLimitExceededException(
                     "Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút"
@@ -71,7 +91,26 @@ public class BenchmarkController {
         }
 
         return ResponseEntity.ok(
-                benchmarkService.runBenchmark(authentication.getName(), connectionId)
+                benchmarkService.runBenchmark(
+                        authentication.getName(),
+                        connectionId,
+                        language
+                )
+        );
+    }
+
+    @PostMapping("/questions/{connectionId}/generate-sql")
+    public ResponseEntity<BenchmarkGenerateSqlResponse> generateExpectedSql(
+            Authentication authentication,
+            @PathVariable Long connectionId,
+            @Valid @RequestBody BenchmarkGenerateSqlRequest request) {
+
+        return ResponseEntity.ok(
+                benchmarkService.generateExpectedSql(
+                        authentication.getName(),
+                        connectionId,
+                        request
+                )
         );
     }
 }

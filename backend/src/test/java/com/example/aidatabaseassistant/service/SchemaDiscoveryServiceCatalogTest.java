@@ -7,6 +7,7 @@ import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.security.SsrfProtection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +56,8 @@ class SchemaDiscoveryServiceCatalogTest {
     private Connection liveConnection;
     @Mock
     private ConnectionAccessGuard connectionAccessGuard;
+    @Mock
+    private SsrfProtection ssrfProtection;
 
     private SchemaDiscoveryService service;
 
@@ -66,6 +69,7 @@ class SchemaDiscoveryServiceCatalogTest {
                 encryptionUtil,
                 userRepository,
                 connectionAccessGuard,
+                ssrfProtection,
                 targetDatabaseClient,
                 schemaEmbeddingService
         );
