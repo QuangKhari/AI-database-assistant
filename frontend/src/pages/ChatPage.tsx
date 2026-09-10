@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import { chatApi } from "../api/chatApi";
 import { connectionApi } from "../api/connectionApi";
+
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
+
 import type {
   ChatMessage,
   Conversation,
@@ -10,9 +13,12 @@ import type {
   OptimizeSqlResponse,
   QueryResponse,
 } from "../api/types";
+
 import { useToast } from "../context/ToastContext";
 import { useApiError } from "../hook/useApiError";
+
 import styles from "./ChatPage.module.css";
+
 import {
   Bar,
   BarChart,
@@ -29,64 +35,104 @@ import {
   YAxis,
 } from "recharts";
 
-// Số cuộc trò chuyện hiển thị mỗi trang ở sidebar (GET /api/conversations/paged).
+/**
+ * Số cuộc trò chuyện hiển thị mỗi trang ở sidebar
+ * (GET /api/conversations/paged).
+ */
 const CONVERSATIONS_PAGE_SIZE = 8;
 
 export function ChatPage() {
   const { showToast } = useToast();
+
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
   const [connectionId, setConnectionId] = useState<number | null>(null);
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsPage, setConversationsPage] = useState(0);
   const [conversationsTotalPages, setConversationsTotalPages] = useState(1);
   const [conversationsTotalElements, setConversationsTotalElements] =
     useState(0);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
   const [question, setQuestion] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [executing, setExecuting] = useState(false);
+
   const [streamStatus, setStreamStatus] = useState("");
+
   const { error, handleError, setError } = useApiError();
+
   const [preview, setPreview] = useState<{
     generatedSql: string;
     valid: boolean;
     errorMessage: string | null;
   } | null>(null);
+
   const [previewQuestion, setPreviewQuestion] = useState("");
-  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
+
+  /**
+   * Mỗi messageId giữ một QueryResponse riêng.
+   *
+   * Ví dụ:
+   *
+   * {
+   *   101: result của câu hỏi 1,
+   *   105: result của câu hỏi 2,
+   *   109: result của câu hỏi 3
+   * }
+   *
+   * Nhờ vậy khi hỏi câu mới, kết quả cũ không bị ghi đè.
+   */
+  const [queryResults, setQueryResults] = useState<
+    Record<number, QueryResponse>
+  >({});
+
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [refreshingSuggestions, setRefreshingSuggestions] = useState(false);
 
-  // ===== Giải thích SQL (POST /api/query/explain) — khóa theo messageId để
-  // mỗi message có panel riêng, cache lại để không gọi AI lặp lại khi mở/đóng.
+  /**
+   * Giải thích SQL
+   * Khóa theo messageId để mỗi message có panel riêng.
+   */
   const [explainOpenId, setExplainOpenId] = useState<number | null>(null);
   const [explainLoadingId, setExplainLoadingId] = useState<number | null>(null);
+
   const [explainCache, setExplainCache] = useState<
     Record<number, ExplainSqlResponse>
   >({});
 
-  // ===== Tối ưu SQL (POST /api/query/optimize) — chỉ hỗ trợ MySQL (BE chặn
-  // cứng ở SqlOptimizationService cho các dbType khác).
+  /**
+   * Tối ưu SQL
+   * Chỉ hỗ trợ MySQL.
+   */
   const [optimizeOpenId, setOptimizeOpenId] = useState<number | null>(null);
   const [optimizeLoadingId, setOptimizeLoadingId] = useState<number | null>(
     null,
   );
+
   const [optimizeCache, setOptimizeCache] = useState<
     Record<number, OptimizeSqlResponse>
   >({});
 
   const [exporting, setExporting] = useState(false);
+
   const endRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Load connections.
+   */
   useEffect(() => {
     async function loadConnections() {
       try {
         const available = (await connectionApi.list()).filter(
           (item) => item.active,
         );
+
         setConnections(available);
         setConnectionId(available[0]?.id ?? null);
       } catch (reason) {
@@ -95,12 +141,17 @@ export function ChatPage() {
         setLoading(false);
       }
     }
+
     void loadConnections();
   }, []);
 
+  /**
+   * Load conversations theo pagination.
+   */
   const loadConversations = useCallback(
     async (selectedConnectionId: number, page = 0) => {
       setConversationsLoading(true);
+
       try {
         let result = await chatApi.conversationsPaged(
           selectedConnectionId,
@@ -108,8 +159,10 @@ export function ChatPage() {
           CONVERSATIONS_PAGE_SIZE,
         );
 
-        // Trang vừa xóa hết item cuối cùng (và không phải trang đầu) ->
-        // lùi về trang trước để không hiển thị sidebar trống một cách vô lý.
+        /**
+         * Trang vừa xóa hết item cuối cùng và không phải trang đầu
+         * -> lùi về trang trước.
+         */
         if (result.content.length === 0 && page > 0) {
           result = await chatApi.conversationsPaged(
             selectedConnectionId,
@@ -122,6 +175,7 @@ export function ChatPage() {
         setConversationsPage(result.number);
         setConversationsTotalPages(Math.max(1, result.totalPages));
         setConversationsTotalElements(result.totalElements);
+
         setError("");
       } catch (reason) {
         handleError(reason, "Không tải được conversations.");
@@ -129,21 +183,43 @@ export function ChatPage() {
         setConversationsLoading(false);
       }
     },
-    [],
+    [handleError, setError],
   );
 
+  /**
+   * Khi đổi connection:
+   *
+   * - reset conversation hiện tại
+   * - reset messages
+   * - reset preview
+   * - reset query results
+   * - load conversations
+   * - load suggested questions
+   */
   useEffect(() => {
     setConversationId(null);
     setMessages([]);
     setPreview(null);
     setPreviewQuestion("");
-    setQueryResult(null);
+    setQueryResults({});
     setStreamStatus("");
+
     setSuggestedQuestions([]);
+
+    setExplainOpenId(null);
+    setExplainLoadingId(null);
+    setExplainCache({});
+
+    setOptimizeOpenId(null);
+    setOptimizeLoadingId(null);
+    setOptimizeCache({});
+
     if (connectionId !== null) {
       void loadConversations(connectionId);
-      // Lỗi suggestions không được làm hỏng Chat (theo đúng yêu cầu 4.8) -
-      // chỉ log/bỏ qua, không setError toàn trang.
+
+      /**
+       * Lỗi suggestions không được làm hỏng Chat.
+       */
       connectionApi
         .suggestedQuestions(connectionId)
         .then((result) => setSuggestedQuestions(result.questions))
@@ -151,20 +227,60 @@ export function ChatPage() {
     }
   }, [connectionId, loadConversations]);
 
+  /**
+   * Auto scroll khi có message / preview / result mới.
+   */
   useEffect(() => {
     if (typeof endRef.current?.scrollIntoView === "function") {
-      endRef.current.scrollIntoView({ behavior: "smooth" });
+      endRef.current.scrollIntoView({
+        behavior: "smooth",
+      });
     }
-  }, [messages, preview, queryResult]);
+  }, [messages, preview, queryResults]);
 
+  /**
+   * Mở một conversation.
+   *
+   * QueryResults được reset vì result của conversation cũ
+   * không nên hiển thị nhầm sang conversation mới.
+   */
   async function openConversation(id: number) {
     setConversationId(id);
+
     setPreview(null);
     setPreviewQuestion("");
-    setQueryResult(null);
+
+    setQueryResults({});
+
+    setExplainOpenId(null);
+    setExplainLoadingId(null);
+    setExplainCache({});
+
+    setOptimizeOpenId(null);
+    setOptimizeLoadingId(null);
+    setOptimizeCache({});
+
     setLoading(true);
+
     try {
-      setMessages(await chatApi.messages(id));
+      const loadedMessages = await chatApi.messages(id);
+
+      setMessages(loadedMessages);
+
+      /*
+       * Khôi phục các QueryResponse đã được backend lưu theo từng
+       * assistant message. Không chạy SQL/Gemini lại.
+       */
+      const restoredResults: Record<number, QueryResponse> = {};
+
+      for (const message of loadedMessages) {
+        if (message.role === "assistant" && message.queryResult) {
+          restoredResults[message.id] = message.queryResult;
+        }
+      }
+
+      setQueryResults(restoredResults);
+
       setError("");
     } catch (reason) {
       handleError(reason, "Không tải được nội dung hội thoại.");
@@ -173,27 +289,44 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * Tạo SQL Preview.
+   *
+   * QUAN TRỌNG:
+   * Không xóa queryResults ở đây.
+   *
+   * Vì người dùng hỏi câu mới thì kết quả của câu trước
+   * vẫn phải được giữ lại.
+   */
   async function sendQuestion(event: React.FormEvent) {
     event.preventDefault();
+
     const cleanQuestion = question.trim();
-    if (!cleanQuestion || connectionId === null) return;
+
+    if (!cleanQuestion || connectionId === null) {
+      return;
+    }
+
     setSending(true);
     setPreview(null);
-    setQueryResult(null);
+
     try {
       const result = await chatApi.preview({
         databaseConnectionId: connectionId,
         ...(conversationId ? { conversationId } : {}),
         question: cleanQuestion,
       });
+
       setPreviewQuestion(cleanQuestion);
       setQuestion("");
       setPreview(result);
-      if (!result.valid)
+
+      if (!result.valid) {
         showToast(
           result.errorMessage || "SQL chưa vượt qua kiểm tra an toàn.",
           "error",
         );
+      }
     } catch (reason) {
       showToast(
         formatErrorWithSupportCode(
@@ -206,6 +339,23 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * Execute SQL.
+   *
+   * Hướng A:
+   *
+   * Preview
+   *   ↓
+   * generatedSql
+   *   ↓
+   * Execute
+   *   ↓
+   * result
+   *   ↓
+   * summary background
+   *
+   * Không generate SQL lần 2.
+   */
   async function executeQuery() {
     if (!preview?.valid || connectionId === null || !previewQuestion) {
       return;
@@ -223,20 +373,79 @@ export function ChatPage() {
           databaseConnectionId: connectionId,
           ...(conversationId ? { conversationId } : {}),
           question: previewQuestion,
+
+          /**
+           * Dùng chính SQL đã tạo ở bước Preview.
+           *
+           * Backend không cần gọi Gemini tạo SQL lần 2.
+           */
+          generatedSql: preview.generatedSql,
         },
+
         (event) => {
+          /**
+           * STATUS
+           */
           if (event.type === "STATUS") {
             setStreamStatus(event.message);
             return;
           }
 
+          /**
+           * RESULT
+           *
+           * Mỗi QueryResponse được lưu theo messageId.
+           *
+           * Đây là phần quan trọng nhất của bản sửa.
+           */
           if (event.type === "result") {
             streamResult = event.data;
-            setQueryResult(event.data);
+
+            setQueryResults((current) => ({
+              ...current,
+              [event.data.messageId]: event.data,
+            }));
+
             setConversationId(event.data.conversationId);
+
             return;
           }
 
+          /**
+           * SUMMARY
+           *
+           * Summary được backend gửi sau khi result đã hiển thị.
+           *
+           * Không tạo QueryResponse mới.
+           * Chỉ update summary của đúng message.
+           */
+          if (event.type === "summary") {
+            const resultMessageId = streamResult?.messageId;
+
+            if (resultMessageId !== undefined && resultMessageId !== null) {
+              setQueryResults((current) => {
+                const existing = current[resultMessageId];
+
+                if (!existing) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  [resultMessageId]: {
+                    ...existing,
+                    summary: event.summary,
+                  },
+                };
+              });
+            }
+
+            return;
+          }
+
+          /**
+           * ERROR
+           */
           streamError = event.message;
           setStreamStatus(event.message);
         },
@@ -246,6 +455,11 @@ export function ChatPage() {
         throw new Error(streamError);
       }
 
+      /**
+       * Chỉ yêu cầu RESULT.
+       *
+       * Summary có thể đến background.
+       */
       if (!streamResult) {
         throw new Error(
           "Stream kết thúc nhưng không nhận được kết quả truy vấn.",
@@ -254,15 +468,43 @@ export function ChatPage() {
 
       const finalResult = streamResult as QueryResponse;
 
-      setMessages(await chatApi.messages(finalResult.conversationId));
-      setPreview(null);
+      /**
+       * Reload messages để assistant message được lưu vào conversation.
+       */
+      const loadedMessages = await chatApi.messages(finalResult.conversationId);
 
+      setMessages(loadedMessages);
+
+      /*
+       * Backend đã persist QueryResponse. Đồng bộ lại map từ response
+       * mới nhất để đảm bảo result vẫn tồn tại sau khi reload messages.
+       */
+      const restoredResults: Record<number, QueryResponse> = {};
+
+      for (const message of loadedMessages) {
+        if (message.role === "assistant" && message.queryResult) {
+          restoredResults[message.id] = message.queryResult;
+        }
+      }
+
+      setQueryResults(restoredResults);
+
+      /**
+       * Preview không còn cần nữa sau execute.
+       */
+      setPreview(null);
+      setPreviewQuestion("");
+
+      /**
+       * Refresh sidebar.
+       */
       await loadConversations(connectionId);
 
       setStreamStatus("Hoàn tất.");
     } catch (reason) {
       const fallback =
         reason instanceof Error ? reason.message : "Không thể thực thi SQL.";
+
       showToast(
         formatErrorWithSupportCode(parseApiError(reason, fallback)),
         "error",
@@ -272,13 +514,19 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * Refresh suggested questions.
+   */
   async function refreshSuggestedQuestions() {
-    if (connectionId === null) return;
+    if (connectionId === null) {
+      return;
+    }
 
     setRefreshingSuggestions(true);
 
     try {
       const result = await connectionApi.suggestedQuestions(connectionId, true);
+
       setSuggestedQuestions(result.questions);
     } catch (reason) {
       showToast(
@@ -292,19 +540,34 @@ export function ChatPage() {
     }
   }
 
-  async function exportResult() {
-    if (!queryResult || queryResult.result.error) return;
+  /**
+   * Export một QueryResponse cụ thể.
+   *
+   * Không còn phụ thuộc vào queryResult global.
+   */
+  async function exportResult(result: QueryResponse) {
+    if (result.result.error) {
+      return;
+    }
+
     setExporting(true);
+
     try {
       const { blob, filename } = await chatApi.exportExcel({
-        columns: queryResult.result.columns,
-        rows: queryResult.result.rows,
+        columns: result.result.columns,
+        rows: result.result.rows,
       });
+
       const url = URL.createObjectURL(blob);
+
       const link = document.createElement("a");
       link.href = url;
       link.download = filename;
+
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+
       URL.revokeObjectURL(url);
     } catch (reason) {
       showToast(
@@ -318,19 +581,37 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * Xóa conversation.
+   */
   async function removeConversation(item: Conversation) {
-    if (!window.confirm(`Xóa cuộc trò chuyện "${item.title}"?`)) return;
+    if (!window.confirm(`Xóa cuộc trò chuyện "${item.title}"?`)) {
+      return;
+    }
+
     try {
       await chatApi.removeConversation(item.id);
+
       if (conversationId === item.id) {
         setConversationId(null);
         setMessages([]);
         setPreview(null);
         setPreviewQuestion("");
-        setQueryResult(null);
+        setQueryResults({});
+
+        setExplainOpenId(null);
+        setExplainLoadingId(null);
+        setExplainCache({});
+
+        setOptimizeOpenId(null);
+        setOptimizeLoadingId(null);
+        setOptimizeCache({});
       }
-      if (connectionId !== null)
+
+      if (connectionId !== null) {
         await loadConversations(connectionId, conversationsPage);
+      }
+
       showToast("Đã xóa cuộc trò chuyện.", "success");
     } catch (reason) {
       showToast(
@@ -342,6 +623,9 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * Pagination conversation.
+   */
   function goToConversationsPage(nextPage: number) {
     if (
       connectionId === null ||
@@ -351,11 +635,15 @@ export function ChatPage() {
     ) {
       return;
     }
+
     void loadConversations(connectionId, nextPage);
   }
 
-  // Toggle panel "Giải thích SQL" cho một message. Kết quả được cache theo
-  // messageId nên bấm đóng/mở lại không gọi lại API (không tốn quota Gemini).
+  /**
+   * Toggle "Giải thích SQL".
+   *
+   * Cache theo messageId.
+   */
   async function toggleExplain(messageId: number, sql: string) {
     if (explainOpenId === messageId) {
       setExplainOpenId(null);
@@ -365,15 +653,22 @@ export function ChatPage() {
     setExplainOpenId(messageId);
     setOptimizeOpenId(null);
 
-    if (explainCache[messageId]) return;
+    if (explainCache[messageId]) {
+      return;
+    }
 
     setExplainLoadingId(messageId);
+
     try {
       const result = await chatApi.explain({
         sql,
         ...(connectionId ? { databaseConnectionId: connectionId } : {}),
       });
-      setExplainCache((prev) => ({ ...prev, [messageId]: result }));
+
+      setExplainCache((prev) => ({
+        ...prev,
+        [messageId]: result,
+      }));
     } catch (reason) {
       showToast(
         formatErrorWithSupportCode(
@@ -381,17 +676,22 @@ export function ChatPage() {
         ),
         "error",
       );
+
       setExplainOpenId(null);
     } finally {
       setExplainLoadingId(null);
     }
   }
 
-  // Toggle panel "Tối ưu SQL". BE hiện chỉ hỗ trợ MySQL (SqlOptimizationService
-  // ném lỗi rõ ràng cho các dbType khác) nên nút này chỉ hiện khi
-  // connection đang chọn là mysql (xem điều kiện canOptimize bên dưới).
+  /**
+   * Toggle "Tối ưu SQL".
+   *
+   * Chỉ MySQL.
+   */
   async function toggleOptimize(messageId: number, sql: string) {
-    if (connectionId === null) return;
+    if (connectionId === null) {
+      return;
+    }
 
     if (optimizeOpenId === messageId) {
       setOptimizeOpenId(null);
@@ -401,15 +701,22 @@ export function ChatPage() {
     setOptimizeOpenId(messageId);
     setExplainOpenId(null);
 
-    if (optimizeCache[messageId]) return;
+    if (optimizeCache[messageId]) {
+      return;
+    }
 
     setOptimizeLoadingId(messageId);
+
     try {
       const result = await chatApi.optimize({
         sql,
         databaseConnectionId: connectionId,
       });
-      setOptimizeCache((prev) => ({ ...prev, [messageId]: result }));
+
+      setOptimizeCache((prev) => ({
+        ...prev,
+        [messageId]: result,
+      }));
     } catch (reason) {
       showToast(
         formatErrorWithSupportCode(
@@ -417,29 +724,75 @@ export function ChatPage() {
         ),
         "error",
       );
+
       setOptimizeOpenId(null);
     } finally {
       setOptimizeLoadingId(null);
     }
   }
 
+  /**
+   * Connection không tồn tại.
+   */
   if (!loading && connections.length === 0) {
     return (
       <section className={styles.emptyPage}>
         <h1>Chưa có connection hoạt động</h1>
+
         <p>Hãy tạo connection và đồng bộ schema trước khi Chat với AI.</p>
       </section>
     );
   }
 
-  // BE (SqlOptimizationService) chỉ hỗ trợ EXPLAIN-based optimize cho MySQL.
+  /**
+   * Connection hiện tại.
+   */
   const activeConnection = connections.find((item) => item.id === connectionId);
+
+  /**
+   * BE chỉ hỗ trợ optimize MySQL.
+   */
   const canOptimize = activeConnection?.dbType === "mysql";
 
-  function buildChartData() {
-    if (!queryResult?.chartSuggestion) return [];
+  /**
+   * Kiểm tra một QueryResponse có đủ dữ liệu để biểu diễn
+   * chart hay không.
+   *
+   * 1 dòng:
+   *   -> Không chart.
+   *
+   * >= 2 dòng:
+   *   -> Có thể chart nếu backend trả chartSuggestion.
+   */
+  function canShowChart(result: QueryResponse) {
+    if (!result.chartSuggestion) {
+      return false;
+    }
 
-    const chart = queryResult.chartSuggestion;
+    if (result.result.error) {
+      return false;
+    }
+
+    if (result.result.rows.length < 2) {
+      return false;
+    }
+
+    if (result.chartSuggestion.xAxisLabels.length < 2) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Build chart data từ một QueryResponse cụ thể.
+   */
+  function buildChartData(result: QueryResponse) {
+    if (!result.chartSuggestion) {
+      return [];
+    }
+
+    const chart = result.chartSuggestion;
 
     return chart.xAxisLabels.map((label, index) => {
       const item: Record<string, string | number> = {
@@ -454,21 +807,41 @@ export function ChatPage() {
     });
   }
 
-  function renderChart() {
-    if (!queryResult?.chartSuggestion) return null;
+  /**
+   * Render chart của một QueryResponse cụ thể.
+   *
+   * Không dùng queryResult global nữa.
+   */
+  function renderChart(result: QueryResponse) {
+    if (!canShowChart(result)) {
+      return null;
+    }
 
-    const chart = queryResult.chartSuggestion;
-    const data = buildChartData();
+    const chart = result.chartSuggestion;
 
+    if (!chart) {
+      return null;
+    }
+
+    const data = buildChartData(result);
+
+    /**
+     * BAR
+     */
     if (chart.chartType === "BAR") {
       return (
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
+
             <XAxis dataKey="name" />
+
             <YAxis />
+
             <Tooltip />
+
             <Legend />
+
             {chart.series.map((series) => (
               <Bar key={series.name} dataKey={series.name} />
             ))}
@@ -477,15 +850,23 @@ export function ChatPage() {
       );
     }
 
+    /**
+     * LINE
+     */
     if (chart.chartType === "LINE") {
       return (
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
+
             <XAxis dataKey="name" />
+
             <YAxis />
+
             <Tooltip />
+
             <Legend />
+
             {chart.series.map((series) => (
               <Line key={series.name} type="monotone" dataKey={series.name} />
             ))}
@@ -494,10 +875,15 @@ export function ChatPage() {
       );
     }
 
+    /**
+     * PIE
+     */
     if (chart.chartType === "PIE") {
       const series = chart.series[0];
 
-      if (!series) return null;
+      if (!series) {
+        return null;
+      }
 
       const pieData = chart.xAxisLabels.map((label, index) => ({
         name: label,
@@ -508,7 +894,9 @@ export function ChatPage() {
         <ResponsiveContainer width="100%" height={320}>
           <PieChart>
             <Tooltip />
+
             <Legend />
+
             <Pie
               data={pieData}
               dataKey="value"
@@ -525,10 +913,15 @@ export function ChatPage() {
       );
     }
 
+    /**
+     * DONUT
+     */
     if (chart.chartType === "DONUT") {
       const series = chart.series[0];
 
-      if (!series) return null;
+      if (!series) {
+        return null;
+      }
 
       const donutData = chart.xAxisLabels.map((label, index) => ({
         name: label,
@@ -539,7 +932,9 @@ export function ChatPage() {
         <ResponsiveContainer width="100%" height={320}>
           <PieChart>
             <Tooltip />
+
             <Legend />
+
             <Pie
               data={donutData}
               dataKey="value"
@@ -557,6 +952,11 @@ export function ChatPage() {
       );
     }
 
+    /**
+     * TABLE chart.
+     *
+     * Giữ nguyên chức năng cũ.
+     */
     if (chart.chartType === "TABLE") {
       return (
         <div className={styles.chartTableWrapper}>
@@ -564,15 +964,18 @@ export function ChatPage() {
             <thead>
               <tr>
                 <th>{chart.xAxisColumn ?? "Dimension"}</th>
+
                 {chart.series.map((series) => (
                   <th key={series.name}>{series.name}</th>
                 ))}
               </tr>
             </thead>
+
             <tbody>
               {data.map((item, index) => (
                 <tr key={`${item.name}-${index}`}>
                   <td>{item.name}</td>
+
                   {chart.series.map((series) => (
                     <td key={series.name}>{String(item[series.name] ?? "")}</td>
                   ))}
@@ -587,6 +990,9 @@ export function ChatPage() {
     return null;
   }
 
+  /**
+   * Copy clipboard.
+   */
   function copyToClipboard(text: string) {
     navigator.clipboard?.writeText(text).then(
       () => showToast("Đã sao chép vào clipboard.", "success"),
@@ -594,8 +1000,13 @@ export function ChatPage() {
     );
   }
 
+  /**
+   * Render Explain panel.
+   */
   function renderExplainPanel(messageId: number) {
-    if (explainOpenId !== messageId) return null;
+    if (explainOpenId !== messageId) {
+      return null;
+    }
 
     if (explainLoadingId === messageId) {
       return (
@@ -606,16 +1017,22 @@ export function ChatPage() {
     }
 
     const data = explainCache[messageId];
-    if (!data) return null;
+
+    if (!data) {
+      return null;
+    }
 
     return (
       <div className={styles.explainPanel}>
         <strong>Giải thích SQL</strong>
+
         <p>{data.summary}</p>
+
         <ol>
           {data.steps.map((step, index) => (
             <li key={index}>
               <code>{step.clause}</code>
+
               <span>{step.explanation}</span>
             </li>
           ))}
@@ -624,8 +1041,13 @@ export function ChatPage() {
     );
   }
 
+  /**
+   * Render Optimize panel.
+   */
   function renderOptimizePanel(messageId: number) {
-    if (optimizeOpenId !== messageId) return null;
+    if (optimizeOpenId !== messageId) {
+      return null;
+    }
 
     if (optimizeLoadingId === messageId) {
       return (
@@ -636,11 +1058,15 @@ export function ChatPage() {
     }
 
     const data = optimizeCache[messageId];
-    if (!data) return null;
+
+    if (!data) {
+      return null;
+    }
 
     return (
       <div className={styles.optimizePanel}>
         <strong>Tối ưu SQL</strong>
+
         <p>{data.aiSummary}</p>
 
         {data.explainPlan.length > 0 && (
@@ -658,16 +1084,24 @@ export function ChatPage() {
                   <th>extra</th>
                 </tr>
               </thead>
+
               <tbody>
                 {data.explainPlan.map((row, index) => (
                   <tr key={index}>
                     <td>{row.id ?? "-"}</td>
+
                     <td>{row.selectType ?? "-"}</td>
+
                     <td>{row.table ?? "-"}</td>
+
                     <td>{row.type ?? "-"}</td>
+
                     <td>{row.possibleKeys ?? "-"}</td>
+
                     <td>{row.key ?? "-"}</td>
+
                     <td>{row.rows ?? "-"}</td>
+
                     <td>{row.extra ?? "-"}</td>
                   </tr>
                 ))}
@@ -679,6 +1113,7 @@ export function ChatPage() {
         {data.issues.length > 0 && (
           <div className={styles.issueList}>
             <span className={styles.subHeading}>Vấn đề phát hiện</span>
+
             <ul>
               {data.issues.map((issue, index) => (
                 <li key={index}>
@@ -693,8 +1128,10 @@ export function ChatPage() {
                   >
                     {issue.severity}
                   </span>
+
                   <div>
                     <strong>{issue.table}</strong>
+
                     <p>{issue.description}</p>
                   </div>
                 </li>
@@ -706,15 +1143,20 @@ export function ChatPage() {
         {data.suggestions.length > 0 && (
           <div className={styles.indexList}>
             <span className={styles.subHeading}>Đề xuất index</span>
+
             {data.suggestions.map((suggestion, index) => (
               <div className={styles.indexCard} key={index}>
                 <div>
                   <strong>{suggestion.table}</strong>
+
                   <span>({suggestion.columns.join(", ")})</span>
                 </div>
+
                 <p>{suggestion.reason}</p>
+
                 <div className={styles.indexSqlRow}>
                   <code>{suggestion.createIndexSql}</code>
+
                   <button
                     type="button"
                     onClick={() => copyToClipboard(suggestion.createIndexSql)}
@@ -730,17 +1172,267 @@ export function ChatPage() {
     );
   }
 
+  /**
+   * Render QueryResult của một message.
+   *
+   * Đây là phần sửa lớn nhất:
+   *
+   * queryResults[message.id]
+   *
+   * thay vì queryResult global.
+   */
+  function renderQueryResult(result: QueryResponse) {
+    return (
+      <div className={styles.resultPanel}>
+        <div className={styles.resultHeader}>
+          <strong>Kết quả truy vấn</strong>
+
+          <span>
+            {result.result.rowCount} dòng · {result.result.executionTimeMs} ms
+          </span>
+        </div>
+
+        {result.result.error ? (
+          <p className={styles.queryError}>{result.result.error}</p>
+        ) : (
+          <>
+            {/* =========================
+                RESULT TABLE
+               ========================= */}
+            <div className={styles.resultTableWrapper}>
+              <table className={styles.resultTable}>
+                <thead>
+                  <tr>
+                    {result.result.columns.map((column) => (
+                      <th key={column}>{column}</th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {result.result.rows.map((row, index) => (
+                    <tr key={index}>
+                      {result.result.columns.map((column) => (
+                        <td key={column}>{String(row[column] ?? "")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* =========================
+                SUMMARY
+               ========================= */}
+            {result.summary && (
+              <p className={styles.summary}>{result.summary}</p>
+            )}
+
+            {/* =========================
+                RESULT ACTIONS
+               ========================= */}
+            <div className={styles.resultActions}>
+              <span>
+                {result.attemptCount > 1
+                  ? `Đã tự sửa và thử lại ${result.attemptCount}/3 lần`
+                  : "SQL chạy ngay ở lần thử đầu tiên"}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => void exportResult(result)}
+                disabled={exporting}
+              >
+                {exporting ? "Đang xuất…" : "⬇ Xuất Excel"}
+              </button>
+            </div>
+
+            {/* =========================
+                SQL TOOLS
+               ========================= */}
+            <div className={styles.sqlToolsRow}>
+              <button
+                type="button"
+                onClick={() =>
+                  void toggleExplain(result.messageId, result.generatedSql)
+                }
+              >
+                {explainOpenId === result.messageId
+                  ? "▲ Đóng giải thích"
+                  : "🔍 Giải thích SQL"}
+              </button>
+
+              {canOptimize && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void toggleOptimize(result.messageId, result.generatedSql)
+                  }
+                >
+                  {optimizeOpenId === result.messageId
+                    ? "▲ Đóng tối ưu"
+                    : "⚡ Tối ưu SQL"}
+                </button>
+              )}
+            </div>
+
+            {/* =========================
+                EXPLAIN
+               ========================= */}
+            {renderExplainPanel(result.messageId)}
+
+            {/* =========================
+                OPTIMIZE
+               ========================= */}
+            {renderOptimizePanel(result.messageId)}
+
+            {/* =========================
+                DATA INSIGHT
+               ========================= */}
+            {result.dataInsight && (
+              <div className={styles.insightPanel}>
+                <strong>Nhận định dữ liệu</strong>
+
+                <p>{result.dataInsight.summary}</p>
+
+                <dl>
+                  <div>
+                    <dt>Cao nhất</dt>
+
+                    <dd>
+                      {result.dataInsight.highestLabel}:{" "}
+                      {result.dataInsight.highestValue}
+                    </dd>
+                  </div>
+
+                  <div>
+                    <dt>Thấp nhất</dt>
+
+                    <dd>
+                      {result.dataInsight.lowestLabel}:{" "}
+                      {result.dataInsight.lowestValue}
+                    </dd>
+                  </div>
+
+                  {result.dataInsight.growthPercent !== null && (
+                    <div>
+                      <dt>Tăng trưởng</dt>
+
+                      <dd>
+                        {result.dataInsight.growthPercent > 0 ? "+" : ""}
+                        {result.dataInsight.growthPercent}%
+                        {result.dataInsight.periodStartLabel &&
+                        result.dataInsight.periodEndLabel
+                          ? ` (${result.dataInsight.periodStartLabel} → ${result.dataInsight.periodEndLabel})`
+                          : ""}
+                      </dd>
+                    </div>
+                  )}
+
+                  {result.dataInsight.trend && (
+                    <div>
+                      <dt>Xu hướng</dt>
+
+                      <dd>
+                        {result.dataInsight.trend === "UP"
+                          ? "↗ Tăng"
+                          : result.dataInsight.trend === "DOWN"
+                            ? "↘ Giảm"
+                            : "→ Ổn định"}
+                      </dd>
+                    </div>
+                  )}
+
+                  {result.dataInsight.topSharePercent !== null && (
+                    <div>
+                      <dt>Tỷ trọng cao nhất</dt>
+
+                      <dd>
+                        {result.dataInsight.topShareLabel}:{" "}
+                        {result.dataInsight.topSharePercent}%
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+
+                {result.dataInsight.anomalies.length > 0 && (
+                  <div className={styles.anomalies}>
+                    <strong>Bất thường phát hiện</strong>
+
+                    <ul>
+                      {result.dataInsight.anomalies.map((anomaly, index) => (
+                        <li key={`${anomaly.label}-${index}`}>
+                          <span>{anomaly.label}</span>
+
+                          <strong>{anomaly.value}</strong>
+
+                          {anomaly.direction && (
+                            <small>{anomaly.direction}</small>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* =========================
+                CHART
+               
+                QUAN TRỌNG:
+                Chỉ hiện nếu có >= 2 rows.
+               
+                1 row:
+                -> không chart
+                -> không chart reason
+                ========================= */}
+            {canShowChart(result) &&
+              result.chartSuggestion &&
+              result.chartSuggestion.chartType !== "TABLE" && (
+                <div className={styles.chartPanel}>
+                  <strong>
+                    Biểu đồ đề xuất: {result.chartSuggestion.chartType}
+                  </strong>
+
+                  <p className={styles.chartReason}>
+                    {result.chartSuggestion.reason}
+                  </p>
+
+                  {result.chartSuggestion.xAxisColumn && (
+                    <small className={styles.chartAxis}>
+                      Trục X: {result.chartSuggestion.xAxisColumn}
+                    </small>
+                  )}
+
+                  <div className={styles.chartContainer}>
+                    {renderChart(result)}
+                  </div>
+                </div>
+              )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
+      {/* =========================
+          HEADER
+         ========================= */}
       <header className={styles.heading}>
         <div>
           <p>Natural language to SQL</p>
+
           <h1>Chat với database</h1>
+
           <span>
             AI tạo SQL preview từ schema đã đồng bộ. Bạn có thể kiểm tra SQL
             trước khi thực thi.
           </span>
         </div>
+
         <label>
           Database
           <select
@@ -756,33 +1448,56 @@ export function ChatPage() {
         </label>
       </header>
 
+      {/* =========================
+          GLOBAL ERROR
+         ========================= */}
       {error && (
         <div className={styles.error} role="alert">
           {error}
         </div>
       )}
+
       <div className={styles.workspace}>
+        {/* =========================
+            SIDEBAR
+           ========================= */}
         <aside className={styles.sidebar}>
           <button
             type="button"
             onClick={() => {
               setConversationId(null);
               setMessages([]);
+
               setPreview(null);
               setPreviewQuestion("");
-              setQueryResult(null);
+
+              setQueryResults({});
+
+              setExplainOpenId(null);
+              setExplainLoadingId(null);
+              setExplainCache({});
+
+              setOptimizeOpenId(null);
+              setOptimizeLoadingId(null);
+              setOptimizeCache({});
+
+              setStreamStatus("");
             }}
           >
             + Cuộc trò chuyện mới
           </button>
+
           <h2>Gần đây</h2>
+
           <div className={styles.conversationList}>
             {conversationsLoading && conversations.length === 0 && (
               <small>Đang tải…</small>
             )}
+
             {!conversationsLoading && conversations.length === 0 && (
               <small>Chưa có cuộc trò chuyện.</small>
             )}
+
             {conversations.map((item) => (
               <div
                 className={item.id === conversationId ? styles.selected : ""}
@@ -793,10 +1508,12 @@ export function ChatPage() {
                   onClick={() => void openConversation(item.id)}
                 >
                   <strong>{item.title}</strong>
+
                   <span>
                     {new Date(item.updatedAt).toLocaleString("vi-VN")}
                   </span>
                 </button>
+
                 <button
                   type="button"
                   aria-label={`Xóa ${item.title}`}
@@ -813,6 +1530,7 @@ export function ChatPage() {
               <span>
                 Trang {conversationsPage + 1}/{conversationsTotalPages}
               </span>
+
               <div>
                 <button
                   type="button"
@@ -821,6 +1539,7 @@ export function ChatPage() {
                 >
                   ‹ Trước
                 </button>
+
                 <button
                   type="button"
                   disabled={
@@ -836,6 +1555,9 @@ export function ChatPage() {
           )}
         </aside>
 
+        {/* =========================
+            CHAT
+           ========================= */}
         <section className={styles.chatPanel}>
           <div className={styles.messages} aria-live="polite">
             {loading ? (
@@ -843,82 +1565,119 @@ export function ChatPage() {
             ) : messages.length === 0 ? (
               <div className={styles.welcome}>
                 <span>AI</span>
+
                 <h2>Bạn muốn tìm dữ liệu gì?</h2>
+
                 <p>Ví dụ: "Liệt kê 10 khách hàng có tổng đơn hàng cao nhất."</p>
+
                 <small>
                   AI chỉ dùng schema của connection đang chọn và nhớ tối đa 3
                   lượt gần nhất.
                 </small>
               </div>
             ) : (
-              messages.map((message) => (
-                <article
-                  className={
-                    message.role === "user"
-                      ? styles.userMessage
-                      : styles.assistantMessage
-                  }
-                  key={message.id}
-                >
-                  <header>
-                    {message.role === "user" ? "Bạn" : "AI QueryMate"}
-                  </header>
-                  <p>{message.content}</p>
-                  {message.generatedSql && (
-                    <div className={styles.sql}>
-                      <div>
-                        <span>SQL</span>
-                        <small>Đã thực thi</small>
-                      </div>
-                      <pre>
-                        <code>{message.generatedSql}</code>
-                      </pre>
-                    </div>
-                  )}
-                  {message.generatedSql && (
-                    <div className={styles.sqlToolsRow}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void toggleExplain(
-                            message.id,
-                            message.generatedSql as string,
-                          )
-                        }
-                      >
-                        {explainOpenId === message.id
-                          ? "▲ Đóng giải thích"
-                          : "🔍 Giải thích SQL"}
-                      </button>
-                      {canOptimize && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void toggleOptimize(
-                              message.id,
-                              message.generatedSql as string,
-                            )
-                          }
-                        >
-                          {optimizeOpenId === message.id
-                            ? "▲ Đóng tối ưu"
-                            : "⚡ Tối ưu SQL"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {renderExplainPanel(message.id)}
-                  {renderOptimizePanel(message.id)}
-                </article>
-              ))
+              messages.map((message) => {
+                /**
+                 * Result tương ứng với message
+                 * hiện tại.
+                 */
+                const messageResult =
+                  message.role === "assistant"
+                    ? queryResults[message.id]
+                    : undefined;
+
+                return (
+                  <article
+                    className={
+                      message.role === "user"
+                        ? styles.userMessage
+                        : styles.assistantMessage
+                    }
+                    key={message.id}
+                  >
+                    <header>
+                      {message.role === "user" ? "Bạn" : "AI QueryMate"}
+                    </header>
+
+                    <p>{message.content}</p>
+
+                    {/* =================
+                          SQL MESSAGE
+                         ================= */}
+                    {message.generatedSql && (
+                      <>
+                        <div className={styles.sql}>
+                          <div>
+                            <span>SQL</span>
+
+                            <small>Đã thực thi</small>
+                          </div>
+
+                          <pre>
+                            <code>{message.generatedSql}</code>
+                          </pre>
+                        </div>
+
+                        <div className={styles.sqlToolsRow}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void toggleExplain(
+                                message.id,
+                                message.generatedSql as string,
+                              )
+                            }
+                          >
+                            {explainOpenId === message.id
+                              ? "▲ Đóng giải thích"
+                              : "🔍 Giải thích SQL"}
+                          </button>
+
+                          {canOptimize && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void toggleOptimize(
+                                  message.id,
+                                  message.generatedSql as string,
+                                )
+                              }
+                            >
+                              {optimizeOpenId === message.id
+                                ? "▲ Đóng tối ưu"
+                                : "⚡ Tối ưu SQL"}
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {renderExplainPanel(message.id)}
+
+                    {renderOptimizePanel(message.id)}
+
+                    {/* =================
+                          QUERY RESULT
+                         
+                          Chỉ render result
+                          của message này.
+                         ================= */}
+                    {messageResult && renderQueryResult(messageResult)}
+                  </article>
+                );
+              })
             )}
 
+            {/* =========================
+                SUGGESTIONS
+               ========================= */}
             {messages.length === 0 &&
               !loading &&
               suggestedQuestions.length > 0 && (
                 <div className={styles.suggestions}>
                   <div className={styles.suggestionsHeader}>
                     <span>Gợi ý câu hỏi:</span>
+
                     <button
                       type="button"
                       onClick={() => void refreshSuggestedQuestions()}
@@ -927,6 +1686,7 @@ export function ChatPage() {
                       {refreshingSuggestions ? "Đang làm mới…" : "↻ Làm mới"}
                     </button>
                   </div>
+
                   <div>
                     {suggestedQuestions.map((suggestion) => (
                       <button
@@ -941,31 +1701,41 @@ export function ChatPage() {
                 </div>
               )}
 
+            {/* =========================
+                STREAM STATUS
+               ========================= */}
             {streamStatus && (
               <p className={styles.summary} role="status">
                 {streamStatus}
               </p>
             )}
 
+            {/* =========================
+                SQL PREVIEW
+               ========================= */}
             {preview && (
               <div className={styles.previewPanel}>
                 <div className={styles.sql}>
                   <div>
                     <span>SQL preview</span>
+
                     <small>
                       {preview.valid ? "SQL hợp lệ" : "SQL không hợp lệ"}
                     </small>
                   </div>
+
                   <pre>
                     <code>{preview.generatedSql}</code>
                   </pre>
                 </div>
+
                 {!preview.valid && (
                   <p className={styles.queryError}>
                     {preview.errorMessage ||
                       "SQL không vượt qua kiểm tra an toàn."}
                   </p>
                 )}
+
                 {preview.valid && (
                   <button
                     type="button"
@@ -978,210 +1748,12 @@ export function ChatPage() {
               </div>
             )}
 
-            {queryResult && (
-              <div className={styles.resultPanel}>
-                <div className={styles.resultHeader}>
-                  <strong>Kết quả truy vấn</strong>
-                  <span>
-                    {queryResult.result.rowCount} dòng ·{" "}
-                    {queryResult.result.executionTimeMs} ms
-                  </span>
-                </div>
-
-                {queryResult.result.error ? (
-                  <p className={styles.queryError}>
-                    {queryResult.result.error}
-                  </p>
-                ) : (
-                  <>
-                    <div className={styles.resultTableWrapper}>
-                      <table className={styles.resultTable}>
-                        <thead>
-                          <tr>
-                            {queryResult.result.columns.map((column) => (
-                              <th key={column}>{column}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {queryResult.result.rows.map((row, index) => (
-                            <tr key={index}>
-                              {queryResult.result.columns.map((column) => (
-                                <td key={column}>
-                                  {String(row[column] ?? "")}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {queryResult.summary && (
-                      <p className={styles.summary}>{queryResult.summary}</p>
-                    )}
-
-                    <div className={styles.resultActions}>
-                      <span>
-                        {queryResult.attemptCount > 1
-                          ? `Đã tự sửa và thử lại ${queryResult.attemptCount}/3 lần`
-                          : "SQL chạy ngay ở lần thử đầu tiên"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void exportResult()}
-                        disabled={exporting}
-                      >
-                        {exporting ? "Đang xuất…" : "⬇ Xuất Excel"}
-                      </button>
-                    </div>
-
-                    <div className={styles.sqlToolsRow}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void toggleExplain(
-                            queryResult.messageId,
-                            queryResult.generatedSql,
-                          )
-                        }
-                      >
-                        {explainOpenId === queryResult.messageId
-                          ? "▲ Đóng giải thích"
-                          : "🔍 Giải thích SQL"}
-                      </button>
-                      {canOptimize && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void toggleOptimize(
-                              queryResult.messageId,
-                              queryResult.generatedSql,
-                            )
-                          }
-                        >
-                          {optimizeOpenId === queryResult.messageId
-                            ? "▲ Đóng tối ưu"
-                            : "⚡ Tối ưu SQL"}
-                        </button>
-                      )}
-                    </div>
-                    {renderExplainPanel(queryResult.messageId)}
-                    {renderOptimizePanel(queryResult.messageId)}
-
-                    {queryResult.dataInsight && (
-                      <div className={styles.insightPanel}>
-                        <strong>Nhận định dữ liệu</strong>
-                        <p>{queryResult.dataInsight.summary}</p>
-
-                        <dl>
-                          <div>
-                            <dt>Cao nhất</dt>
-                            <dd>
-                              {queryResult.dataInsight.highestLabel}:{" "}
-                              {queryResult.dataInsight.highestValue}
-                            </dd>
-                          </div>
-
-                          <div>
-                            <dt>Thấp nhất</dt>
-                            <dd>
-                              {queryResult.dataInsight.lowestLabel}:{" "}
-                              {queryResult.dataInsight.lowestValue}
-                            </dd>
-                          </div>
-
-                          {queryResult.dataInsight.growthPercent !== null && (
-                            <div>
-                              <dt>Tăng trưởng</dt>
-                              <dd>
-                                {queryResult.dataInsight.growthPercent > 0
-                                  ? "+"
-                                  : ""}
-                                {queryResult.dataInsight.growthPercent}%
-                                {queryResult.dataInsight.periodStartLabel &&
-                                queryResult.dataInsight.periodEndLabel
-                                  ? ` (${queryResult.dataInsight.periodStartLabel} → ${queryResult.dataInsight.periodEndLabel})`
-                                  : ""}
-                              </dd>
-                            </div>
-                          )}
-
-                          {queryResult.dataInsight.trend && (
-                            <div>
-                              <dt>Xu hướng</dt>
-                              <dd>
-                                {queryResult.dataInsight.trend === "UP"
-                                  ? "↗ Tăng"
-                                  : queryResult.dataInsight.trend === "DOWN"
-                                    ? "↘ Giảm"
-                                    : "→ Ổn định"}
-                              </dd>
-                            </div>
-                          )}
-
-                          {queryResult.dataInsight.topSharePercent !== null && (
-                            <div>
-                              <dt>Tỷ trọng cao nhất</dt>
-                              <dd>
-                                {queryResult.dataInsight.topShareLabel}:{" "}
-                                {queryResult.dataInsight.topSharePercent}%
-                              </dd>
-                            </div>
-                          )}
-                        </dl>
-
-                        {queryResult.dataInsight.anomalies.length > 0 && (
-                          <div className={styles.anomalies}>
-                            <strong>Bất thường phát hiện</strong>
-                            <ul>
-                              {queryResult.dataInsight.anomalies.map(
-                                (anomaly, index) => (
-                                  <li key={`${anomaly.label}-${index}`}>
-                                    <span>{anomaly.label}</span>
-                                    <strong>{anomaly.value}</strong>
-                                    {anomaly.direction && (
-                                      <small>{anomaly.direction}</small>
-                                    )}
-                                  </li>
-                                ),
-                              )}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {queryResult.chartSuggestion &&
-                      queryResult.chartSuggestion.chartType !== "TABLE" && (
-                        <div className={styles.chartPanel}>
-                          <strong>
-                            Biểu đồ đề xuất:{" "}
-                            {queryResult.chartSuggestion.chartType}
-                          </strong>
-
-                          <p className={styles.chartReason}>
-                            {queryResult.chartSuggestion.reason}
-                          </p>
-
-                          {queryResult.chartSuggestion.xAxisColumn && (
-                            <small className={styles.chartAxis}>
-                              Trục X: {queryResult.chartSuggestion.xAxisColumn}
-                            </small>
-                          )}
-
-                          <div className={styles.chartContainer}>
-                            {renderChart()}
-                          </div>
-                        </div>
-                      )}
-                  </>
-                )}
-              </div>
-            )}
-
             <div ref={endRef} />
           </div>
 
+          {/* =========================
+              COMPOSER
+             ========================= */}
           <form className={styles.composer} onSubmit={sendQuestion}>
             <textarea
               value={question}
@@ -1191,8 +1763,10 @@ export function ChatPage() {
               rows={3}
               disabled={sending || executing || connectionId === null}
             />
+
             <div>
               <small>{question.length}/2000 · Enter xuống dòng</small>
+
               <button
                 type="submit"
                 disabled={sending || executing || !question.trim()}

@@ -10,13 +10,16 @@ import com.example.aidatabaseassistant.repository.ConversationRepository;
 import com.example.aidatabaseassistant.repository.MessageRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.aidatabaseassistant.exception.ForbiddenResourceException;
 import com.example.aidatabaseassistant.exception.ResourceNotFoundException;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.dto.QueryResponse;
 
 import org.springframework.data.domain.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,12 +27,15 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class ConversationService {
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
     private final ConnectionAccessGuard connectionAccessGuard;
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public List<ConversationResponse> getConversations(String username) {
         User user = connectionAccessGuard.requireUser(username);
@@ -142,6 +148,36 @@ public class ConversationService {
                         ))
                         .collect(Collectors.toList());
 
+        QueryResponse queryResult = null;
+
+        if (m.getQueryResponseJson() != null
+                && !m.getQueryResponseJson().isBlank()) {
+
+            try {
+
+                queryResult = OBJECT_MAPPER.readValue(
+                        m.getQueryResponseJson(),
+                        QueryResponse.class
+                );
+
+            } catch (Exception e) {
+
+                /*
+                 * Không làm hỏng toàn bộ conversation,
+                 * nhưng phải log lỗi để có thể phát hiện
+                 * snapshot không deserialize được.
+                 */
+                log.warn(
+                        "[QUERY SNAPSHOT] Không thể deserialize queryResponseJson cho messageId={}: {}",
+                        m.getId(),
+                        e.getMessage(),
+                        e
+                );
+
+                queryResult = null;
+            }
+        }
+
         return new MessageResponse(
                 m.getId(),
                 m.getRole(),
@@ -149,7 +185,8 @@ public class ConversationService {
                 m.getGeneratedSql(),
                 m.getCreatedAt(),
                 logs,
-                Boolean.TRUE.equals(m.getPinned())
+                Boolean.TRUE.equals(m.getPinned()),
+                queryResult
         );
     }
 

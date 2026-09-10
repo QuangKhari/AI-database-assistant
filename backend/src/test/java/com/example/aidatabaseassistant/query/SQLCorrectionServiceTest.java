@@ -550,4 +550,59 @@ class SQLCorrectionServiceTest {
                         anyString()
                 );
     }
+
+    @Test
+    void runWithGeneratedSql_shouldNotGenerateSqlAgain_whenPreviewSqlIsProvided() {
+
+        String generatedSql =
+                "SELECT COUNT(*) AS total FROM customers";
+
+        QueryResultDto queryResult =
+                new QueryResultDto(
+                        List.of("total"),
+                        List.of(
+                                Map.of("total", 10)
+                        ),
+                        10,
+                        1,
+                        null
+                );
+
+        when(queryExecutor.executeQuery(
+                any(),
+                any(),
+                anyInt(),
+                any(),
+                any(),
+                any(),
+                eq(generatedSql)
+        )).thenReturn(queryResult);
+
+        SQLCorrectionService.AttemptResult result =
+                sqlCorrectionService.runWithGeneratedSql(
+                        "Có bao nhiêu khách hàng?",
+                        generatedSql,
+                        schema,
+                        schema,
+                        connection,
+                        "pwd",
+                        null
+                );
+
+        assertTrue(result.isSuccess());
+        assertEquals(generatedSql, result.getSql());
+
+        verify(nl2SQLEngine, never())
+                .generateSQL(anyString(), any(DatabaseSchema.class));
+
+        verify(queryExecutor, times(1)).executeQuery(
+                any(),
+                any(),
+                anyInt(),
+                any(),
+                any(),
+                any(),
+                eq(generatedSql)
+        );
+    }
 }

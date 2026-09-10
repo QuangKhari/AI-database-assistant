@@ -93,6 +93,7 @@ public class CacheConfig implements CachingConfigurer {
     public static final String FULL_SCHEMA_CACHE = "fullSchema";
     public static final String TABLE_EMBEDDINGS_CACHE = "tableEmbeddings";
     public static final String ADMIN_STATS_CACHE = "adminStats";
+    public static final String SQL_GENERATION_CACHE = "sqlGeneration";
 
     /**
      * none   = tat cache hoan toan (dung trong test).
@@ -113,6 +114,12 @@ public class CacheConfig implements CachingConfigurer {
 
     @Value("${app.cache.admin-stats.ttl-seconds:60}")
     private long adminStatsTtlSeconds;
+
+    @Value("${app.cache.sql-generation.ttl-minutes:10}")
+    private long sqlGenerationTtlMinutes;
+
+    @Value("${app.cache.sql-generation.max-size:1000}")
+    private long sqlGenerationMaxSize;
 
     @Override
     public CacheManager cacheManager() {
@@ -199,6 +206,23 @@ public class CacheConfig implements CachingConfigurer {
                         .maximumSize(fullSchemaMaxSize)
                         .recordStats()
         );
+        return manager;
+    }
+
+    @Bean("sqlGenerationCacheManager")
+    public CacheManager sqlGenerationCacheManager() {
+
+        CaffeineCacheManager manager =
+                new CaffeineCacheManager(SQL_GENERATION_CACHE);
+
+        manager.setCaffeine(
+                Caffeine.newBuilder()
+                        .expireAfterWrite(
+                                Duration.ofMinutes(sqlGenerationTtlMinutes)
+                        )
+                        .maximumSize(sqlGenerationMaxSize)
+        );
+
         return manager;
     }
 
