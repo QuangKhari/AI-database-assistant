@@ -9,8 +9,8 @@ import com.example.aidatabaseassistant.query.QueryExecutor;
 import com.example.aidatabaseassistant.query.QueryValidator;
 import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpStatusCodeException;
 import com.example.aidatabaseassistant.entity.User;
 
@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BenchmarkService {
 
     @org.springframework.beans.factory.annotation.Value(
@@ -484,9 +485,9 @@ public class BenchmarkService {
                     throw e;
                 }
 
-                System.out.println(
-                        "Gemini rate limit (429). " +
-                                "Attempt " + attempt + "/" + maxRetries
+                log.warn(
+                        "Gemini rate limit (429). Attempt {}/{}",
+                        attempt, maxRetries
                 );
 
                 if (attempt == maxRetries) {

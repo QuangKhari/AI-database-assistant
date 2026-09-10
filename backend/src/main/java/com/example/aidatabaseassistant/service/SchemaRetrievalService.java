@@ -3,18 +3,21 @@ package com.example.aidatabaseassistant.service;
 import com.example.aidatabaseassistant.ai.LLMClient;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableMetadata;
+import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,7 +36,25 @@ public class SchemaRetrievalService {
      */
 
     private final LLMClient llmClient;
+
     private final SchemaEmbeddingService schemaEmbeddingService;
+
+    private final DatabaseSchemaRepository databaseSchemaRepository;
+
+    /*
+     * Dùng TransactionTemplate thay vì @Transactional cho
+     * loadSchemaForRag().
+     *
+     * Mục đích:
+     *
+     * - chỉ mở transaction trong thời gian LOAD schema
+     * - initialize toàn bộ lazy columns
+     * - kết thúc transaction
+     * - sau đó mới gọi Gemini trong ensureEmbeddings()
+     *
+     * Tuyệt đối không giữ transaction trong lúc gọi HTTP Gemini.
+     */
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * Bật / tắt RAG bằng application.properties.
@@ -68,16 +89,6 @@ public class SchemaRetrievalService {
      * Ngưỡng cosine similarity tối thiểu để một bảng
      * được coi là "liên quan" tới câu hỏi.
      *
-     * Nếu similarity < minSimilarity:
-     *
-     *     bảng bị loại khỏi kết quả, kể cả khi
-     *     nó nằm trong top-K theo thứ hạng.
-     *
-     * Mục đích: top-K một mình không đủ, vì top-K
-     * luôn trả về K bảng "gần nhất có thể" ngay cả khi
-     * câu hỏi không thực sự liên quan tới bảng nào
-     * (similarity thấp nhưng vẫn là số cao nhất trong danh sách).
-     *
      * schema.rag.min-similarity=0.5
      */
     @Value("${schema.rag.min-similarity:0.5}")
@@ -90,9 +101,17 @@ public class SchemaRetrievalService {
      *
      * question
      *      ↓
-     * question embedding
+     * kiểm tra RAG
      *      ↓
-     * table embeddings
+     * load schema cho RAG
+     *      ↓
+     * initialize lazy columns
+     *      ↓
+     * transaction kết thúc
+     *      ↓
+     * ensure table embeddings
+     *      ↓
+     * question embedding
      *      ↓
      * cosine similarity
      *      ↓
@@ -105,6 +124,12 @@ public class SchemaRetrievalService {
     public DatabaseSchema retrieveRelevantSchema(
             String question,
             DatabaseSchema fullSchema) {
+
+        /*
+         * =========================================================
+         * 0. VALIDATION
+         * =========================================================
+         */
 
         if (question == null || question.isBlank()) {
             return fullSchema;
@@ -122,6 +147,8 @@ public class SchemaRetrievalService {
          * 1. RAG OFF / DATABASE NHỎ
          * =========================================================
          *
+         * Không load lại schema.
+         *
          * Không gọi embedding API.
          *
          * Trả nguyên schema.
@@ -135,21 +162,80 @@ public class SchemaRetrievalService {
 
         /*
          * =========================================================
-         * 2. ĐẢM BẢO TABLE EMBEDDINGS ĐÃ TỒN TẠI
+         * 2. LOAD SCHEMA RIÊNG CHO RAG
          * =========================================================
          *
-         * Nếu discovery đã tạo embedding:
+         * Đây là phần FIX MultipleBagFetchException + Lazy Loading.
          *
-         *     không gọi lại API nếu hash + model không đổi.
+         * findByIdForRag():
          *
-         * Nếu thiếu:
+         *     FETCH connection
+         *     FETCH tables
          *
-         *     tự động tạo.
+         * Không FETCH columns trong JPQL vì:
+         *
+         *     DatabaseSchema.tables  -> List
+         *     TableMetadata.columns   -> List
+         *
+         * Hibernate sẽ báo:
+         *
+         *     MultipleBagFetchException
+         *
+         * Vì vậy columns được initialize riêng trong một
+         * transaction ngắn bởi loadSchemaForRag().
+         */
+        DatabaseSchema ragSchema;
+
+        try {
+
+            ragSchema =
+                    loadSchemaForRag(
+                            fullSchema.getId()
+                    );
+
+        } catch (Exception e) {
+
+            /*
+             * RAG là chức năng bổ sung.
+             *
+             * Nếu không thể load schema cho RAG:
+             *
+             *     không được làm hỏng query chính.
+             *
+             * Fallback về schema ban đầu.
+             */
+            log.warn(
+                    "Không thể load đầy đủ schema {} cho RAG: {}",
+                    fullSchema.getId(),
+                    e.getMessage()
+            );
+
+            return fullSchema;
+        }
+
+        /*
+         * =========================================================
+         * 3. ĐẢM BẢO TABLE EMBEDDINGS ĐÃ TỒN TẠI
+         * =========================================================
+         *
+         * QUAN TRỌNG:
+         *
+         * Transaction ở loadSchemaForRag() đã kết thúc.
+         *
+         * Vì vậy khi ensureEmbeddings() gọi:
+         *
+         *     llmClient.generateEmbedding(...)
+         *
+         * sẽ KHÔNG giữ connection của transaction load schema.
+         *
+         * ensureEmbeddings() cũng KHÔNG được có @Transactional.
          */
         try {
+
             schemaEmbeddingService.ensureEmbeddings(
-                    fullSchema
+                    ragSchema
             );
+
         } catch (Exception e) {
 
             /*
@@ -163,7 +249,7 @@ public class SchemaRetrievalService {
              */
             log.warn(
                     "Không thể đảm bảo schema embeddings cho schema {}: {}",
-                    fullSchema.getId(),
+                    ragSchema.getId(),
                     e.getMessage()
             );
 
@@ -172,7 +258,7 @@ public class SchemaRetrievalService {
 
         /*
          * =========================================================
-         * 3. EMBEDDING CỦA QUESTION
+         * 4. EMBEDDING CỦA QUESTION
          * =========================================================
          */
         float[] questionVector;
@@ -193,7 +279,7 @@ public class SchemaRetrievalService {
              */
             log.warn(
                     "Không thể tạo question embedding cho schema {}: {}",
-                    fullSchema.getId(),
+                    ragSchema.getId(),
                     e.getMessage()
             );
 
@@ -209,7 +295,7 @@ public class SchemaRetrievalService {
 
             log.warn(
                     "Question embedding không hợp lệ cho schema {}",
-                    fullSchema.getId()
+                    ragSchema.getId()
             );
 
             return fullSchema;
@@ -217,34 +303,32 @@ public class SchemaRetrievalService {
 
         /*
          * =========================================================
-         * 4. LOAD TOÀN BỘ TABLE EMBEDDING CHỈ 1 LẦN
+         * 5. LOAD TOÀN BỘ TABLE EMBEDDING CHỈ 1 LẦN
          * =========================================================
          *
-         * FIX (audit Redis caching): trước đây query DB trực tiếp
-         * (tableEmbeddingRepository.findBySchemaId) ở NGAY ĐÂY - chạy
-         * lại trên MỌI câu hỏi người dùng gõ, dù embedding không hề đổi.
-         * Giờ đi qua SchemaEmbeddingService.getEmbeddingsByTableName(),
-         * method có @Cacheable("tableEmbeddings") - cache này đã được
-         * cấu hình sẵn từ trước (Caffeine/Redis tùy app.cache.provider)
-         * nhưng chưa từng thực sự được áp dụng ở đâu.
+         * Đọc thông qua SchemaEmbeddingService để sử dụng
+         * @Cacheable("tableEmbeddings").
          *
-         * Không thể đặt @Cacheable trực tiếp ở method này (self-
-         * invocation - Spring AOP proxy không chặn được lời gọi nội bộ
-         * "this.xxx()"), nên logic được chuyển sang SchemaEmbeddingService
-         * (bean khác, gọi qua field đã có sẵn).
+         * Nếu cache hit:
+         *
+         *     không query DB.
+         *
+         * Nếu cache miss:
+         *
+         *     query toàn bộ embedding của schema 1 lần.
          */
         Map<String, float[]> embeddingsByName =
                 schemaEmbeddingService.getEmbeddingsByTableName(
-                        fullSchema.getId()
+                        ragSchema.getId()
                 );
 
         /*
          * =========================================================
-         * 5. TÍNH SIMILARITY
+         * 6. TÍNH SIMILARITY
          * =========================================================
          */
         List<Map.Entry<TableMetadata, Double>> scored =
-                fullSchema.getTables()
+                ragSchema.getTables()
                         .stream()
 
                         /*
@@ -269,7 +353,7 @@ public class SchemaRetrievalService {
                          * - khác dimension
                          * - zero-vector
                          *
-                         * Những bảng này sẽ bị loại bỏ.
+                         * cosineSimilarity() sẽ trả NaN.
                          */
                         .map(table -> {
 
@@ -294,8 +378,6 @@ public class SchemaRetrievalService {
 
                         /*
                          * Chỉ giữ similarity hợp lệ.
-                         *
-                         * Không được để vector invalid lọt vào Top-K.
                          */
                         .filter(entry ->
                                 Double.isFinite(
@@ -317,9 +399,8 @@ public class SchemaRetrievalService {
                         .collect(Collectors.toList());
 
         /*
-         * Log toàn bộ similarity score (đã sắp xếp) để tiện
-         * theo dõi / tinh chỉnh schema.rag.min-similarity
-         * bằng dữ liệu thật, thay vì đoán mò.
+         * Log toàn bộ similarity score để tiện theo dõi
+         * và tinh chỉnh minSimilarity.
          */
         if (log.isDebugEnabled()) {
 
@@ -327,8 +408,10 @@ public class SchemaRetrievalService {
                     "Similarity scores cho câu hỏi \"{}\": {}",
                     question,
                     scored.stream()
-                            .map(e -> e.getKey().getName()
-                                            + "=" + String.format(
+                            .map(e ->
+                                    e.getKey().getName()
+                                            + "="
+                                            + String.format(
                                             Locale.ROOT,
                                             "%.3f",
                                             e.getValue()
@@ -338,36 +421,29 @@ public class SchemaRetrievalService {
             );
         }
 
+        /*
+         * =========================================================
+         * 7. LỌC THEO MIN SIMILARITY + TOP-K
+         * =========================================================
+         */
         List<TableMetadata> ranked =
                 scored.stream()
 
                         /*
-                         * =========================================
-                         * NGƯỠNG SIMILARITY
-                         * =========================================
-                         *
-                         * Loại các bảng có similarity quá thấp,
-                         * dù chúng vẫn có thể lọt vào top-K nếu
-                         * chỉ xét theo thứ hạng.
-                         *
-                         * Ví dụ: câu hỏi không liên quan tới bảng
-                         * nào trong DB -> tất cả similarity đều thấp
-                         * -> không nên ép trả về K bảng "đỡ tệ nhất".
+                         * Không lấy bảng có similarity quá thấp.
                          */
                         .filter(entry ->
-                                entry.getValue() >= minSimilarity
+                                entry.getValue()
+                                        >= minSimilarity
                         )
 
                         /*
-                         * Không lấy quá số bảng thực tế.
-                         *
-                         * scored đã được sắp xếp giảm dần similarity
-                         * từ bước trước.
+                         * Không lấy quá topK.
                          */
                         .limit(
                                 Math.min(
                                         Math.max(1, topK),
-                                        fullSchema.getTables().size()
+                                        ragSchema.getTables().size()
                                 )
                         )
 
@@ -380,11 +456,13 @@ public class SchemaRetrievalService {
                         );
 
         /*
-         * Nếu vì lý do nào đó không có embedding hợp lệ:
+         * =========================================================
+         * 8. FALLBACK NẾU KHÔNG CÓ BẢNG PHÙ HỢP
+         * =========================================================
          *
-         * không nên trả schema rỗng.
+         * Không trả schema rỗng.
          *
-         * Fallback về full schema an toàn hơn.
+         * Full schema an toàn hơn.
          */
         if (ranked.isEmpty()) {
 
@@ -394,7 +472,7 @@ public class SchemaRetrievalService {
                             "tới bảng nào, hoặc thiếu table embedding hợp lệ). " +
                             "Fallback về full schema.",
                     minSimilarity,
-                    fullSchema.getId()
+                    ragSchema.getId()
             );
 
             return fullSchema;
@@ -402,7 +480,7 @@ public class SchemaRetrievalService {
 
         /*
          * =========================================================
-         * 6. LƯU TÊN BẢNG ĐÃ ĐƯỢC CHỌN
+         * 9. LƯU TÊN BẢNG ĐÃ ĐƯỢC CHỌN
          * =========================================================
          */
         Set<String> selectedNames =
@@ -417,7 +495,7 @@ public class SchemaRetrievalService {
 
         /*
          * =========================================================
-         * 7. FK EXPANSION
+         * 10. FK EXPANSION
          * =========================================================
          *
          * Không chỉ lấy Top-K.
@@ -449,7 +527,7 @@ public class SchemaRetrievalService {
                 new HashSet<>(selectedNames);
 
         for (TableMetadata table :
-                fullSchema.getTables()) {
+                ragSchema.getTables()) {
 
             if (table == null
                     || table.getName() == null
@@ -523,8 +601,7 @@ public class SchemaRetrievalService {
                                                             column.getForeignKey()
                                                     )
                                                             && column
-                                                            .getReferencedTable()
-                                                            != null
+                                                            .getReferencedTable() != null
                                                             && normalizeName(
                                                             table.getName()
                                                     ).equals(
@@ -553,33 +630,160 @@ public class SchemaRetrievalService {
             }
         }
 
-        log.info("RAG chọn {} bảng (top-{}, min-similarity={}): {} | Sau FK expansion: {} bảng: {}",
-                ranked.size(), topK, minSimilarity,
-                ranked.stream().map(TableMetadata::getName).toList(),
+        log.info(
+                "RAG chọn {} bảng (top-{}, min-similarity={}): {} " +
+                        "| Sau FK expansion: {} bảng: {}",
+                ranked.size(),
+                topK,
+                minSimilarity,
+                ranked.stream()
+                        .map(TableMetadata::getName)
+                        .toList(),
                 expanded.size(),
-                expanded.stream().map(TableMetadata::getName).toList());
+                expanded.stream()
+                        .map(TableMetadata::getName)
+                        .toList()
+        );
 
         /*
          * =========================================================
-         * 8. TẠO FILTERED SCHEMA
+         * 11. TẠO FILTERED SCHEMA
          * =========================================================
-         *
-         * Quan trọng:
          *
          * Không sửa fullSchema.
          *
          * Tạo DatabaseSchema mới.
+         *
+         * Dùng ragSchema thay vì fullSchema vì ragSchema đã được
+         * initialize đầy đủ connection + tables + columns.
          */
         return DatabaseSchema.builder()
-                .id(fullSchema.getId())
-                .connection(fullSchema.getConnection())
-                .databaseName(fullSchema.getDatabaseName())
-                .dbType(fullSchema.getDbType())
+                .id(ragSchema.getId())
+                .connection(ragSchema.getConnection())
+                .databaseName(ragSchema.getDatabaseName())
+                .dbType(ragSchema.getDbType())
                 .lastSyncedAt(
-                        fullSchema.getLastSyncedAt()
+                        ragSchema.getLastSyncedAt()
                 )
                 .tables(expanded)
                 .build();
+    }
+
+    /**
+     * Load schema dành riêng cho RAG.
+     *
+     * =============================================================
+     * QUAN TRỌNG VỀ TRANSACTION
+     * =============================================================
+     *
+     * Method này KHÔNG dùng @Transactional vì method được gọi
+     * nội bộ từ retrieveRelevantSchema().
+     *
+     * Thay vào đó sử dụng TransactionTemplate để transaction
+     * được tạo và quản lý trực tiếp.
+     *
+     * Transaction chỉ tồn tại trong đoạn:
+     *
+     *     findByIdForRag()
+     *             +
+     *     initialize columns
+     *
+     * Sau khi execute() kết thúc:
+     *
+     *     transaction COMMIT
+     *     connection được release
+     *
+     * rồi mới quay lại retrieveRelevantSchema().
+     *
+     * Sau đó ensureEmbeddings() mới được gọi.
+     *
+     * Vì vậy Gemini HTTP KHÔNG nằm trong transaction này.
+     */
+    private DatabaseSchema loadSchemaForRag(Long schemaId) {
+
+        if (schemaId == null) {
+            throw new IllegalArgumentException(
+                    "schemaId không được null"
+            );
+        }
+
+        TransactionTemplate transactionTemplate =
+                new TransactionTemplate(
+                        transactionManager
+                );
+
+        DatabaseSchema schema =
+                transactionTemplate.execute(status -> {
+
+                    /*
+                     * -------------------------------------------------
+                     * 1. FETCH connection + tables
+                     * -------------------------------------------------
+                     *
+                     * Query này KHÔNG fetch columns.
+                     *
+                     * Nếu fetch cả:
+                     *
+                     *     tables
+                     *     columns
+                     *
+                     * Hibernate sẽ gây:
+                     *
+                     * MultipleBagFetchException
+                     */
+                    DatabaseSchema loadedSchema =
+                            databaseSchemaRepository
+                                    .findByIdForRag(schemaId)
+                                    .orElseThrow(() ->
+                                            new IllegalArgumentException(
+                                                    "Không tìm thấy schema "
+                                                            + schemaId
+                                            )
+                                    );
+
+                    /*
+                     * -------------------------------------------------
+                     * 2. INITIALIZE COLUMNS
+                     * -------------------------------------------------
+                     *
+                     * TableMetadata.columns là LAZY.
+                     *
+                     * Truy cập size() trong transaction sẽ buộc
+                     * Hibernate load collection.
+                     *
+                     * Sau khi transaction kết thúc:
+                     *
+                     *     columns đã initialized.
+                     *
+                     * Vì vậy buildEmbeddingText() có thể gọi:
+                     *
+                     *     table.getColumns()
+                     *
+                     * mà không phụ thuộc vào Hibernate Session.
+                     */
+                    if (loadedSchema.getTables() != null) {
+
+                        for (TableMetadata table :
+                                loadedSchema.getTables()) {
+
+                            if (table != null
+                                    && table.getColumns() != null) {
+
+                                table.getColumns().size();
+                            }
+                        }
+                    }
+
+                    return loadedSchema;
+                });
+
+        if (schema == null) {
+            throw new IllegalStateException(
+                    "Không thể load schema " + schemaId
+            );
+        }
+
+        return schema;
     }
 
     /**
@@ -588,12 +792,6 @@ public class SchemaRetrievalService {
      * question vector
      * và
      * table vector.
-     *
-     * Công thức:
-     *
-     *             A . B
-     * --------------------------------
-     *       ||A|| * ||B||
      */
     private double cosineSimilarity(
             float[] a,
@@ -603,9 +801,7 @@ public class SchemaRetrievalService {
          * Vector khác dimension
          * -> không thể tính.
          *
-         * Trả NaN thay vì -1.
-         *
-         * NaN sẽ bị filter trước khi Top-K.
+         * Trả NaN.
          */
         if (!isValidVector(a)
                 || !isValidVector(b)
@@ -622,8 +818,6 @@ public class SchemaRetrievalService {
 
             /*
              * Kiểm tra từng phần tử.
-             *
-             * NaN / Infinity sẽ làm vector invalid.
              */
             if (!Float.isFinite(a[i])
                     || !Float.isFinite(b[i])) {

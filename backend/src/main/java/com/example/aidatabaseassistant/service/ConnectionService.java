@@ -10,6 +10,7 @@ import com.example.aidatabaseassistant.repository.DatabaseConnectionRepository;
 import com.example.aidatabaseassistant.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.security.SsrfProtection;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConnectionService {
 
     private final DatabaseConnectionRepository connectionRepository;
@@ -40,10 +42,7 @@ public class ConnectionService {
 
     @PostConstruct
     public void debugConfig() {
-        System.out.println(
-                ">>> maxConnectionsPerUser = "
-                        + maxConnectionsPerUser
-        );
+        log.debug("maxConnectionsPerUser = {}", maxConnectionsPerUser);
     }
     // Danh sach dbType duoc JdbcUrlBuilder ho tro cho connection nhap tay
     // (KHONG bao gom "excel" - excel di qua saveExcelConnection() rieng,
