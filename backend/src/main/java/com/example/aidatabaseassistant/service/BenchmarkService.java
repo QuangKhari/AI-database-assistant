@@ -11,6 +11,7 @@ import com.example.aidatabaseassistant.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpStatusCodeException;
 import com.example.aidatabaseassistant.entity.User;
 
 import java.util.ArrayList;
@@ -479,17 +480,7 @@ public class BenchmarkService {
 
             } catch (RuntimeException e) {
 
-                String message = e.getMessage();
-
-                boolean isRateLimit =
-                        message != null &&
-                                (
-                                        message.contains("429") ||
-                                                message.contains("Too Many Requests") ||
-                                                message.contains("RESOURCE_EXHAUSTED")
-                                );
-
-                if (!isRateLimit) {
+                if (!isRateLimitError(e)) {
                     throw e;
                 }
 
@@ -502,13 +493,57 @@ public class BenchmarkService {
                     throw e;
                 }
 
-                // Chờ trước khi retry (mặc định 40 giây, cấu hình được qua
-                // benchmark.retry-backoff-ms).
+                // Chờ trước khi retry (cấu hình qua benchmark.retry-backoff-ms).
                 sleep(retryBackoffMs);
             }
         }
 
         throw new RuntimeException("Không thể generate SQL");
+    }
+
+    /**
+     * Kiểm tra xem lỗi có phải do Gemini rate limit (429) hay không.
+     *
+     * QUAN TRỌNG: LLMClient.callWithRetry() bọc MỌI lỗi có thể retry được
+     * (network timeout, 5xx, 429) vào một RuntimeException với message
+     * chung chung ("Không thể kết nối tới dịch vụ AI...") sau khi tự nó
+     * đã retry hết số lần cho phép ở tầng LLMClient. Nếu chỉ kiểm tra
+     * e.getMessage() ở tầng BenchmarkService (như code cũ) thì sẽ KHÔNG
+     * BAO GIỜ nhận diện được đây là lỗi 429, vì message gốc chứa "429"/
+     * "RESOURCE_EXHAUSTED" nằm ở exception gốc (cause), không phải ở
+     * exception được throw ra. Hệ quả: retry-backoff-ms không bao giờ
+     * được kích hoạt, benchmark fail câu hỏi ngay khi gặp 429 thay vì
+     * chờ rồi thử lại.
+     *
+     * Fix: duyệt toàn bộ cause chain, vừa kiểm tra message vừa kiểm tra
+     * trực tiếp status code 429 của HttpStatusCodeException (nếu có).
+     */
+    private boolean isRateLimitError(Throwable error) {
+
+        Throwable current = error;
+
+        while (current != null) {
+
+            if (current instanceof HttpStatusCodeException httpError
+                    && httpError.getStatusCode().value() == 429) {
+                return true;
+            }
+
+            String message = current.getMessage();
+
+            if (message != null &&
+                    (
+                            message.contains("429") ||
+                                    message.contains("Too Many Requests") ||
+                                    message.contains("RESOURCE_EXHAUSTED")
+                    )) {
+                return true;
+            }
+
+            current = current.getCause();
+        }
+
+        return false;
     }
 
     private boolean compareResults(
