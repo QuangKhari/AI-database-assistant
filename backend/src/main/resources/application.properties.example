@@ -13,7 +13,7 @@ spring.jpa.show-sql=${SHOW_SQL:false}
 spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
 
 jwt.secret=${JWT_SECRET}
-jwt.expiration=86400000
+jwt.expiration=28800000
 
 app.encryption.secret=${ENCRYPTION_SECRET}
 

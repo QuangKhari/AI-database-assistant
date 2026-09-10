@@ -16,7 +16,7 @@ services:
       # HOST:CONTAINER
       # MySQL Docker:
       # localhost:3308 -> mysql:3306
-      - "3308:3306"
+      - "${MYSQL_HOST_BIND:-127.0.0.1}:3308:3306"
 
     volumes:
       - mysql_data:/var/lib/mysql
