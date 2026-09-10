@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+
 import { benchmarkApi } from "../api/benchmarkApi";
 import { connectionApi } from "../api/connectionApi";
+
 import type {
   BenchmarkQuestion,
   BenchmarkRunResponse,
   DatabaseConnection,
 } from "../api/types";
+
 import { useToast } from "../context/ToastContext";
 import { useApiError } from "../hook/useApiError";
+
 import styles from "./BenchmarkPage.module.css";
 
 type LanguageFilter = "ALL" | "VI" | "EN";
@@ -31,6 +35,12 @@ export function BenchmarkPage() {
 
   const [questions, setQuestions] = useState<BenchmarkQuestion[]>([]);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // ============================================================
+  // FILTER
+  // ============================================================
+
   /**
    * Tab đang được chọn.
    *
@@ -49,7 +59,7 @@ export function BenchmarkPage() {
   const { error, handleError, notifyError, setError } = useApiError();
 
   // ============================================================
-  // ADD QUESTION FORM
+  // FORM
   // ============================================================
 
   const [showForm, setShowForm] = useState(false);
@@ -161,10 +171,18 @@ export function BenchmarkPage() {
     setExpectedSql("");
     setGeneratingSql(false);
     setSaving(false);
+
+    /*
+     * Rất quan trọng:
+     *
+     * null = form Thêm
+     * id   = form Sửa
+     */
+    setEditingId(null);
   }
 
   // ============================================================
-  // OPEN FORM
+  // OPEN ADD FORM
   // ============================================================
 
   function openAddForm() {
@@ -173,6 +191,7 @@ export function BenchmarkPage() {
         `Đã đạt giới hạn tối đa ${MAX_BENCHMARK_QUESTIONS} câu hỏi benchmark cho connection này.`,
         "error",
       );
+
       return;
     }
 
@@ -181,10 +200,30 @@ export function BenchmarkPage() {
   }
 
   // ============================================================
+  // OPEN EDIT FORM
+  // ============================================================
+
+  function openEditForm(question: BenchmarkQuestion) {
+    if (running || saving || generatingSql || deletingId !== null) {
+      return;
+    }
+
+    setEditingId(question.id);
+
+    setLanguage(question.language);
+
+    setQuestionText(question.questionText);
+
+    setExpectedSql(question.expectedSql);
+
+    setShowForm(true);
+  }
+
+  // ============================================================
   // CLOSE FORM
   // ============================================================
 
-  function closeAddForm() {
+  function closeForm() {
     if (saving || generatingSql) {
       return;
     }
@@ -200,6 +239,7 @@ export function BenchmarkPage() {
   async function generateExpectedSql() {
     if (connectionId === null) {
       showToast("Vui lòng chọn connection.", "error");
+
       return;
     }
 
@@ -207,6 +247,7 @@ export function BenchmarkPage() {
 
     if (!cleanQuestion) {
       showToast("Vui lòng nhập câu hỏi trước.", "error");
+
       return;
     }
 
@@ -222,10 +263,11 @@ export function BenchmarkPage() {
 
       if (!generatedSql) {
         showToast("AI không tạo được SQL.", "error");
+
         return;
       }
 
-      /**
+      /*
        * AI chỉ đề xuất.
        *
        * Người dùng vẫn có thể chỉnh sửa
@@ -248,7 +290,7 @@ export function BenchmarkPage() {
   // ADD QUESTION
   // ============================================================
 
-  async function addQuestion(event: React.FormEvent) {
+  async function addQuestion(event: FormEvent) {
     event.preventDefault();
 
     if (connectionId === null) {
@@ -259,33 +301,36 @@ export function BenchmarkPage() {
 
     const cleanSql = expectedSql.trim();
 
-    // -------------------------
+    // ----------------------------------------------------------
     // VALIDATE QUESTION
-    // -------------------------
+    // ----------------------------------------------------------
 
     if (!cleanQuestion) {
       showToast("Vui lòng nhập câu hỏi benchmark.", "error");
+
       return;
     }
 
-    // -------------------------
+    // ----------------------------------------------------------
     // VALIDATE SQL
-    // -------------------------
+    // ----------------------------------------------------------
 
     if (!cleanSql) {
       showToast("Vui lòng tạo hoặc nhập SQL mong đợi.", "error");
+
       return;
     }
 
-    // -------------------------
+    // ----------------------------------------------------------
     // LIMIT
-    // -------------------------
+    // ----------------------------------------------------------
 
     if (questions.length >= MAX_BENCHMARK_QUESTIONS) {
       showToast(
         `Đã đạt giới hạn tối đa ${MAX_BENCHMARK_QUESTIONS} câu hỏi benchmark cho connection này.`,
         "error",
       );
+
       return;
     }
 
@@ -298,16 +343,110 @@ export function BenchmarkPage() {
         expectedSql: cleanSql,
       });
 
-      setQuestionText("");
-      setExpectedSql("");
-      setLanguage("VI");
+      /*
+       * Sau khi thêm:
+       *
+       * editingId = null
+       * questionText = ""
+       * expectedSql = ""
+       * language = VI
+       */
+      resetForm();
+
       setShowForm(false);
 
       showToast("Đã lưu câu hỏi benchmark.", "success");
 
+      /*
+       * Reload để đảm bảo danh sách
+       * đồng bộ với backend.
+       */
       await loadQuestions(connectionId, languageFilter);
     } catch (reason) {
       notifyError(reason, "Không thể thêm câu hỏi benchmark.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ============================================================
+  // UPDATE QUESTION
+  // ============================================================
+
+  async function updateQuestion(event: FormEvent) {
+    event.preventDefault();
+
+    if (connectionId === null || editingId === null) {
+      return;
+    }
+
+    const cleanQuestion = questionText.trim();
+
+    const cleanSql = expectedSql.trim();
+
+    // ----------------------------------------------------------
+    // VALIDATE QUESTION
+    // ----------------------------------------------------------
+
+    if (!cleanQuestion) {
+      showToast("Vui lòng nhập câu hỏi benchmark.", "error");
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // VALIDATE SQL
+    // ----------------------------------------------------------
+
+    if (!cleanSql) {
+      showToast("Vui lòng tạo hoặc nhập SQL mong đợi.", "error");
+
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await benchmarkApi.updateQuestion(connectionId, editingId, {
+        language,
+        questionText: cleanQuestion,
+        expectedSql: cleanSql,
+      });
+
+      /*
+       * Câu hỏi hoặc Expected SQL đã thay đổi.
+       *
+       * Kết quả benchmark cũ không còn
+       * đại diện cho câu hỏi mới.
+       */
+      setRunResult(null);
+
+      /*
+       * Reload lại danh sách.
+       *
+       * Trường hợp:
+       *
+       * VI -> EN
+       * EN -> VI
+       *
+       * cũng được xử lý chính xác
+       * theo filter hiện tại.
+       */
+      await loadQuestions(connectionId, languageFilter);
+
+      /*
+       * Reset trạng thái Edit.
+       */
+      resetForm();
+
+      setShowForm(false);
+
+      showToast(
+        "Đã cập nhật câu hỏi benchmark. Kết quả benchmark cũ đã được xoá.",
+        "success",
+      );
+    } catch (reason) {
+      notifyError(reason, "Không thể cập nhật câu hỏi benchmark.");
     } finally {
       setSaving(false);
     }
@@ -335,6 +474,10 @@ export function BenchmarkPage() {
         current.filter((item) => item.id !== questionId),
       );
 
+      /*
+       * Kết quả benchmark cũ không còn
+       * phù hợp với danh sách hiện tại.
+       */
       setRunResult(null);
 
       showToast("Đã xoá câu hỏi benchmark.", "success");
@@ -356,6 +499,7 @@ export function BenchmarkPage() {
 
     if (questions.length === 0) {
       showToast("Chưa có câu hỏi benchmark nào cho bộ lọc hiện tại.", "error");
+
       return;
     }
 
@@ -363,9 +507,7 @@ export function BenchmarkPage() {
     setRunResult(null);
 
     try {
-      /**
-       * ĐÂY LÀ ĐIỂM QUAN TRỌNG.
-       *
+      /*
        * ALL:
        *   language = undefined
        *   -> backend chạy tất cả.
@@ -414,9 +556,9 @@ export function BenchmarkPage() {
 
   return (
     <div className={styles.page}>
-      {/* ====================================================== */}
-      {/* HEADER */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
       <div className={styles.header}>
         <div>
@@ -482,15 +624,15 @@ export function BenchmarkPage() {
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* ERROR */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
 
       {error && <div className={styles.error}>{error}</div>}
 
-      {/* ====================================================== */}
-      {/* LANGUAGE FILTER */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          LANGUAGE FILTER
+      ====================================================== */}
 
       <div className={styles.toolbar}>
         <div className={styles.tabs}>
@@ -527,32 +669,44 @@ export function BenchmarkPage() {
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* ADD FORM */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          ADD / EDIT FORM
+      ====================================================== */}
 
       {showForm && (
         <div className={styles.formCard}>
+          {/* FORM HEADER */}
+
           <div className={styles.formHeader}>
             <div>
-              <h2>Thêm câu hỏi benchmark</h2>
+              <h2>
+                {editingId === null
+                  ? "Thêm câu hỏi benchmark"
+                  : "Chỉnh sửa câu hỏi benchmark"}
+              </h2>
 
               <p>
-                AI đề xuất SQL → người dùng kiểm tra/chỉnh sửa → lưu làm SQL
-                mong đợi.
+                {editingId === null
+                  ? "AI đề xuất SQL → người dùng kiểm tra/chỉnh sửa → lưu làm SQL mong đợi."
+                  : "Chỉnh sửa câu hỏi hoặc SQL mong đợi. Sau khi lưu, kết quả benchmark cũ sẽ được xoá."}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={closeAddForm}
+              onClick={closeForm}
               disabled={saving || generatingSql}
             >
               ✕
             </button>
           </div>
 
-          <form onSubmit={addQuestion} className={styles.form}>
+          {/* FORM */}
+
+          <form
+            onSubmit={editingId === null ? addQuestion : updateQuestion}
+            className={styles.form}
+          >
             {/* LANGUAGE */}
 
             <div className={styles.field}>
@@ -566,9 +720,9 @@ export function BenchmarkPage() {
                 }
                 disabled={saving || generatingSql}
               >
-                <option value="VI"> Tiếng Việt</option>
+                <option value="VI">Tiếng Việt</option>
 
-                <option value="EN"> English</option>
+                <option value="EN">English</option>
               </select>
             </div>
 
@@ -642,7 +796,7 @@ export function BenchmarkPage() {
             <div className={styles.formActions}>
               <button
                 type="button"
-                onClick={closeAddForm}
+                onClick={closeForm}
                 disabled={saving || generatingSql}
               >
                 Huỷ
@@ -657,16 +811,20 @@ export function BenchmarkPage() {
                   !expectedSql.trim()
                 }
               >
-                {saving ? "⏳ Đang lưu..." : "✓ Lưu câu hỏi"}
+                {saving
+                  ? "⏳ Đang lưu..."
+                  : editingId === null
+                    ? "✓ Lưu câu hỏi"
+                    : "✓ Lưu thay đổi"}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* ====================================================== */}
-      {/* EMPTY */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          EMPTY
+      ====================================================== */}
 
       {!loading && questions.length === 0 && (
         <div className={styles.empty}>
@@ -686,9 +844,9 @@ export function BenchmarkPage() {
         </div>
       )}
 
-      {/* ====================================================== */}
-      {/* QUESTION LIST */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          QUESTION LIST
+      ====================================================== */}
 
       {questions.length > 0 && (
         <div className={styles.questionList}>
@@ -705,13 +863,37 @@ export function BenchmarkPage() {
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => deleteQuestion(question.id)}
-                  disabled={deletingId === question.id || running}
-                >
-                  {deletingId === question.id ? "⏳" : "🗑 Xoá"}
-                </button>
+                {/* ACTIONS */}
+
+                <div className={styles.questionActions}>
+                  {/* EDIT */}
+
+                  <button
+                    type="button"
+                    className={styles.editButton}
+                    onClick={() => openEditForm(question)}
+                    disabled={
+                      running || saving || generatingSql || deletingId !== null
+                    }
+                  >
+                    ✎ Sửa
+                  </button>
+
+                  {/* DELETE */}
+
+                  <button
+                    type="button"
+                    onClick={() => deleteQuestion(question.id)}
+                    disabled={
+                      deletingId === question.id ||
+                      running ||
+                      saving ||
+                      generatingSql
+                    }
+                  >
+                    {deletingId === question.id ? "⏳" : "🗑 Xoá"}
+                  </button>
+                </div>
               </div>
 
               {/* QUESTION */}
@@ -736,9 +918,9 @@ export function BenchmarkPage() {
         </div>
       )}
 
-      {/* ====================================================== */}
-      {/* BENCHMARK RESULT */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          BENCHMARK RESULT
+      ====================================================== */}
 
       {runResult && (
         <div className={styles.resultSection}>
@@ -763,13 +945,6 @@ export function BenchmarkPage() {
             <div className={styles.resultStat}>
               <span>Độ chính xác</span>
 
-              {/*
-               * Backend hiện tại tính:
-               *
-               * correctCount / total * 100
-               *
-               * nên KHÔNG nhân thêm 100 ở FE.
-               */}
               <strong>{runResult.accuracy.toFixed(1)}%</strong>
             </div>
 
