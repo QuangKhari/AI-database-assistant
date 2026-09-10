@@ -154,60 +154,89 @@ public class PromptBuilder {
 
     5. KHÔNG dùng SELECT * nếu câu hỏi không yêu cầu toàn bộ thông tin.
 
-    6. Chỉ SELECT những cột và chỉ số thực sự cần thiết để trả lời câu hỏi.
+    6. CHỈ SELECT các cột và chỉ số mà người dùng thực sự yêu cầu
+       xuất hiện trong kết quả.
 
-    7. Nếu câu hỏi yêu cầu một giá trị được TÍNH TOÁN thì PHẢI SELECT chính
-       giá trị đó, không chỉ dùng nó trong WHERE, HAVING hoặc ORDER BY.
+       Không SELECT thêm cột chỉ vì cột đó được sử dụng cho:
+       - ORDER BY
+       - GROUP BY
+       - WHERE
+       - JOIN
+       - lọc hoặc xếp hạng
+
+       Nếu một cột chỉ được dùng để tính toán, lọc, sắp xếp,
+       gom nhóm hoặc JOIN thì KHÔNG đưa cột đó vào SELECT,
+       trừ khi người dùng yêu cầu giá trị đó trong kết quả.
+
+    7. Nếu câu hỏi yêu cầu một giá trị được TÍNH TOÁN và muốn giá trị đó
+       xuất hiện trong kết quả thì PHẢI SELECT chính giá trị đó.
+
+       Nếu giá trị tính toán CHỈ được dùng để xếp hạng, lọc hoặc xác định
+       đối tượng thì KHÔNG cần SELECT giá trị đó.
 
        Ví dụ:
        - "tổng doanh thu" -> SUM(...) AS total_revenue
-       - "doanh thu cao nhất" -> SELECT cả tên đối tượng và giá trị doanh thu
+       - "doanh thu của từng khách hàng" ->
+         SELECT tên khách hàng + SUM(...) AS total_revenue
        - "top 5 sản phẩm có doanh thu cao nhất" ->
          SELECT tên sản phẩm + SUM(...) AS total_revenue
-       - "số lượng đơn hàng" -> COUNT(...) AS total_orders
+       - "Which product has the highest price?" ->
+         SELECT product_name
+         FROM products
+         ORDER BY unit_price DESC
+         LIMIT 1;
+       - "Which customer has placed the most orders?" ->
+         SELECT c.full_name
+         FROM customers c
+         JOIN orders o ON c.customer_id = o.customer_id
+         GROUP BY c.customer_id, c.full_name
+         ORDER BY COUNT(o.order_id) DESC
+         LIMIT 1;
 
-       8. Nếu câu hỏi yêu cầu nhiều chỉ số thì PHẢI SELECT tất cả các chỉ số đó.
+    8. Nếu câu hỏi yêu cầu nhiều chỉ số thì PHẢI SELECT tất cả các chỉ số đó.
 
-                                                               MỖI chỉ số phải có alias RIÊNG BIỆT.
+       MỖI chỉ số phải có alias RIÊNG BIỆT.
 
-                                                               TUYỆT ĐỐI KHÔNG được dùng cùng một alias cho hai biểu thức hoặc hai metric khác nhau trong cùng một SELECT.
+       TUYỆT ĐỐI KHÔNG được dùng cùng một alias cho hai biểu thức
+       hoặc hai metric khác nhau trong cùng một SELECT.
 
-                                                               Ví dụ SAI:
+       Ví dụ SAI:
 
-                                                               SELECT
-                                                                       SUM(amount) AS total,
-                                                                       COUNT(*) AS total
-                                                                       FROM orders;
+       SELECT
+           SUM(amount) AS total,
+           COUNT(*) AS total
+       FROM orders;
 
-                                                               Ví dụ ĐÚNG:
+       Ví dụ ĐÚNG:
 
-                                                               SELECT
-                                                                        SUM(amount) AS total_revenue,
-                                                                        COUNT(*) AS total_orders
-                                                                        FROM orders;
+       SELECT
+           SUM(amount) AS total_revenue,
+           COUNT(*) AS total_orders
+       FROM orders;
 
-                9. Alias phải mô tả rõ ràng và nhất quán ý nghĩa của chỉ số.
+    9. Alias phải mô tả rõ ràng và nhất quán ý nghĩa của chỉ số.
 
-                                                 Ví dụ:
-                                                 - doanh thu -> total_revenue
-                                                 - số đơn hàng -> total_orders
-                                                 - số lượng -> total_quantity
-                                                 - giá trung bình -> average_price
-                                                 - số lượng bản ghi -> total_count
+       Ví dụ:
+       - doanh thu -> total_revenue
+       - số đơn hàng -> total_orders
+       - số lượng -> total_quantity
+       - giá trung bình -> average_price
+       - số lượng bản ghi -> total_count
 
-                                                 Không dùng alias chung chung như "total" khi câu hỏi yêu cầu
-                                                 nhiều chỉ số hoặc có nhiều phép tính trong cùng một SELECT.
+       Không dùng alias chung chung như "total" khi câu hỏi yêu cầu
+       nhiều chỉ số hoặc có nhiều phép tính trong cùng một SELECT.
 
     10. Nếu câu hỏi yêu cầu:
         "cao nhất", "thấp nhất", "lớn nhất", "nhỏ nhất",
         "nhiều nhất", "ít nhất" hoặc "top N":
 
-        - Phải SELECT đối tượng được hỏi.
-        - Nếu thứ hạng dựa trên giá trị tính toán,
-          phải SELECT cả giá trị tính toán nếu câu hỏi đề cập trực tiếp.
+        - PHẢI SELECT đối tượng được hỏi.
+        - Chỉ SELECT giá trị dùng để xếp hạng nếu người dùng
+          thực sự yêu cầu giá trị đó xuất hiện trong kết quả.
+        - Giá trị chỉ dùng để ORDER BY, WHERE, HAVING hoặc xác định
+          thứ hạng thì KHÔNG cần SELECT.
         - Dùng ORDER BY đúng giá trị dùng để xếp hạng.
         - Dùng LIMIT khi câu hỏi yêu cầu số lượng cụ thể.
-
     11. Dùng đúng tên bảng và cột trong schema.
 
     12. Nếu cần JOIN thì dùng khóa ngoại được khai báo trong schema.
@@ -231,8 +260,21 @@ public class PromptBuilder {
 
         Giữ nguyên giá trị đúng như dữ liệu trong database.
 
-    18. Khi dùng GROUP BY và ORDER BY một giá trị tổng hợp,
-        có thể đặt alias cho giá trị tổng hợp và sử dụng alias đó trong ORDER BY.
+                18. Khi sử dụng GROUP BY và ORDER BY một giá trị tổng hợp,
+                                                                                                 có thể đặt alias cho giá trị tổng hợp và sử dụng alias đó trong ORDER BY.
+
+                                                                                                 Tuy nhiên, nếu giá trị tổng hợp CHỈ được dùng để xếp hạng
+                                                                                                 và người dùng không yêu cầu metric đó xuất hiện trong kết quả,
+                                                                                                 KHÔNG thêm giá trị tổng hợp vào SELECT chỉ để tạo alias.
+
+                                                                                                 Ví dụ:
+
+                                                                                                 SELECT c.full_name
+                                                                                                 FROM customers c
+                                                                                                 JOIN orders o ON c.customer_id = o.customer_id
+                                                                                                 GROUP BY c.customer_id, c.full_name
+                                                                                                 ORDER BY COUNT(o.order_id) DESC
+                                                                                                 LIMIT 1;
 
     19. Không tự ý thêm điều kiện WHERE không được yêu cầu.
 
@@ -270,18 +312,44 @@ public class PromptBuilder {
 
     5. Do NOT use SELECT * unless the question actually asks for the full record.
 
-    6. Only SELECT the columns and calculated metrics that are actually needed
-       to answer the question.
+                6. ONLY SELECT columns and metrics that the user actually asks
+                                             to appear in the result.
 
-    7. If the question asks for a CALCULATED VALUE, SELECT that value.
-       Do not only use the calculated value in WHERE, HAVING, or ORDER BY.
+                                             Do NOT SELECT extra columns merely because they are used for:
+                                             - ORDER BY
+                                             - GROUP BY
+                                             - WHERE
+                                             - JOIN
+                                             - filtering or ranking
 
-       Examples:
-       - "total revenue" -> SUM(...) AS total_revenue
-       - "highest revenue" -> select both the entity name and revenue value
-       - "top 5 products by revenue" ->
-         SELECT product name + SUM(...) AS total_revenue
-       - "number of orders" -> COUNT(...) AS total_orders
+                                             If a column is only used for calculation, filtering, sorting,
+                                             grouping, joining, or ranking, do NOT include it in SELECT
+                                             unless the user explicitly asks for that value in the result.
+
+                7. If the question asks for a CALCULATED VALUE and expects that value
+                                                                        to appear in the result, SELECT that value.
+
+                                                                        If the calculated value is ONLY used for ranking, filtering,
+                                                                        or identifying an entity, it does NOT need to be selected.
+
+                                                                        Examples:
+                                                                        - "total revenue" -> SUM(...) AS total_revenue
+                                                                        - "revenue for each customer" ->
+                                                                          SELECT customer name + SUM(...) AS total_revenue
+                                                                        - "top 5 products by revenue" ->
+                                                                          SELECT product name + SUM(...) AS total_revenue
+                                                                        - "Which product has the highest price?" ->
+                                                                          SELECT product_name
+                                                                          FROM products
+                                                                          ORDER BY unit_price DESC
+                                                                          LIMIT 1;
+                                                                        - "Which customer has placed the most orders?" ->
+                                                                          SELECT c.full_name
+                                                                          FROM customers c
+                                                                          JOIN orders o ON c.customer_id = o.customer_id
+                                                                          GROUP BY c.customer_id, c.full_name
+                                                                          ORDER BY COUNT(o.order_id) DESC
+                                                                          LIMIT 1;
 
                 8. If the question asks for multiple metrics, SELECT ALL requested metrics.
 
@@ -313,15 +381,17 @@ public class PromptBuilder {
        - average price -> average_price
        - count of records -> total
 
-    10. If the question asks for:
-        "highest", "lowest", "largest", "smallest",
-        "most", "least", or "top N":
+                10. If the question asks for:
+                                                                        "highest", "lowest", "largest", "smallest",
+                                                                        "most", "least", or "top N":
 
-        - SELECT the requested entity.
-        - If ranking is based on a calculated value,
-          SELECT that value when it is explicitly mentioned.
-        - ORDER BY the same value used for ranking.
-        - Use LIMIT when a specific number is requested.
+                                                                        - MUST SELECT the requested entity.
+                                                                        - SELECT the ranking value ONLY if the user explicitly asks
+                                                                          for that value to appear in the result.
+                                                                        - A value used only for ORDER BY, WHERE, HAVING, or ranking
+                                                                          does NOT need to appear in SELECT.
+                                                                        - ORDER BY the correct ranking value.
+                                                                        - Use LIMIT when a specific number is requested.
 
     11. Use the exact table and column names from the schema.
 
@@ -347,8 +417,21 @@ public class PromptBuilder {
 
         Keep them exactly as stored in the database.
 
-    18. When using GROUP BY and ORDER BY an aggregate value,
-        you may assign an alias to the aggregate and use that alias in ORDER BY.
+                18. When using GROUP BY and ORDER BY an aggregate value, you may use
+                                                                                                an alias for the aggregate in ORDER BY.
+
+                                                                                                However, if the aggregate is used ONLY for ranking and the user
+                                                                                                does not ask for that metric in the result, do NOT add that
+                                                                                                aggregate to SELECT just to create an alias.
+
+                                                                                                Example:
+
+                                                                                                SELECT c.full_name
+                                                                                                FROM customers c
+                                                                                                JOIN orders o ON c.customer_id = o.customer_id
+                                                                                                GROUP BY c.customer_id, c.full_name
+                                                                                                ORDER BY COUNT(o.order_id) DESC
+                                                                                                LIMIT 1;
 
     19. Do not add WHERE conditions that were not requested.
 
@@ -444,11 +527,11 @@ public class PromptBuilder {
     FROM customers
     WHERE city = 'Hanoi';
 
-    Q: Which products cost more than 5000000?
-    SQL:
-    SELECT name, price
-    FROM products
-    WHERE price > 5000000;
+                Q: Which products cost more than 5000000?
+                                      SQL:
+                                      SELECT product_name, unit_price
+                                      FROM products
+                                      WHERE unit_price > 5000000;
 
     Q: 5 most recently registered customers
     SQL:
