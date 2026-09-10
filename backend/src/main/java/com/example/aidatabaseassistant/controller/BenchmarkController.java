@@ -113,4 +113,21 @@ public class BenchmarkController {
                 )
         );
     }
+
+    @PutMapping("/questions/{connectionId}/{questionId}")
+    public ResponseEntity<BenchmarkQuestionResponse> updateQuestion(
+            Authentication authentication,
+            @PathVariable Long connectionId,
+            @PathVariable Long questionId,
+            @Valid @RequestBody BenchmarkQuestionRequest request) {
+
+        return ResponseEntity.ok(
+                benchmarkService.updateQuestion(
+                        authentication.getName(),
+                        connectionId,
+                        questionId,
+                        request
+                )
+        );
+    }
 }

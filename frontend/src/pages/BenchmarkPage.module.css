@@ -1388,3 +1388,26 @@ textarea:disabled {
     width: 100%;
   }
 }
+
+.questionActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.questionActions button {
+  min-height: 31px;
+  padding: 0 10px;
+}
+
+.questionActions .editButton {
+  border-color: #d9d7f2;
+  background: #faf9ff;
+  color: #6258a5;
+}
+
+.questionActions .editButton:hover:not(:disabled) {
+  border-color: #bdb7e7;
+  background: #f1efff;
+  color: #504795;
+}

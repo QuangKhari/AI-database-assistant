@@ -33,6 +33,23 @@ export const benchmarkApi = {
       body: JSON.stringify(payload),
     }),
 
+  updateQuestion: (
+    connectionId: number,
+    questionId: number,
+    payload: {
+      language: "VI" | "EN";
+      questionText: string;
+      expectedSql: string;
+    },
+  ) =>
+    apiRequest<BenchmarkQuestion>(
+      `/benchmark/questions/${connectionId}/${questionId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      },
+    ),
+
   deleteQuestion: (connectionId: number, questionId: number) =>
     apiRequest<void>(`/benchmark/questions/${connectionId}/${questionId}`, {
       method: "DELETE",

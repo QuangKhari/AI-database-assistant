@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
-import com.example.aidatabaseassistant.entity.User;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -823,5 +823,78 @@ public class BenchmarkService {
         queryValidator.validate(generatedSql, schema);
 
         return new BenchmarkGenerateSqlResponse(generatedSql);
+    }
+
+    @Transactional
+    public BenchmarkQuestionResponse updateQuestion(
+            String username,
+            Long connectionId,
+            Long questionId,
+            BenchmarkQuestionRequest request) {
+
+        DatabaseConnection connection =
+                getOwnedConnection(username, connectionId);
+
+        String language =
+                request.getLanguage().trim().toUpperCase();
+
+        String questionText =
+                request.getQuestionText().trim();
+
+        String expectedSql =
+                request.getExpectedSql().trim();
+
+        if (!language.equals("VI") && !language.equals("EN")) {
+            throw new IllegalArgumentException(
+                    "Language phải là VI hoặc EN"
+            );
+        }
+
+        if (questionText.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Câu hỏi benchmark không được để trống"
+            );
+        }
+
+        if (expectedSql.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Expected SQL không được để trống"
+            );
+        }
+
+        BenchmarkQuestion question =
+                benchmarkQuestionRepository
+                        .findByIdAndConnectionId(
+                                questionId,
+                                connectionId
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Không tìm thấy câu hỏi benchmark này trong connection"
+                                )
+                        );
+
+        question.setLanguage(language);
+        question.setQuestionText(questionText);
+        question.setExpectedSql(expectedSql);
+
+        /*
+         * Kết quả benchmark cũ thuộc về phiên bản câu hỏi cũ.
+         *
+         * Sau khi sửa question / expected SQL,
+         * các kết quả cũ không còn có ý nghĩa.
+         */
+        question.getResults().clear();
+
+        BenchmarkQuestion saved =
+                benchmarkQuestionRepository.save(question);
+
+        return new BenchmarkQuestionResponse(
+                saved.getId(),
+                saved.getLanguage(),
+                saved.getQuestionText(),
+                saved.getExpectedSql(),
+                connection.getId()
+        );
     }
 }
