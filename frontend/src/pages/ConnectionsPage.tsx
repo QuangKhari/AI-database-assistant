@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { connectionApi } from "../api/connectionApi";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
@@ -6,6 +6,23 @@ import type { DatabaseConnection } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useApiError } from "../hook/useApiError";
 import styles from "./ConnectionsPage.module.css";
+
+const ACCEPTED_EXCEL_TYPES = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isXlsxFile(file: File): boolean {
+  return (
+    file.name.toLowerCase().endsWith(".xlsx") ||
+    ACCEPTED_EXCEL_TYPES.includes(file.type)
+  );
+}
 
 export function ConnectionsPage() {
   const { showToast } = useToast();
@@ -16,6 +33,8 @@ export function ConnectionsPage() {
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [excelName, setExcelName] = useState("");
   const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [isDraggingExcel, setIsDraggingExcel] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const loadConnections = useCallback(async () => {
     try {
@@ -72,6 +91,24 @@ export function ConnectionsPage() {
     } finally {
       setWorkingId(null);
     }
+  }
+
+  function pickExcelFile(file: File | null) {
+    if (file && !isXlsxFile(file)) {
+      showToast("Chỉ hỗ trợ file .xlsx.", "error");
+      return;
+    }
+    setExcelFile(file);
+    if (file && !excelName.trim()) {
+      setExcelName(file.name.replace(/\.xlsx$/i, ""));
+    }
+  }
+
+  function handleExcelDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingExcel(false);
+    if (uploadingExcel) return;
+    pickExcelFile(event.dataTransfer.files?.[0] ?? null);
   }
 
   async function uploadExcel() {
@@ -148,7 +185,7 @@ export function ConnectionsPage() {
         </div>
 
         <div className={styles.excelForm}>
-          <label>
+          <label className={styles.excelNameField}>
             <span>Tên connection</span>
             <input
               value={excelName}
@@ -159,20 +196,75 @@ export function ConnectionsPage() {
             />
           </label>
 
-          <label>
+          <div className={styles.excelDropzoneField}>
             <span>File Excel</span>
-            <input
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(event) =>
-                setExcelFile(event.target.files?.[0] ?? null)
-              }
-              disabled={uploadingExcel}
-            />
-          </label>
+            <div
+              className={`${styles.dropzone} ${isDraggingExcel ? styles.dropzoneActive : ""} ${excelFile ? styles.dropzoneFilled : ""}`}
+              onClick={() => excelInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  excelInputRef.current?.click();
+                }
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                if (!uploadingExcel) setIsDraggingExcel(true);
+              }}
+              onDragLeave={() => setIsDraggingExcel(false)}
+              onDrop={handleExcelDrop}
+              role="button"
+              tabIndex={0}
+              aria-label="Chọn hoặc kéo thả file Excel"
+            >
+              <input
+                ref={excelInputRef}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) =>
+                  pickExcelFile(event.target.files?.[0] ?? null)
+                }
+                disabled={uploadingExcel}
+                hidden
+              />
+
+              {excelFile ? (
+                <div className={styles.dropzoneFile}>
+                  <i className={styles.dropzoneFileIcon}>XL</i>
+                  <div className={styles.dropzoneFileInfo}>
+                    <strong>{excelFile.name}</strong>
+                    <small>{formatFileSize(excelFile.size)}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.dropzoneClear}
+                    disabled={uploadingExcel}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setExcelFile(null);
+                      if (excelInputRef.current)
+                        excelInputRef.current.value = "";
+                    }}
+                    aria-label="Bỏ chọn file"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.dropzoneEmpty}>
+                  <i className={styles.dropzoneIcon}>XL</i>
+                  <p>
+                    Kéo thả file .xlsx vào đây, hoặc <u>chọn từ máy tính</u>
+                  </p>
+                  <small>Tối đa 20MB, mỗi sheet trở thành 1 bảng dữ liệu</small>
+                </div>
+              )}
+            </div>
+          </div>
 
           <button
             type="button"
+            className={styles.excelSubmit}
             onClick={() => void uploadExcel()}
             disabled={uploadingExcel || !excelFile || !excelName.trim()}
           >
@@ -198,9 +290,14 @@ export function ConnectionsPage() {
       ) : (
         <div className={styles.grid}>
           {connections.map((connection) => (
-            <article className={styles.card} key={connection.id}>
+            <article
+              className={`${styles.card} ${connection.dbType === "excel" ? styles.cardExcel : ""}`}
+              key={connection.id}
+            >
               <div className={styles.cardTop}>
-                <div className={styles.dbIcon}>
+                <div
+                  className={`${styles.dbIcon} ${connection.dbType === "excel" ? styles.dbIconExcel : ""}`}
+                >
                   {connection.dbType === "postgresql"
                     ? "PG"
                     : connection.dbType === "excel"

@@ -257,25 +257,23 @@
 
 .excelForm {
   display: grid;
-  grid-template-columns: 1fr 1.5fr auto;
-  align-items: end;
-  gap: 14px;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 16px 18px;
 
-  padding-top: 4px;
+  padding-top: 18px;
 
   border-top: 1px solid var(--border);
 }
 
-.excelForm {
-  padding-top: 18px;
-}
-
-.excelForm label {
+.excelNameField,
+.excelDropzoneField {
   display: grid;
   gap: 7px;
+  align-content: start;
 }
 
-.excelForm label > span {
+.excelNameField > span,
+.excelDropzoneField > span {
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 650;
@@ -310,73 +308,194 @@
   box-shadow: 0 0 0 3px rgba(29, 122, 76, 0.13);
 }
 
-/* Custom-styled file picker: the input itself stays functional
-   and accessible, only the chrome around it is restyled. */
+/* Dropzone: click-to-browse and drag-and-drop, in one place, with
+   a distinct filled state once a file has been picked. */
 
-.excelForm input[type="file"] {
+.dropzone {
   display: flex;
-  align-items: center;
 
-  min-height: 42px;
+  min-height: 78px;
 
-  padding: 5px 7px;
-
-  border: 1px dashed #b9d4c4;
-  border-radius: 9px;
+  border: 1.5px dashed #b9d4c4;
+  border-radius: 11px;
 
   background: var(--excel-tint);
-  color: #5b7568;
-
-  font-size: 12px;
 
   cursor: pointer;
 
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
-.excelForm input[type="file"]:hover {
+.dropzone:hover {
   border-color: var(--excel-green);
   background: #e2f3e8;
 }
 
-.excelForm input[type="file"]:focus-visible {
-  outline: 2px solid var(--excel-green);
-  outline-offset: 2px;
+.dropzone:focus-visible {
+  outline: none;
+  border-color: var(--excel-green);
+  box-shadow: 0 0 0 3px rgba(29, 122, 76, 0.16);
 }
 
-.excelForm input[type="file"]::file-selector-button,
-.excelForm input[type="file"]::-webkit-file-upload-button {
+.dropzoneActive {
+  border-color: var(--excel-green);
+  background: #dbf1e4;
+  box-shadow: 0 0 0 3px rgba(29, 122, 76, 0.16);
+}
+
+.dropzoneFilled {
+  cursor: default;
+  background: var(--surface);
+  border-style: solid;
+  border-color: #cbe3d4;
+}
+
+.dropzoneFilled:hover {
+  background: var(--surface);
+}
+
+.dropzoneEmpty {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+
+  width: 100%;
+  padding: 12px 16px;
+
+  text-align: center;
+}
+
+.dropzoneIcon {
+  display: grid;
+  place-items: center;
+
+  width: 30px;
+  height: 30px;
+  margin-bottom: 2px;
+
+  border-radius: 9px;
+
+  background: rgba(29, 122, 76, 0.14);
+  color: var(--excel-green);
+
+  font-size: 10px;
+  font-weight: 800;
+  font-style: normal;
+}
+
+.dropzoneEmpty p {
+  margin: 0;
+
+  color: #5b7568;
+  font-size: 12.5px;
+}
+
+.dropzoneEmpty p u {
+  color: var(--excel-green-dark);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.dropzoneEmpty small {
+  color: #8ba597;
+  font-size: 10.5px;
+}
+
+.dropzoneFile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  width: 100%;
+  padding: 12px 14px;
+}
+
+.dropzoneFileIcon {
   flex-shrink: 0;
 
-  margin-right: 10px;
+  display: grid;
+  place-items: center;
 
-  height: 30px;
-  padding: 0 12px;
+  width: 34px;
+  height: 34px;
+
+  border-radius: 9px;
+
+  background: var(--excel-tint);
+  color: var(--excel-green);
+
+  font-size: 10px;
+  font-weight: 800;
+  font-style: normal;
+}
+
+.dropzoneFileInfo {
+  display: grid;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.dropzoneFileInfo strong {
+  overflow: hidden;
+
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 650;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropzoneFileInfo small {
+  color: var(--muted-soft);
+  font-size: 11px;
+}
+
+.dropzoneClear {
+  flex-shrink: 0;
+  margin-left: auto;
+
+  display: grid;
+  place-items: center;
+
+  width: 26px;
+  height: 26px;
 
   border: none;
-  border-radius: 7px;
+  border-radius: 50%;
 
-  background: var(--excel-green);
-  color: #ffffff;
+  background: var(--bg);
+  color: var(--muted-soft);
 
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
 
   cursor: pointer;
 
-  transition: background 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
 
-.excelForm input[type="file"]::file-selector-button:hover,
-.excelForm input[type="file"]::-webkit-file-upload-button:hover {
-  background: var(--excel-green-dark);
+.dropzoneClear:hover:not(:disabled) {
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
-.excelForm button {
+.dropzoneClear:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.excelSubmit {
+  grid-column: 1 / -1;
+  justify-self: end;
+
   min-height: 42px;
-  padding: 0 18px;
+  padding: 0 20px;
 
   border: none;
   border-radius: 9px;
@@ -397,16 +516,16 @@
     opacity 0.18s ease;
 }
 
-.excelForm button:hover:not(:disabled) {
+.excelSubmit:hover:not(:disabled) {
   box-shadow: 0 8px 18px rgba(29, 122, 76, 0.28);
   transform: translateY(-1px);
 }
 
-.excelForm button:active:not(:disabled) {
+.excelSubmit:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.excelForm button:disabled {
+.excelSubmit:disabled {
   box-shadow: none;
   opacity: 0.5;
   cursor: not-allowed;
@@ -589,6 +708,28 @@
   font-weight: 800;
 }
 
+.dbIconExcel {
+  background: var(--excel-tint);
+  color: var(--excel-green);
+}
+
+.cardExcel {
+  position: relative;
+  overflow: hidden;
+}
+
+.cardExcel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+
+  width: 3px;
+
+  background: linear-gradient(180deg, #1d7a4c, #146238);
+}
+
 .active,
 .inactive {
   display: flex;
@@ -748,6 +889,10 @@
 @media (max-width: 800px) {
   .excelForm {
     grid-template-columns: 1fr;
+  }
+
+  .excelSubmit {
+    justify-self: stretch;
   }
 }
 

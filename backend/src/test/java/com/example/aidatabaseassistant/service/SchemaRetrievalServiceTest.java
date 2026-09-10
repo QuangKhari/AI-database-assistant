@@ -6,6 +6,7 @@ import com.example.aidatabaseassistant.entity.DatabaseConnection;
 import com.example.aidatabaseassistant.entity.DatabaseSchema;
 import com.example.aidatabaseassistant.entity.TableEmbedding;
 import com.example.aidatabaseassistant.entity.TableMetadata;
+import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,15 @@ class SchemaRetrievalServiceTest {
     @Mock
     private SchemaEmbeddingService schemaEmbeddingService;
 
+    @Mock
+    private DatabaseSchemaRepository databaseSchemaRepository;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private TransactionStatus transactionStatus;
+
     private SchemaRetrievalService service;
 
     @BeforeEach
@@ -39,7 +51,9 @@ class SchemaRetrievalServiceTest {
 
         service = new SchemaRetrievalService(
                 llmClient,
-                schemaEmbeddingService
+                schemaEmbeddingService,
+                databaseSchemaRepository,
+                transactionManager
         );
 
         /*
@@ -111,6 +125,8 @@ class SchemaRetrievalServiceTest {
         List<TableMetadata> tables = createTables(10);
 
         DatabaseSchema schema = createSchema(tables);
+
+        stubRagSchemaLoad(schema);
 
         /*
          * question vector
@@ -248,6 +264,8 @@ class SchemaRetrievalServiceTest {
 
         DatabaseSchema schema = createSchema(tables);
 
+        stubRagSchemaLoad(schema);
+
         ReflectionTestUtils.setField(
                 service,
                 "minSimilarity",
@@ -314,6 +332,8 @@ class SchemaRetrievalServiceTest {
         List<TableMetadata> tables = createTables(10);
 
         DatabaseSchema schema = createSchema(tables);
+
+        stubRagSchemaLoad(schema);
 
         ReflectionTestUtils.setField(
                 service,
@@ -417,6 +437,8 @@ class SchemaRetrievalServiceTest {
         }
 
         schema.setTables(allTables);
+
+        stubRagSchemaLoad(schema);
 
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(new float[]{1f, 0f});
@@ -533,6 +555,8 @@ class SchemaRetrievalServiceTest {
         DatabaseSchema schema =
                 createSchema(tables);
 
+        stubRagSchemaLoad(schema);
+
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(new float[]{1f, 0f});
 
@@ -598,6 +622,8 @@ class SchemaRetrievalServiceTest {
 
         DatabaseSchema schema =
                 createSchema(10);
+
+        stubRagSchemaLoad(schema);
 
         when(llmClient.generateEmbedding(anyString()))
                 .thenReturn(new float[]{1f, 0f});
@@ -739,6 +765,38 @@ class SchemaRetrievalServiceTest {
      * (trim + toLowerCase(Locale.ROOT)) de test phan anh dung hanh vi
      * production.
      */
+
+    private void stubRagSchemaLoad(DatabaseSchema schema) {
+
+        /*
+         * TransactionTemplate bên production sẽ gọi:
+         *
+         * transactionManager.getTransaction(...)
+         *
+         * sau đó execute callback,
+         * rồi commit transaction.
+         */
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(transactionStatus);
+
+        doNothing()
+                .when(transactionManager)
+                .commit(transactionStatus);
+
+        /*
+         * Repository được gọi bên trong transaction.
+         *
+         * Trả lại chính schema fixture của test để:
+         *
+         * verify(schemaEmbeddingService)
+         *     .ensureEmbeddings(schema)
+         *
+         * vẫn đúng object mà test đã tạo.
+         */
+        when(databaseSchemaRepository.findByIdForRag(schema.getId()))
+                .thenReturn(java.util.Optional.of(schema));
+    }
+
     private Map<String, float[]> toEmbeddingMap(List<TableEmbedding> embeddings) {
 
         ObjectMapper mapper = new ObjectMapper();

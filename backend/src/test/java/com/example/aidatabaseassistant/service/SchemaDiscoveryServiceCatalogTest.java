@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.lang.reflect.Method;
 import java.sql.Connection;
@@ -49,6 +50,8 @@ class SchemaDiscoveryServiceCatalogTest {
     private TargetDatabaseClient targetDatabaseClient;
     @Mock
     private SchemaEmbeddingService schemaEmbeddingService;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @Mock
     private DatabaseMetaData metaData;
@@ -71,7 +74,8 @@ class SchemaDiscoveryServiceCatalogTest {
                 connectionAccessGuard,
                 ssrfProtection,
                 targetDatabaseClient,
-                schemaEmbeddingService
+                schemaEmbeddingService,
+                transactionManager
         );
     }
 

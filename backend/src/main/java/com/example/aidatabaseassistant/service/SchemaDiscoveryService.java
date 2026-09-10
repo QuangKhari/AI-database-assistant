@@ -16,7 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.example.aidatabaseassistant.security.SsrfProtection;
 
 import java.sql.Connection;
@@ -65,6 +67,25 @@ public class SchemaDiscoveryService {
      * Embedding lỗi không được làm discovery schema thất bại.
      */
     private final SchemaEmbeddingService schemaEmbeddingService;
+
+    /*
+     * Dùng TransactionTemplate (thay vì @Transactional) cho
+     * discoverAndPersistSchema().
+     *
+     * Lý do giống hệt SchemaRetrievalService.loadSchemaForRag():
+     *
+     * - transaction chỉ tồn tại trong lúc discovery (JDBC target DB)
+     *   + persist (schemaRepository.save)
+     * - transaction PHẢI kết thúc (commit, release Hikari connection)
+     *   TRƯỚC KHI discoverSchema() gọi ensureEmbeddings() (Gemini HTTP)
+     *
+     * Không thể dùng @Transactional trên method private vì method đó
+     * được gọi qua self-invocation (this.xxx() trong cùng class) —
+     * self-invocation bỏ qua Spring AOP proxy nên @Transactional sẽ
+     * không có tác dụng gì. TransactionTemplate không bị ảnh hưởng bởi
+     * self-invocation vì nó tạo transaction thủ công, không dựa vào proxy.
+     */
+    private final PlatformTransactionManager transactionManager;
 
 
     // =========================================================
@@ -167,345 +188,389 @@ public class SchemaDiscoveryService {
             cacheManager = "localCacheManager",
             key = "#connectionId"
     )
-    @Transactional
     public DatabaseSchema discoverSchema(
             String username,
             Long connectionId
     ) {
 
-        DatabaseConnection connection =
-                connectionAccessGuard.requireOwnedConnection(
-                        username,
-                        connectionId
-                );
-
-        if (!"excel".equalsIgnoreCase(connection.getDbType())) {
-
-            ssrfProtection.validateHost(
-                    connection.getHost()
-            );
-        }
-
-        String rawPassword =
-                encryptionUtil.decrypt(
-                        connection.getEncryptedPassword()
-                );
-
-
-        // -----------------------------------------------------
-        // Load existing schema
-        // -----------------------------------------------------
-
-        DatabaseSchema schema =
-                schemaRepository
-                        .findByConnectionId(connectionId)
-                        .orElse(
-                                DatabaseSchema.builder()
-                                        .connection(connection)
-                                        .databaseName(
-                                                connection.getDatabaseName()
-                                        )
-                                        .dbType(
-                                                connection.getDbType()
-                                        )
-                                        .build()
-                        );
-
-        schema.setConnection(connection);
-
-
-        // =====================================================
-        //BACKUP APPLICATION METADATA
-        // =====================================================
-        Map<String, String> existingTableDescriptions =
-                new HashMap<>();
-
-        Map<String, String> existingColumnDescriptions =
-                new HashMap<>();
-
-        List<TableMetadata> existingTables =
-                schema.getTables();
-
-        if (existingTables != null) {
-
-            for (TableMetadata existingTable :
-                    existingTables) {
-
-                if (existingTable == null
-                        || existingTable.getName() == null
-                        || existingTable.getName().isBlank()) {
-
-                    continue;
-                }
-
-
-                // -------------------------------------------------
-                // Backup table description
-                // -------------------------------------------------
-
-                if (existingTable.getDescription() != null
-                        && !existingTable
-                        .getDescription()
-                        .isBlank()) {
-
-                    existingTableDescriptions.put(
-                            normalizeName(
-                                    existingTable.getName()
-                            ),
-                            existingTable.getDescription()
-                    );
-                }
-
-
-                // -------------------------------------------------
-                // Backup column descriptions
-                // -------------------------------------------------
-
-                if (existingTable.getColumns() == null) {
-                    continue;
-                }
-
-                for (ColumnMetadata existingColumn :
-                        existingTable.getColumns()) {
-
-                    if (existingColumn == null
-                            || existingColumn.getName() == null
-                            || existingColumn.getName().isBlank()) {
-
-                        continue;
-                    }
-
-                    if (existingColumn.getDescription() != null
-                            && !existingColumn
-                            .getDescription()
-                            .isBlank()) {
-
-                        existingColumnDescriptions.put(
-                                buildColumnKey(
-                                        existingTable.getName(),
-                                        existingColumn.getName()
-                                ),
-                                existingColumn.getDescription()
-                        );
-                    }
-                }
-            }
-        }
-
-
-        // =====================================================
-        //CLEAR OLD TABLE METADATA
-        // =====================================================
-
-        List<TableMetadata> tables =
-                schema.getTables();
-
-        if (tables == null) {
-
-            tables = new ArrayList<>();
-
-            schema.setTables(tables);
-        }
-
-        tables.clear();
-
-
-        // =====================================================
-        // OPEN TARGET DATABASE CONNECTION
-        // =====================================================
-
-        try (Connection conn =
-                     targetDatabaseClient.openConnection(
-                             connection.getDbType(),
-                             connection.getHost(),
-                             connection.getPort(),
-                             connection.getDatabaseName(),
-                             connection.getUsername(),
-                             rawPassword
-                     )) {
-
-            DatabaseMetaData metaData =
-                    conn.getMetaData();
-
-
-            // =================================================
-            //XÁC ĐỊNH CATALOG / SCHEMA
-            // =================================================
-            //
-            // MySQL:
-            //
-            //     catalog = databaseName
-            //     schema  = null
-            //
-            // PostgreSQL:
-            //
-            //     catalog = null
-            //     schema  = public
-            //
-            // DuckDB/Excel:
-            //
-            //     catalog = tên catalog THẬT của connection hiện tại
-            //     (xem getCatalog() - fix audit Excel/DuckDB, trước đây
-            //     luôn là null khiến getTables/getColumns quét lẫn cả
-            //     catalog nội bộ "system"/"temp" của DuckDB)
-            //     schema  = null
-            // =================================================
-
-            String catalog =
-                    getCatalog(connection, metaData);
-
-            String schemaPattern =
-                    getSchemaPattern(connection);
-
-
-            // =================================================
-            //DISCOVER TABLES
-            // =================================================
-
-            try (ResultSet tableRs =
-                         metaData.getTables(
-                                 catalog,
-                                 schemaPattern,
-                                 "%",
-                                 new String[]{"TABLE"}
-                         )) {
-
-                while (tableRs.next()) {
-
-                    String tableName =
-                            tableRs.getString(
-                                    "TABLE_NAME"
-                            );
-
-                    if (tableName == null
-                            || tableName.isBlank()) {
-
-                        continue;
-                    }
-
-
-                    // -----------------------------------------
-                    // Description từ database
-                    // -----------------------------------------
-
-                    String databaseDescription =
-                            tableRs.getString(
-                                    "REMARKS"
-                            );
-
-
-                    // -----------------------------------------
-                    // Ưu tiên description application
-                    // -----------------------------------------
-
-                    String description =
-                            getPreservedDescription(
-                                    existingTableDescriptions,
-                                    normalizeName(tableName),
-                                    databaseDescription
-                            );
-
-
-                    // -----------------------------------------
-                    // Tạo TableMetadata
-                    // -----------------------------------------
-
-                    TableMetadata table =
-                            TableMetadata.builder()
-                                    .schema(schema)
-                                    .name(tableName)
-                                    .description(description)
-                                    .build();
-
-
-                    // -----------------------------------------
-                    // Discover columns + PK + FK
-                    // -----------------------------------------
-
-                    table.setColumns(
-                            discoverColumns(
-                                    metaData,
-                                    connection,
-                                    tableName,
-                                    table,
-                                    existingColumnDescriptions
-                            )
-                    );
-
-
-                    tables.add(table);
-                }
-            }
-
-
-            // =================================================
-            //UPDATE SYNC TIME
-            // =================================================
-
-            schema.setLastSyncedAt(
-                    LocalDateTime.now()
+        /*
+         * =====================================================
+         * 1. DISCOVERY + PERSIST (có transaction JPA ngắn)
+         * =====================================================
+         *
+         * Transaction COMMIT và Hikari connection được release
+         * ngay khi discoverAndPersistSchema() return.
+         */
+        DatabaseSchema savedSchema =
+                discoverAndPersistSchema(username, connectionId);
+
+        /*
+         * =====================================================
+         * 2. SCHEMA RAG EMBEDDING (KHÔNG transaction)
+         * =====================================================
+         *
+         * QUAN TRỌNG:
+         *
+         * Tại đây transaction JPA của bước 1 đã kết thúc hoàn toàn.
+         *
+         * Vì vậy ensureEmbeddings() gọi Gemini HTTP (nhiều lần,
+         * có retry khi 429) cho từng bảng thay đổi mà KHÔNG giữ
+         * bất kỳ Hikari connection nào của app idle trong lúc chờ.
+         *
+         * Trước đây @Transactional nằm trên chính discoverSchema()
+         * khiến ensureEmbeddings() — dù bản thân nó không còn
+         * @Transactional — vẫn JOIN vào transaction đang mở này
+         * (propagation REQUIRED mặc định của Spring). Bỏ
+         * @Transactional trên ensureEmbeddings() một mình không đủ;
+         * phải bỏ luôn ở method gọi nó (discoverSchema) như ở đây.
+         */
+        try {
+
+            schemaEmbeddingService.ensureEmbeddings(
+                    savedSchema
             );
 
+        } catch (Exception e) {
 
-            // =================================================
-            //SAVE SCHEMA
-            // =================================================
-            //
-            // Lưu trước để đảm bảo schema.id tồn tại.
-            //
-            // TableEmbedding dùng:
-            //
-            //     schema_id
-            //     table_name
-            //
-            // thay vì table_id.
-            // =================================================
+            /*
+             * Embedding là chức năng bổ sung.
+             *
+             * Gemini/API lỗi không được làm
+             * Schema Discovery thất bại.
+             */
+            log.warn(
+                    "Không thể tạo schema embeddings cho schema {}: {}",
+                    savedSchema.getId(),
+                    e.getMessage()
+            );
 
-            DatabaseSchema savedSchema =
-                    schemaRepository.save(schema);
-
-
-            // =================================================
-            //SCHEMA RAG EMBEDDING
-            // =================================================
-
-            try {
-
-                schemaEmbeddingService.ensureEmbeddings(
-                        savedSchema
-                );
-
-            } catch (Exception e) {
-
-                /*
-                 * Embedding là chức năng bổ sung.
-                 *
-                 * Gemini/API lỗi không được làm
-                 * Schema Discovery thất bại.
-                 */
-                log.warn(
-                        "Không thể tạo schema embeddings cho schema {}: {}",
-                        savedSchema.getId(),
-                        e.getMessage()
-                );
-
-                log.debug(
-                        "Chi tiết lỗi khi tạo schema embeddings",
-                        e
-                );
-            }
-
-
-            return savedSchema;
-
-        } catch (SQLException e) {
-
-            throw new RuntimeException(
-                    "Không thể đọc schema: "
-                            + e.getMessage(),
+            log.debug(
+                    "Chi tiết lỗi khi tạo schema embeddings",
                     e
             );
         }
+
+        return savedSchema;
+    }
+
+    /**
+     * Thực hiện toàn bộ phần discovery (JDBC metadata của target DB)
+     * + persist (schemaRepository.save) bên trong MỘT transaction JPA
+     * ngắn, dùng TransactionTemplate để transaction này chắc chắn kết
+     * thúc trước khi discoverSchema() gọi ensureEmbeddings().
+     */
+    private DatabaseSchema discoverAndPersistSchema(
+            String username,
+            Long connectionId
+    ) {
+
+        TransactionTemplate transactionTemplate =
+                new TransactionTemplate(transactionManager);
+
+        return transactionTemplate.execute(status -> {
+
+            DatabaseConnection connection =
+                    connectionAccessGuard.requireOwnedConnection(
+                            username,
+                            connectionId
+                    );
+
+            if (!"excel".equalsIgnoreCase(connection.getDbType())) {
+
+                ssrfProtection.validateHost(
+                        connection.getHost()
+                );
+            }
+
+            String rawPassword =
+                    encryptionUtil.decrypt(
+                            connection.getEncryptedPassword()
+                    );
+
+
+            // -----------------------------------------------------
+            // Load existing schema
+            // -----------------------------------------------------
+
+            DatabaseSchema schema =
+                    schemaRepository
+                            .findByConnectionId(connectionId)
+                            .orElse(
+                                    DatabaseSchema.builder()
+                                            .connection(connection)
+                                            .databaseName(
+                                                    connection.getDatabaseName()
+                                            )
+                                            .dbType(
+                                                    connection.getDbType()
+                                            )
+                                            .build()
+                            );
+
+            schema.setConnection(connection);
+
+
+            // =====================================================
+            //BACKUP APPLICATION METADATA
+            // =====================================================
+            Map<String, String> existingTableDescriptions =
+                    new HashMap<>();
+
+            Map<String, String> existingColumnDescriptions =
+                    new HashMap<>();
+
+            List<TableMetadata> existingTables =
+                    schema.getTables();
+
+            if (existingTables != null) {
+
+                for (TableMetadata existingTable :
+                        existingTables) {
+
+                    if (existingTable == null
+                            || existingTable.getName() == null
+                            || existingTable.getName().isBlank()) {
+
+                        continue;
+                    }
+
+
+                    // -------------------------------------------------
+                    // Backup table description
+                    // -------------------------------------------------
+
+                    if (existingTable.getDescription() != null
+                            && !existingTable
+                            .getDescription()
+                            .isBlank()) {
+
+                        existingTableDescriptions.put(
+                                normalizeName(
+                                        existingTable.getName()
+                                ),
+                                existingTable.getDescription()
+                        );
+                    }
+
+
+                    // -------------------------------------------------
+                    // Backup column descriptions
+                    // -------------------------------------------------
+
+                    if (existingTable.getColumns() == null) {
+                        continue;
+                    }
+
+                    for (ColumnMetadata existingColumn :
+                            existingTable.getColumns()) {
+
+                        if (existingColumn == null
+                                || existingColumn.getName() == null
+                                || existingColumn.getName().isBlank()) {
+
+                            continue;
+                        }
+
+                        if (existingColumn.getDescription() != null
+                                && !existingColumn
+                                .getDescription()
+                                .isBlank()) {
+
+                            existingColumnDescriptions.put(
+                                    buildColumnKey(
+                                            existingTable.getName(),
+                                            existingColumn.getName()
+                                    ),
+                                    existingColumn.getDescription()
+                            );
+                        }
+                    }
+                }
+            }
+
+
+            // =====================================================
+            //CLEAR OLD TABLE METADATA
+            // =====================================================
+
+            List<TableMetadata> tables =
+                    schema.getTables();
+
+            if (tables == null) {
+
+                tables = new ArrayList<>();
+
+                schema.setTables(tables);
+            }
+
+            tables.clear();
+
+
+            // =====================================================
+            // OPEN TARGET DATABASE CONNECTION
+            // =====================================================
+
+            try (Connection conn =
+                         targetDatabaseClient.openConnection(
+                                 connection.getDbType(),
+                                 connection.getHost(),
+                                 connection.getPort(),
+                                 connection.getDatabaseName(),
+                                 connection.getUsername(),
+                                 rawPassword
+                         )) {
+
+                DatabaseMetaData metaData =
+                        conn.getMetaData();
+
+
+                // =================================================
+                //XÁC ĐỊNH CATALOG / SCHEMA
+                // =================================================
+                //
+                // MySQL:
+                //
+                //     catalog = databaseName
+                //     schema  = null
+                //
+                // PostgreSQL:
+                //
+                //     catalog = null
+                //     schema  = public
+                //
+                // DuckDB/Excel:
+                //
+                //     catalog = tên catalog THẬT của connection hiện tại
+                //     (xem getCatalog() - fix audit Excel/DuckDB, trước đây
+                //     luôn là null khiến getTables/getColumns quét lẫn cả
+                //     catalog nội bộ "system"/"temp" của DuckDB)
+                //     schema  = null
+                // =================================================
+
+                String catalog =
+                        getCatalog(connection, metaData);
+
+                String schemaPattern =
+                        getSchemaPattern(connection);
+
+
+                // =================================================
+                //DISCOVER TABLES
+                // =================================================
+
+                try (ResultSet tableRs =
+                             metaData.getTables(
+                                     catalog,
+                                     schemaPattern,
+                                     "%",
+                                     new String[]{"TABLE"}
+                             )) {
+
+                    while (tableRs.next()) {
+
+                        String tableName =
+                                tableRs.getString(
+                                        "TABLE_NAME"
+                                );
+
+                        if (tableName == null
+                                || tableName.isBlank()) {
+
+                            continue;
+                        }
+
+
+                        // -----------------------------------------
+                        // Description từ database
+                        // -----------------------------------------
+
+                        String databaseDescription =
+                                tableRs.getString(
+                                        "REMARKS"
+                                );
+
+
+                        // -----------------------------------------
+                        // Ưu tiên description application
+                        // -----------------------------------------
+
+                        String description =
+                                getPreservedDescription(
+                                        existingTableDescriptions,
+                                        normalizeName(tableName),
+                                        databaseDescription
+                                );
+
+
+                        // -----------------------------------------
+                        // Tạo TableMetadata
+                        // -----------------------------------------
+
+                        TableMetadata table =
+                                TableMetadata.builder()
+                                        .schema(schema)
+                                        .name(tableName)
+                                        .description(description)
+                                        .build();
+
+
+                        // -----------------------------------------
+                        // Discover columns + PK + FK
+                        // -----------------------------------------
+
+                        table.setColumns(
+                                discoverColumns(
+                                        metaData,
+                                        connection,
+                                        tableName,
+                                        table,
+                                        existingColumnDescriptions
+                                )
+                        );
+
+
+                        tables.add(table);
+                    }
+                }
+
+
+                // =================================================
+                //UPDATE SYNC TIME
+                // =================================================
+
+                schema.setLastSyncedAt(
+                        LocalDateTime.now()
+                );
+
+
+                // =================================================
+                //SAVE SCHEMA
+                // =================================================
+                //
+                // Lưu trước để đảm bảo schema.id tồn tại.
+                //
+                // TableEmbedding dùng:
+                //
+                //     schema_id
+                //     table_name
+                //
+                // thay vì table_id.
+                // =================================================
+
+                DatabaseSchema savedSchema =
+                        schemaRepository.save(schema);
+
+                return savedSchema;
+
+            } catch (SQLException e) {
+
+                throw new RuntimeException(
+                        "Không thể đọc schema: "
+                                + e.getMessage(),
+                        e
+                );
+            }
+        });
     }
 
 
