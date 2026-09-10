@@ -49,6 +49,9 @@ public class Message {
     @Builder.Default
     private List<QueryLog> queryLogs = new ArrayList<>();
 
-    @Column(nullable = true)  // để nullable, tránh lỗi migrate ALTER TABLE trên dữ liệu cũ
+    @Column(nullable = true)
     private Boolean pinned;
+
+    @Column(name = "query_response_json", columnDefinition = "LONGTEXT")
+    private String queryResponseJson;
 }

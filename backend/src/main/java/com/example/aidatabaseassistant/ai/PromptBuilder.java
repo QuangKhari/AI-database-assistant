@@ -462,12 +462,6 @@ public class PromptBuilder {
     FROM customers
     WHERE city = 'Hà Nội';
 
-    Q: Sản phẩm nào có giá trên 5000000?
-    SQL:
-    SELECT product_name, unit_price
-    FROM products
-    WHERE unit_price > 5000000;
-
     Q: 5 khách hàng đăng ký gần đây nhất
     SQL:
     SELECT full_name, created_at
@@ -526,12 +520,6 @@ public class PromptBuilder {
     SELECT full_name
     FROM customers
     WHERE city = 'Hanoi';
-
-                Q: Which products cost more than 5000000?
-                                      SQL:
-                                      SELECT product_name, unit_price
-                                      FROM products
-                                      WHERE unit_price > 5000000;
 
     Q: 5 most recently registered customers
     SQL:

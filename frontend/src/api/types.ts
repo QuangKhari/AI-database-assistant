@@ -165,6 +165,11 @@ export interface ChatMessage {
   createdAt: string;
   queryLogs: QueryLog[];
   pinned: boolean;
+  /**
+   * QueryResponse được backend persist để khôi phục kết quả khi
+   * mở lại conversation hoặc reload trang.
+   */
+  queryResult: QueryResponse | null;
 }
 
 export interface ChatPreviewResult {
@@ -233,7 +238,7 @@ export interface QueryResponse {
   messageId: number;
   generatedSql: string;
   result: QueryResult;
-  summary: string;
+  summary: string | null;
   attemptCount: number;
   chartSuggestion: ChartSuggestion | null;
   dataInsight: DataInsight | null;
@@ -336,6 +341,11 @@ export interface QueryStreamResultEvent {
   data: QueryResponse;
 }
 
+export interface QueryStreamSummaryEvent {
+  type: "summary";
+  summary: string;
+}
+
 export interface QueryStreamErrorEvent {
   type: "error";
   message: string;
@@ -344,6 +354,7 @@ export interface QueryStreamErrorEvent {
 export type QueryStreamEvent =
   | QueryStreamStatusEvent
   | QueryStreamResultEvent
+  | QueryStreamSummaryEvent
   | QueryStreamErrorEvent;
 
 export interface DataInsightRequest {

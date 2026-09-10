@@ -16,4 +16,6 @@ public class QueryRequest {
 
     @NotNull
     private Long databaseConnectionId;
+
+    private String generatedSql;
 }

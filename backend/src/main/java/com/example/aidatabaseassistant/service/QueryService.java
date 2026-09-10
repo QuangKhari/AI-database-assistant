@@ -15,11 +15,22 @@ import com.example.aidatabaseassistant.repository.*;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Service;
 import com.example.aidatabaseassistant.exception.RateLimitExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
+
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+
+import java.text.Normalizer;
+import java.util.Locale;
 
 import java.util.List;
 
@@ -54,8 +65,12 @@ public class QueryService {
     private final SchemaRetrievalService schemaRetrievalService;
     private final Executor sseTaskExecutor; // inject qua constructor
     private final ConnectionAccessGuard connectionAccessGuard;
+    @org.springframework.beans.factory.annotation.Qualifier("sqlGenerationCacheManager")
+    private final CacheManager sqlGenerationCacheManager;
 
     private static final int MAX_HISTORY_MESSAGES = 6; // 3 cặp hỏi-đáp gần nhất
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public PreviewResponse previewQuery(
             String username,
@@ -92,9 +107,11 @@ public class QueryService {
                 );
 
         String generatedSql =
-                nl2SQLEngine.generateSQL(
+                generateSqlWithCache(
+                        connection.getId(),
                         request.getQuestion(),
-                        filteredSchema
+                        filteredSchema,
+                        fullSchema.getLastSyncedAt()
                 );
 
         try {
@@ -135,15 +152,54 @@ public class QueryService {
     }
 
     // Method public CŨ — giữ nguyên signature cho 177 test hiện có
+    // Method public CŨ — giữ nguyên signature cho các test/API hiện có.
     public QueryResponse processQuery(String username, QueryRequest request) {
-        return processQuery(username, request, QueryProgressListener.NOOP);
+        return processQuery(
+                username,
+                request,
+                QueryProgressListener.NOOP
+        );
     }
 
-    public QueryResponse processQuery(String username, QueryRequest request, QueryProgressListener listener) {
+    public QueryResponse processQuery(
+            String username,
+            QueryRequest request,
+            QueryProgressListener listener
+    ) {
+        return processQueryInternal(
+                username,
+                request,
+                listener,
+                false,
+                null
+        );
+    }
+
+    /**
+     * Core xử lý query.
+     *
+     * deferSummary = false:
+     * - Giữ nguyên hành vi /execute hiện tại.
+     * - Summary chạy đồng bộ.
+     *
+     * deferSummary = true:
+     * - Dùng cho SSE.
+     * - Không chờ Summary trước khi trả QueryResponse.
+     * - Summary được chạy background thông qua summaryListener.
+     */
+    private QueryResponse processQueryInternal(
+            String username,
+            QueryRequest request,
+            QueryProgressListener listener,
+            boolean deferSummary,
+            Consumer<String> summaryListener
+    ) {
 
         if (!rateLimitService.tryConsume(username)) {
             throw new RateLimitExceededException("Bạn đã gửi quá nhiều yêu cầu, vui lòng thử lại sau 1 phút");
         }
+
+        long t0 = System.currentTimeMillis();
 
         listener.onProgress("STATUS", "Đang xác thực người dùng và kết nối...");
 
@@ -153,8 +209,34 @@ public class QueryService {
 
         listener.onProgress("STATUS", "Đang tải schema database...");
 
+        long tSchemaLoadStart = System.currentTimeMillis();
         DatabaseSchema fullSchema = schemaLoaderService.loadCompleteSchema(connection.getId());
-        DatabaseSchema filteredSchema = schemaRetrievalService.retrieveRelevantSchema(request.getQuestion(), fullSchema);
+        log.info("[TIMING] loadCompleteSchema: {} ms", System.currentTimeMillis() - tSchemaLoadStart);
+
+        /*
+         * TỐI ƯU HIỆU NĂNG:
+         *
+         * Khi request đã có generatedSql (từ bước Preview), backend đi thẳng vào
+         * nhánh runWithGeneratedSql() bên dưới — nhánh này KHÔNG dùng filteredSchema
+         * (self-correct dùng fullSchema). Gọi retrieveRelevantSchema() ở đây sẽ tốn
+         * thêm 1 lần gọi Gemini Embedding API (300ms - 2s) hoàn toàn vô ích.
+         *
+         * Chỉ tính RAG (và gọi Embedding) khi thực sự cần generate SQL mới
+         * (nhánh fallback không có generatedSql).
+         */
+        boolean hasGeneratedSqlFromPreview =
+                request.getGeneratedSql() != null
+                        && !request.getGeneratedSql().isBlank();
+
+        DatabaseSchema filteredSchema = null;
+
+        if (!hasGeneratedSqlFromPreview) {
+            long tRagStart = System.currentTimeMillis();
+            filteredSchema = schemaRetrievalService.retrieveRelevantSchema(request.getQuestion(), fullSchema);
+            log.info("[TIMING] retrieveRelevantSchema (bao gom embedding call): {} ms", System.currentTimeMillis() - tRagStart);
+        } else {
+            log.info("[TIMING] retrieveRelevantSchema: bỏ qua (đã có generatedSql từ Preview, không cần RAG/embedding)");
+        }
 
         Conversation conversation = getOrCreateConversation(user, connection, request);
         String conversationHistory =
@@ -174,17 +256,67 @@ public class QueryService {
         // QUAN TRỌNG: chọn đúng overload theo việc có/không có lịch sử.
         // Nếu luôn gọi bản 6-arg (kể cả history=null) thì các stub 5-arg
         // trong QueryServiceTest hiện có sẽ KHÔNG match -> vỡ hàng loạt test cũ.
-        SQLCorrectionService.AttemptResult result =
-                (conversationHistory == null)
-                        ? sqlCorrectionService.run(request.getQuestion(), filteredSchema, fullSchema, connection, rawPassword)
-                        : sqlCorrectionService.run(request.getQuestion(), filteredSchema, fullSchema, connection, rawPassword, conversationHistory);
+        long tCorrectionStart = System.currentTimeMillis();
+        SQLCorrectionService.AttemptResult result;
+
+        if (hasGeneratedSqlFromPreview) {
+
+            log.info(
+                    "Execute sử dụng SQL từ Preview, bỏ qua bước generate SQL lần 2."
+            );
+
+            result =
+                    sqlCorrectionService.runWithGeneratedSql(
+                            request.getQuestion(),
+                            request.getGeneratedSql(),
+                            filteredSchema,
+                            fullSchema,
+                            connection,
+                            rawPassword,
+                            conversationHistory
+                    );
+
+        } else {
+
+            /*
+             * FALLBACK:
+             *
+             * Nếu client/API cũ không gửi generatedSql,
+             * vẫn giữ nguyên hành vi cũ:
+             *
+             * RAG → Gemini → validate → execute.
+             */
+            result =
+                    (conversationHistory == null)
+                            ? sqlCorrectionService.run(
+                            request.getQuestion(),
+                            filteredSchema,
+                            fullSchema,
+                            connection,
+                            rawPassword
+                    )
+                            : sqlCorrectionService.run(
+                            request.getQuestion(),
+                            filteredSchema,
+                            fullSchema,
+                            connection,
+                            rawPassword,
+                            conversationHistory
+                    );
+        }
+        log.info(
+                "[TIMING] sqlCorrectionService.run: {} ms, so lan thu: {}, success: {}",
+                System.currentTimeMillis() - tCorrectionStart,
+                result.getAttemptLogs().size(),
+                result.isSuccess()
+        );
 
         Message assistantMessage = Message.builder()
                 .conversation(conversation)
                 .role("assistant")
                 .content(result.isSuccess()
-                                ? "Đã trả lời thành công"
-                                : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
+                        ? "Đã trả lời thành công"
+                        : "Không thể sinh SQL hợp lệ sau nhiều lần thử"
                 )
                 .generatedSql(result.getSql()).build();
 
@@ -212,16 +344,255 @@ public class QueryService {
             queryLogRepository.save(queryLog);
         }
 
-        listener.onProgress("STATUS", "Đang tạo tóm tắt và gợi ý biểu đồ...");
+        String summary = null;
 
-        String summary = result.isSuccess() ? safeSummarize(request.getQuestion(), result.getFinalResult()) : null;
-        ChartSuggestionResponse chartSuggestion = result.isSuccess() ? buildChartSuggestion(result.getFinalResult(), fullSchema) : null;
-        DataInsightResponse dataInsight = result.isSuccess() ? buildDataInsight(result.getFinalResult(), fullSchema) : null;
+        /*
+         * Hướng A:
+         *
+         * Với SSE, Summary KHÔNG nằm trên critical path.
+         * Result + Chart + DataInsight được trả về trước.
+         */
+        if (result.isSuccess() && !deferSummary) {
 
-        listener.onProgress("STATUS", "Hoàn tất.");
+            listener.onProgress(
+                    "STATUS",
+                    "Đang tạo tóm tắt và gợi ý biểu đồ..."
+            );
 
-        return new QueryResponse(conversation.getId(), assistantMessage.getId(), result.getSql(),
-                result.getFinalResult(), summary, logs.size(), chartSuggestion, dataInsight);
+            long tSummaryStart = System.currentTimeMillis();
+
+            summary =
+                    safeSummarize(
+                            request.getQuestion(),
+                            result.getFinalResult()
+                    );
+
+            log.info(
+                    "[TIMING] safeSummarize: {} ms",
+                    System.currentTimeMillis() - tSummaryStart
+            );
+        }
+
+        long tChartStart = System.currentTimeMillis();
+
+        ChartSuggestionResponse chartSuggestion =
+                result.isSuccess()
+                        ? buildChartSuggestion(
+                        result.getFinalResult(),
+                        fullSchema
+                )
+                        : null;
+
+        DataInsightResponse dataInsight =
+                result.isSuccess()
+                        ? buildDataInsight(
+                        result.getFinalResult(),
+                        fullSchema
+                )
+                        : null;
+
+        log.info(
+                "[TIMING] chartSuggestion + dataInsight: {} ms",
+                System.currentTimeMillis() - tChartStart
+        );
+
+        /*
+         * Khi chạy SSE:
+         *
+         * - Không chờ Summary.
+         * - QueryResponse trả summary = null.
+         * - Summary sẽ được chạy background sau khi result đã sẵn sàng.
+         */
+        QueryResponse response =
+                new QueryResponse(
+                        conversation.getId(),
+                        assistantMessage.getId(),
+                        result.getSql(),
+                        result.getFinalResult(),
+                        summary,
+                        logs.size(),
+                        chartSuggestion,
+                        dataInsight
+                );
+        persistQueryResponseSnapshot(
+                assistantMessage.getId(),
+                response
+        );
+
+        if (deferSummary && result.isSuccess() && summaryListener != null) {
+
+            log.info(
+                    "[TIMING] Query core hoàn tất trước Summary: {} ms",
+                    System.currentTimeMillis() - t0
+            );
+
+            sseTaskExecutor.execute(() -> {
+
+                long tBackgroundSummary =
+                        System.currentTimeMillis();
+
+                try {
+
+                    log.info(
+                            "Background Summary bắt đầu cho question=\"{}\"",
+                            request.getQuestion()
+                    );
+
+                    String backgroundSummary =
+                            safeSummarize(
+                                    request.getQuestion(),
+                                    result.getFinalResult()
+                            );
+
+                    log.info(
+                            "[TIMING] Background safeSummarize: {} ms",
+                            System.currentTimeMillis() - tBackgroundSummary
+                    );
+
+                    /*
+                     * Cập nhật snapshot trong DB trước khi gửi summary về FE.
+                     * Nếu user quay lại conversation sau đó, summary vẫn còn.
+                     */
+                    updatePersistedSummary(
+                            assistantMessage.getId(),
+                            backgroundSummary
+                    );
+
+                    summaryListener.accept(backgroundSummary);
+
+                } catch (Exception e) {
+
+                    log.warn(
+                            "Background Summary thất bại cho question=\"{}\": {}",
+                            request.getQuestion(),
+                            e.toString()
+                    );
+
+                    /*
+                     * safeSummarize vốn đã có fallback.
+                     * Đoạn này chỉ là lớp bảo vệ cuối cùng nếu
+                     * có lỗi bất ngờ ngoài safeSummarize().
+                     */
+                    String fallback =
+                            QuestionLanguage.isEnglish(request.getQuestion())
+                                    ? "Could not generate an automatic summary for this result. Please check the data table below."
+                                    : "Không thể tạo tóm tắt tự động cho kết quả này. Vui lòng xem bảng dữ liệu bên dưới.";
+
+                    try {
+                        updatePersistedSummary(
+                                assistantMessage.getId(),
+                                fallback
+                        );
+                        summaryListener.accept(fallback);
+                    } catch (Exception callbackError) {
+                        log.debug(
+                                "Không thể gửi background summary về SSE: {}",
+                                callbackError.toString()
+                        );
+                    }
+                }
+            });
+
+        } else {
+
+            listener.onProgress("STATUS", "Hoàn tất.");
+
+            log.info(
+                    "[TIMING] TONG CONG ca request: {} ms",
+                    System.currentTimeMillis() - t0
+            );
+        }
+
+        return response;
+    }
+
+    /**
+     * Lưu toàn bộ QueryResponse vào assistant message.
+     *
+     * Persistence lỗi không được làm hỏng query chính vì đây chỉ là
+     * snapshot phục vụ việc khôi phục UI.
+     */
+    private void persistQueryResponseSnapshot(
+            Long messageId,
+            QueryResponse response
+    ) {
+        try {
+            Message message = messageRepository.findById(messageId)
+                    .orElse(null);
+
+            if (message == null) {
+                log.warn(
+                        "[QUERY SNAPSHOT] Không tìm thấy messageId={} để lưu snapshot",
+                        messageId
+                );
+                return;
+            }
+
+            message.setQueryResponseJson(
+                    OBJECT_MAPPER.writeValueAsString(response)
+            );
+
+            messageRepository.save(message);
+
+            log.debug(
+                    "[QUERY SNAPSHOT] Đã lưu snapshot cho messageId={}",
+                    messageId
+            );
+
+        } catch (Exception e) {
+            log.warn(
+                    "[QUERY SNAPSHOT] Không thể lưu snapshot messageId={}: {}",
+                    messageId,
+                    e.toString()
+            );
+        }
+    }
+
+    /**
+     * Cập nhật summary vào JSON snapshot đã lưu.
+     */
+    private void updatePersistedSummary(
+            Long messageId,
+            String summary
+    ) {
+        try {
+            Message message = messageRepository.findById(messageId)
+                    .orElse(null);
+
+            if (message == null
+                    || message.getQueryResponseJson() == null
+                    || message.getQueryResponseJson().isBlank()) {
+                return;
+            }
+
+            ObjectNode root = (ObjectNode) OBJECT_MAPPER.readTree(
+                    message.getQueryResponseJson()
+            );
+
+            if (summary == null) {
+                root.putNull("summary");
+            } else {
+                root.put("summary", summary);
+            }
+
+            message.setQueryResponseJson(
+                    OBJECT_MAPPER.writeValueAsString(root)
+            );
+
+            messageRepository.save(message);
+
+            log.debug(
+                    "[QUERY SNAPSHOT] Đã cập nhật summary messageId={}",
+                    messageId
+            );
+
+        } catch (Exception e) {
+            log.warn(
+                    "[QUERY SNAPSHOT] Không thể cập nhật summary messageId={}: {}",
+                    messageId,
+                    e.toString()
+            );
+        }
     }
 
     private DataInsightResponse buildDataInsight(
@@ -288,44 +659,59 @@ public class QueryService {
             QueryResultDto result
     ) {
 
-        List<java.util.Map<String, Object>> limitedRows =
+        List<Map<String, Object>> limitedRows =
                 result.getRows().size() > 20
                         ? result.getRows().subList(0, 20)
                         : result.getRows();
 
-        // Câu hỏi bằng tiếng Anh -> tóm tắt cũng phải trả lời bằng tiếng
-        // Anh (trước đây prompt luôn ép "1-2 câu tiếng Việt" bất kể ngôn
-        // ngữ câu hỏi, khiến người dùng hỏi tiếng Anh vẫn nhận tóm tắt
-        // tiếng Việt - đây là phần còn thiếu của tính năng hỏi tiếng Anh).
-        String prompt = QuestionLanguage.isEnglish(question)
-                ? """
-            Question: %s
+        String prompt;
 
-            SQL result:
-            %s
+        if (QuestionLanguage.isEnglish(question)) {
 
-            REQUIREMENTS:
-            - Summarize the result in 1-2 natural, concise English sentences.
-            - Only use figures that literally appear in the result above.
-            - Do NOT recompute totals, averages, percentages or any arithmetic yourself.
-            - Do NOT alter, round, or infer any numbers.
-            - If the result has multiple rows, highlight the key points directly from the data.
-            """.formatted(question, limitedRows)
-                : """
-            Câu hỏi: %s
+            prompt = """
+                Question: %s
 
-            Kết quả SQL:
-            %s
+                SQL result:
+                %s
 
-            YÊU CẦU:
-            - Tóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.
-            - Chỉ sử dụng các số liệu xuất hiện trong kết quả.
-            - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
-            - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
-            - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
-            """.formatted(question, limitedRows);
+                REQUIREMENTS:
+                - Summarize the result in 1-2 natural, concise English sentences.
+                - Only use figures that literally appear in the result above.
+                - Do NOT recompute totals, averages, percentages or any arithmetic yourself.
+                - Do NOT alter, round, or infer any numbers.
+                - If the result has multiple rows, highlight the key points directly from the data.
+                """.formatted(
+                    question,
+                    limitedRows
+            );
 
-        return llmClient.generateResponse(prompt);
+        } else {
+
+            prompt = """
+                Câu hỏi: %s
+
+                Kết quả SQL:
+                %s
+
+                YÊU CẦU:
+                - Tóm tắt kết quả bằng 1-2 câu tiếng Việt tự nhiên, ngắn gọn.
+                - Chỉ sử dụng các số liệu xuất hiện trong kết quả.
+                - KHÔNG tự tính lại tổng, trung bình, phần trăm hoặc các phép tính số học.
+                - KHÔNG thay đổi, làm tròn hoặc suy diễn số liệu.
+                - Nếu kết quả có nhiều dòng, hãy nêu các điểm nổi bật dựa trực tiếp trên dữ liệu.
+                """.formatted(
+                    question,
+                    limitedRows
+            );
+        }
+
+        /*
+         * QUAN TRỌNG:
+         *
+         * Summary là optional AI feature.
+         * Không dùng generateResponse() vì method đó có retry + timeout 60s.
+         */
+        return llmClient.generateOptionalResponse(prompt);
     }
 
     private Conversation getOrCreateConversation(
@@ -425,7 +811,10 @@ public class QueryService {
         }
     }
 
-    public SseEmitter processQueryStreaming(String username, QueryRequest request) {
+    public SseEmitter processQueryStreaming(
+            String username,
+            QueryRequest request
+    ) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
 
         emitter.onTimeout(() ->
@@ -455,29 +844,261 @@ public class QueryService {
         );
 
         sseTaskExecutor.execute(() -> {
+
             try {
-                QueryProgressListener listener = (stage, message) -> {
-                    try {
-                        emitter.send(SseEmitter.event().name(stage).data(message));
-                    } catch (IOException ignored) {
-                        // client đã đóng kết nối (đóng tab, mất mạng...) — bỏ qua, không throw
-                    }
-                };
 
-                QueryResponse response = processQuery(username, request, listener);
+                QueryProgressListener listener =
+                        (stage, message) -> {
 
-                emitter.send(SseEmitter.event().name("result").data(response));
-                emitter.complete();
+                            try {
+
+                                emitter.send(
+                                        SseEmitter.event()
+                                                .name(stage)
+                                                .data(message)
+                                );
+
+                            } catch (IOException ignored) {
+
+                                // Client đã đóng kết nối.
+                                // Không làm hỏng quá trình xử lý backend.
+                            }
+                        };
+
+                /*
+                 * Summary callback:
+                 *
+                 * Được gọi từ background thread sau khi QueryResponse
+                 * đã được gửi về frontend.
+                 */
+                Consumer<String> summaryListener =
+                        summary -> {
+
+                            try {
+
+                                log.info(
+                                        "Đang gửi SSE summary cho question=\"{}\", summary=\"{}\"",
+                                        request.getQuestion(),
+                                        summary
+                                );
+
+                                emitter.send(
+                                        SseEmitter.event()
+                                                .name("summary")
+                                                .data(summary)
+                                );
+
+                                log.info(
+                                        "SSE summary đã gửi thành công cho question=\"{}\"",
+                                        request.getQuestion()
+                                );
+
+                                emitter.send(
+                                        SseEmitter.event()
+                                                .name("STATUS")
+                                                .data("Hoàn tất.")
+                                );
+
+                                emitter.complete();
+
+                                log.info(
+                                        "SSE query hoàn tất sau khi gửi Summary cho question=\"{}\"",
+                                        request.getQuestion()
+                                );
+
+                            } catch (IOException e) {
+
+                                log.warn(
+                                        "Không thể gửi Summary qua SSE vì client đã đóng kết nối. question=\"{}\", reason={}",
+                                        request.getQuestion(),
+                                        e.toString()
+                                );
+
+                                emitter.complete();
+
+                            } catch (IllegalStateException e) {
+
+                                log.warn(
+                                        "SSE emitter không còn hợp lệ khi gửi Summary. question=\"{}\", reason={}",
+                                        request.getQuestion(),
+                                        e.toString()
+                                );
+
+                                emitter.complete();
+
+                            }
+                        };
+
+                /*
+                 * Hướng A:
+                 *
+                 * processQueryInternal trả QueryResponse ngay sau:
+                 * - RAG
+                 * - SQL execution
+                 * - Chart
+                 * - DataInsight
+                 *
+                 * KHÔNG chờ Summary.
+                 */
+                QueryResponse response =
+                        processQueryInternal(
+                                username,
+                                request,
+                                listener,
+                                true,
+                                summaryListener
+                        );
+
+                /*
+                 * Gửi result NGAY.
+                 *
+                 * Không complete emitter ở đây vì background Summary
+                 * vẫn cần dùng cùng SSE connection.
+                 */
+                emitter.send(
+                        SseEmitter.event()
+                                .name("result")
+                                .data(response)
+                );
+
+                log.info(
+                        "SSE result đã gửi trước Background Summary cho question=\"{}\"",
+                        request.getQuestion()
+                );
 
             } catch (Exception e) {
+
                 try {
-                    emitter.send(SseEmitter.event().name("error")
-                            .data(e.getMessage() != null ? e.getMessage() : "Lỗi không xác định"));
-                } catch (IOException ignored) { }
+
+                    emitter.send(
+                            SseEmitter.event()
+                                    .name("error")
+                                    .data(
+                                            e.getMessage() != null
+                                                    ? e.getMessage()
+                                                    : "Lỗi không xác định"
+                                    )
+                    );
+
+                } catch (IOException ignored) {
+                    // Client đã đóng connection.
+                }
+
                 emitter.completeWithError(e);
             }
         });
 
         return emitter;
+    }
+
+    private String generateSqlWithCache(
+            Long connectionId,
+            String question,
+            DatabaseSchema filteredSchema,
+            java.time.LocalDateTime schemaVersion
+    ) {
+
+        String normalizedQuestion = normalizeQuestion(question);
+
+        String normalizedSchemaVersion =
+                schemaVersion != null
+                        ? schemaVersion.toString()
+                        : "schema-" + filteredSchema.getId();
+
+        String cacheKey =
+                connectionId
+                        + ":"
+                        + normalizedQuestion
+                        + ":"
+                        + normalizedSchemaVersion;
+
+        Cache cache =
+                sqlGenerationCacheManager.getCache(
+                        com.example.aidatabaseassistant.config.CacheConfig.SQL_GENERATION_CACHE
+                );
+
+        if (cache != null) {
+
+            String cachedSql = cache.get(
+                    cacheKey,
+                    String.class
+            );
+
+            if (cachedSql != null) {
+
+                log.info(
+                        "[SQL CACHE] HIT connectionId={}, schemaVersion={}, question=\"{}\"",
+                        connectionId,
+                        normalizedSchemaVersion,
+                        question
+                );
+
+                return cachedSql;
+            }
+        }
+
+        log.info(
+                "[SQL CACHE] MISS connectionId={}, schemaVersion={}, question=\"{}\"",
+                connectionId,
+                normalizedSchemaVersion,
+                question
+        );
+
+        long start = System.currentTimeMillis();
+
+        String generatedSql =
+                nl2SQLEngine.generateSQL(
+                        question,
+                        filteredSchema
+                );
+
+        long elapsed =
+                System.currentTimeMillis() - start;
+
+        log.info(
+                "[TIMING] nl2SQLEngine.generateSQL: {} ms",
+                elapsed
+        );
+
+        if (cache != null) {
+
+            cache.put(
+                    cacheKey,
+                    generatedSql
+            );
+
+            log.info(
+                    "[SQL CACHE] PUT connectionId={}, schemaVersion={}",
+                    connectionId,
+                    normalizedSchemaVersion
+            );
+        }
+
+        return generatedSql;
+    }
+
+    private String normalizeQuestion(String question) {
+
+        if (question == null) {
+            return "";
+        }
+
+        String normalized =
+                Normalizer.normalize(
+                                question,
+                                Normalizer.Form.NFKC
+                        )
+                        .trim()
+                        .toLowerCase(Locale.ROOT)
+                        .replaceAll("\\s+", " ");
+
+        // Cho phép các câu chỉ khác dấu câu cuối vẫn dùng chung cache.
+        normalized =
+                normalized.replaceAll(
+                        "[?!.。！？]+$",
+                        ""
+                ).trim();
+
+        return normalized;
     }
 }

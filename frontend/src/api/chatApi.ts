@@ -88,11 +88,16 @@ export const chatApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
   executeStream: (
     payload: {
       databaseConnectionId: number;
       conversationId?: number;
       question: string;
+
+      // Dùng SQL đã được tạo ở bước Preview.
+      // Không để backend gọi Gemini tạo SQL lần 2.
+      generatedSql: string;
     },
     onEvent: (event: QueryStreamEvent) => void,
   ) =>
@@ -127,6 +132,28 @@ export const chatApi = {
             return;
           }
 
+          /*
+           * Hướng A:
+           *
+           * Backend gửi kết quả truy vấn trước.
+           * Sau đó Summary AI chạy background và gửi event "summary".
+           *
+           * Event này chỉ chứa phần summary nên frontend cập nhật
+           * vào queryResult hiện tại, không chạy lại query.
+           */
+          if (event === "summary") {
+            onEvent({
+              type: "summary",
+              summary:
+                typeof parsed === "string"
+                  ? parsed
+                  : typeof parsed?.summary === "string"
+                    ? parsed.summary
+                    : data,
+            });
+            return;
+          }
+
           if (event === "error") {
             onEvent({
               type: "error",
@@ -135,6 +162,10 @@ export const chatApi = {
             });
           }
         } catch {
+          /*
+           * Một số STATUS/error có thể không phải JSON.
+           * Giữ nguyên fallback hiện tại.
+           */
           if (event === "STATUS") {
             onEvent({
               type: "STATUS",

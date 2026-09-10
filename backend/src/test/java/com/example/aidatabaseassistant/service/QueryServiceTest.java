@@ -37,6 +37,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import org.springframework.cache.CacheManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -90,6 +91,9 @@ class QueryServiceTest {
     @Mock
     private ConnectionAccessGuard connectionAccessGuard;
 
+    @Mock
+    private CacheManager sqlGenerationCacheManager;
+
     private QueryService queryService;
 
     private User owner;
@@ -123,7 +127,8 @@ class QueryServiceTest {
                 dataInsightService,
                 schemaRetrievalService,
                 sseTaskExecutor,
-                connectionAccessGuard
+                connectionAccessGuard,
+                sqlGenerationCacheManager
         );
 
         // modelUrl la field @Value, KHONG duoc Lombok dua vao constructor vi
@@ -336,7 +341,8 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
 
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt kết quả");
         when(chartSuggestionService.suggest(eq(finalResult.getColumns()), eq(finalResult.getRows()), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.BAR, List.of(ChartType.LINE),
                         "thang", List.of("1"), List.of(), "vì lý do gì đó"));
@@ -371,7 +377,8 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT col FROM t", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "Không có dữ liệu"));
 
@@ -405,7 +412,8 @@ class QueryServiceTest {
                 true, "SELECT col FROM t", finalResult, logs);
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
 
@@ -476,8 +484,12 @@ class QueryServiceTest {
                 .thenReturn(attemptResult);
 
         // Mo phong dung loi thuc te cua LLMClient khi Gemini khong tra du lieu.
-        when(llmClient.generateResponse(anyString()))
-                .thenThrow(new RuntimeException("Gemini API không trả về dữ liệu"));
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenThrow(
+                        new RuntimeException(
+                                "Gemini API không trả về dữ liệu"
+                        )
+                );
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -520,7 +532,8 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tháng 1 đạt 1000.");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Doanh thu tháng 1 đạt 1000.");
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -555,14 +568,19 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT month, revenue FROM revenue", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Revenue in January was 1000.");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Revenue in January was 1000.");
 
         QueryResponse response = queryService.processQuery("owner", request);
 
         assertEquals("Revenue in January was 1000.", response.getSummary());
 
         org.mockito.ArgumentCaptor<String> promptCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(llmClient).generateResponse(promptCaptor.capture());
+        verify(
+                llmClient
+        ).generateOptionalResponse(
+                promptCaptor.capture()
+        );;
 
         String prompt = promptCaptor.getValue();
         assertTrue(prompt.contains("Summarize the result in 1-2 natural, concise English sentences."));
@@ -594,8 +612,12 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT month, revenue FROM revenue", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString()))
-                .thenThrow(new RuntimeException("Gemini API did not return data"));
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenThrow(
+                        new RuntimeException(
+                                "Gemini API did not return data"
+                        )
+                );
 
         QueryResponse response = queryService.processQuery("owner", request);
 
@@ -609,39 +631,128 @@ class QueryServiceTest {
 
     @Test
     void processQuery_shouldAttachChartSuggestion_whenQuerySucceeds() {
-        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+        QueryRequest request =
+                buildRequest(
+                        "Doanh thu theo tháng",
+                        10L,
+                        null
+                );
 
-        when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
-        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
-        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
-        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
-        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        when(rateLimitService.tryConsume("owner"))
+                .thenReturn(true);
+
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
+
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L))
+                .thenReturn(connection);
+
+        when(schemaLoaderService.loadCompleteSchema(10L))
+                .thenReturn(schema);
+
+        when(schemaRetrievalService.retrieveRelevantSchema(
+                anyString(),
+                eq(schema)
+        )).thenReturn(schema);
+
+        when(encryptionUtil.decrypt("enc-pass"))
+                .thenReturn("plain-pass");
+
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
 
-        List<String> columns = List.of("thang", "doanh_thu");
-        List<Map<String, Object>> rows = List.of(
-                Map.of("thang", 1, "doanh_thu", 1000),
-                Map.of("thang", 2, "doanh_thu", 1500));
-        QueryResultDto finalResult = new QueryResultDto(columns, rows, 30L, 2, null);
+        List<String> columns =
+                List.of(
+                        "thang",
+                        "doanh_thu"
+                );
 
-        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
-                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
-                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
-                .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tăng theo tháng");
+        List<Map<String, Object>> rows =
+                List.of(
+                        Map.of(
+                                "thang", 1,
+                                "doanh_thu", 1000
+                        ),
+                        Map.of(
+                                "thang", 2,
+                                "doanh_thu", 1500
+                        )
+                );
 
-        ChartSuggestionResponse expectedChart = new ChartSuggestionResponse(
-                ChartType.LINE, List.of(ChartType.BAR), "thang", List.of("1", "2"),
-                List.of(), "cột 'thang' mang tính thời gian nên phù hợp Line");
-        when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenReturn(expectedChart);
+        QueryResultDto finalResult =
+                new QueryResultDto(
+                        columns,
+                        rows,
+                        30L,
+                        2,
+                        null
+                );
 
-        QueryResponse response = queryService.processQuery("owner", request);
+        SQLCorrectionService.AttemptResult attemptResult =
+                buildAttemptResult(
+                        true,
+                        "SELECT thang, doanh_thu FROM revenue",
+                        finalResult,
+                        List.of(
+                                buildAttemptLog(
+                                        "SELECT thang, doanh_thu FROM revenue",
+                                        true,
+                                        finalResult
+                                )
+                        )
+                );
 
-        assertSame(expectedChart, response.getChartSuggestion());
-        verify(chartSuggestionService).suggest(eq(columns), eq(rows), anyMap());
+        when(sqlCorrectionService.run(
+                eq(request.getQuestion()),
+                eq(schema),
+                eq(schema),
+                eq(connection),
+                eq("plain-pass")
+        )).thenReturn(attemptResult);
+
+        /*
+         * QueryService dung Optional AI de tao Summary.
+         */
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn(
+                        "Doanh thu tăng theo tháng"
+                );
+
+        ChartSuggestionResponse expectedChart =
+                new ChartSuggestionResponse(
+                        ChartType.LINE,
+                        List.of(ChartType.BAR),
+                        "thang",
+                        List.of("1", "2"),
+                        List.of(),
+                        "cột 'thang' mang tính thời gian nên phù hợp Line"
+                );
+
+        when(chartSuggestionService.suggest(
+                eq(columns),
+                eq(rows),
+                anyMap()
+        )).thenReturn(expectedChart);
+
+        QueryResponse response =
+                queryService.processQuery(
+                        "owner",
+                        request
+                );
+
+        assertNotNull(response);
+
+        assertSame(
+                expectedChart,
+                response.getChartSuggestion()
+        );
+
+        verify(chartSuggestionService)
+                .suggest(
+                        eq(columns),
+                        eq(rows),
+                        anyMap()
+                );
     }
 
     @Test
@@ -695,7 +806,8 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt kết quả");
         when(chartSuggestionService.suggest(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong chart suggestion"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -710,40 +822,136 @@ class QueryServiceTest {
 
     @Test
     void processQuery_shouldAttachDataInsight_whenQuerySucceeds() {
-        QueryRequest request = buildRequest("Doanh thu theo tháng", 10L, null);
+        QueryRequest request =
+                buildRequest(
+                        "Doanh thu theo tháng",
+                        10L,
+                        null
+                );
 
-        when(rateLimitService.tryConsume("owner")).thenReturn(true);
-        when(connectionAccessGuard.requireUser("owner")).thenReturn(owner);
-        when(connectionAccessGuard.requireOwnedConnection(owner, 10L)).thenReturn(connection);
-        when(schemaLoaderService.loadCompleteSchema(10L)).thenReturn(schema);
-        when(schemaRetrievalService.retrieveRelevantSchema(anyString(), eq(schema))).thenReturn(schema);
-        when(encryptionUtil.decrypt("enc-pass")).thenReturn("plain-pass");
+        when(rateLimitService.tryConsume("owner"))
+                .thenReturn(true);
+
+        when(connectionAccessGuard.requireUser("owner"))
+                .thenReturn(owner);
+
+        when(connectionAccessGuard.requireOwnedConnection(owner, 10L))
+                .thenReturn(connection);
+
+        when(schemaLoaderService.loadCompleteSchema(10L))
+                .thenReturn(schema);
+
+        when(schemaRetrievalService.retrieveRelevantSchema(
+                anyString(),
+                eq(schema)
+        )).thenReturn(schema);
+
+        when(encryptionUtil.decrypt("enc-pass"))
+                .thenReturn("plain-pass");
+
         stubConversationSaveAssignsId();
         stubMessageSaveAssignsId();
 
-        List<String> columns = List.of("thang", "doanh_thu");
-        List<Map<String, Object>> rows = List.of(
-                Map.of("thang", 1, "doanh_thu", 1000),
-                Map.of("thang", 2, "doanh_thu", 2000));
-        QueryResultDto finalResult = new QueryResultDto(columns, rows, 30L, 2, null);
+        List<String> columns =
+                List.of(
+                        "thang",
+                        "doanh_thu"
+                );
 
-        SQLCorrectionService.AttemptResult attemptResult = buildAttemptResult(
-                true, "SELECT thang, doanh_thu FROM revenue", finalResult,
-                List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
-        when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
-                .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Doanh thu tăng theo tháng");
+        List<Map<String, Object>> rows =
+                List.of(
+                        Map.of(
+                                "thang", 1,
+                                "doanh_thu", 1000
+                        ),
+                        Map.of(
+                                "thang", 2,
+                                "doanh_thu", 2000
+                        )
+                );
 
-        DataInsightResponse expectedInsight = new DataInsightResponse(
-                "doanh_thu", "thang", "2", 2000.0, "1", 1000.0,
-                100.0, TrendDirection.UP, "1", "2", null, null, List.of(),
-                "Doanh thu tăng 100% từ tháng 1 đến tháng 2.");
-        when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenReturn(expectedInsight);
+        QueryResultDto finalResult =
+                new QueryResultDto(
+                        columns,
+                        rows,
+                        30L,
+                        2,
+                        null
+                );
 
-        QueryResponse response = queryService.processQuery("owner", request);
+        SQLCorrectionService.AttemptResult attemptResult =
+                buildAttemptResult(
+                        true,
+                        "SELECT thang, doanh_thu FROM revenue",
+                        finalResult,
+                        List.of(
+                                buildAttemptLog(
+                                        "SELECT thang, doanh_thu FROM revenue",
+                                        true,
+                                        finalResult
+                                )
+                        )
+                );
 
-        assertSame(expectedInsight, response.getDataInsight());
-        verify(dataInsightService).analyze(eq(columns), eq(rows), anyMap());
+        when(sqlCorrectionService.run(
+                eq(request.getQuestion()),
+                eq(schema),
+                eq(schema),
+                eq(connection),
+                eq("plain-pass")
+        )).thenReturn(attemptResult);
+
+        /*
+         * QueryService dung Optional AI de tao Summary.
+         */
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn(
+                        "Doanh thu tăng theo tháng"
+                );
+
+        DataInsightResponse expectedInsight =
+                new DataInsightResponse(
+                        "doanh_thu",
+                        "thang",
+                        "2",
+                        2000.0,
+                        "1",
+                        1000.0,
+                        100.0,
+                        TrendDirection.UP,
+                        "1",
+                        "2",
+                        null,
+                        null,
+                        List.of(),
+                        "Doanh thu tăng 100% từ tháng 1 đến tháng 2."
+                );
+
+        when(dataInsightService.analyze(
+                eq(columns),
+                eq(rows),
+                anyMap()
+        )).thenReturn(expectedInsight);
+
+        QueryResponse response =
+                queryService.processQuery(
+                        "owner",
+                        request
+                );
+
+        assertNotNull(response);
+
+        assertSame(
+                expectedInsight,
+                response.getDataInsight()
+        );
+
+        verify(dataInsightService)
+                .analyze(
+                        eq(columns),
+                        eq(rows),
+                        anyMap()
+                );
     }
 
     @Test
@@ -797,7 +1005,8 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT thang, doanh_thu FROM revenue", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt kết quả");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt kết quả");
         when(dataInsightService.analyze(eq(columns), eq(rows), anyMap())).thenThrow(new RuntimeException("Loi bat ngo trong data insight"));
 
         QueryResponse response = queryService.processQuery("owner", request);
@@ -838,7 +1047,8 @@ class QueryServiceTest {
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection),
                 eq("plain-pass"), contains("Doanh thu tháng 1 là bao nhiêu?")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "..."));
 
@@ -868,7 +1078,8 @@ class QueryServiceTest {
                 List.of(buildAttemptLog("SELECT col FROM t", true, finalResult)));
         when(sqlCorrectionService.run(eq(request.getQuestion()), eq(schema), eq(schema), eq(connection), eq("plain-pass")))
                 .thenReturn(attemptResult);
-        when(llmClient.generateResponse(anyString())).thenReturn("Tóm tắt");
+        when(llmClient.generateOptionalResponse(anyString()))
+                .thenReturn("Tóm tắt");
         when(chartSuggestionService.suggest(anyList(), anyList(), anyMap()))
                 .thenReturn(new ChartSuggestionResponse(ChartType.TABLE, List.of(), null, List.of(), List.of(), "reason"));
 
@@ -960,7 +1171,7 @@ class QueryServiceTest {
                 eq("plain-pass")
         )).thenReturn(attemptResult);
 
-        when(llmClient.generateResponse(anyString()))
+        when(llmClient.generateOptionalResponse(anyString()))
                 .thenReturn("Doanh thu tháng 1 đạt 1000.");
     }
 
@@ -1044,7 +1255,7 @@ class QueryServiceTest {
             SseEmitter mockedEmitter =
                     mocked.constructed().get(0);
 
-            verify(sseTaskExecutor, times(1))
+            verify(sseTaskExecutor, times(2))
                     .execute(any(Runnable.class));
 
             verify(mockedEmitter, times(6))

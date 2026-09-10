@@ -249,6 +249,168 @@ public class SQLCorrectionService {
         return attemptResult;
     }
 
+    public AttemptResult runWithGeneratedSql(
+            String question,
+            String generatedSql,
+            DatabaseSchema filteredSchema,
+            DatabaseSchema fullSchema,
+            DatabaseConnection connection,
+            String rawPassword,
+            String conversationHistory
+    ) {
+
+        if (generatedSql == null || generatedSql.isBlank()) {
+            throw new IllegalArgumentException(
+                    "SQL preview không được để trống."
+            );
+        }
+
+        AttemptResult attemptResult = new AttemptResult();
+
+        String currentSql = generatedSql.trim();
+        String lastError = null;
+
+        /*
+         * SQL đã được sinh ở bước Preview.
+         *
+         * KHÔNG gọi Gemini để generate lần nữa.
+         *
+         * Backend vẫn validate bằng FULL schema trước khi execute.
+         */
+        for (int attempt = 1;
+             attempt <= MAX_RETRIES;
+             attempt++) {
+
+            AttemptLog attemptLog = new AttemptLog();
+
+            attemptLog.sql = currentSql;
+
+            try {
+
+                /*
+                 * SECURITY:
+                 * Luôn validate bằng FULL schema.
+                 *
+                 * Không dùng filteredSchema làm whitelist.
+                 */
+                queryValidator.validate(
+                        currentSql,
+                        fullSchema
+                );
+
+                QueryResultDto queryResult =
+                        queryExecutor.executeQuery(
+                                connection.getDbType(),
+                                connection.getHost(),
+                                connection.getPort(),
+                                connection.getDatabaseName(),
+                                connection.getUsername(),
+                                rawPassword,
+                                currentSql
+                        );
+
+                attemptLog.result = queryResult;
+
+                if (queryResult.getError() == null) {
+
+                    attemptLog.success = true;
+
+                    attemptResult.attemptLogs.add(attemptLog);
+
+                    attemptResult.success = true;
+                    attemptResult.sql = currentSql;
+                    attemptResult.finalResult = queryResult;
+
+                    return attemptResult;
+                }
+
+                lastError = queryResult.getError();
+
+            } catch (ReadOnlyViolationException e) {
+
+                /*
+                 * SECURITY:
+                 * Nếu SQL không phải SELECT thì dừng ngay.
+                 */
+                lastError = e.getMessage();
+
+                attemptLog.result =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
+
+                attemptLog.success = false;
+
+                attemptResult.attemptLogs.add(attemptLog);
+
+                attemptResult.success = false;
+                attemptResult.sql = currentSql;
+                attemptResult.finalResult =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
+
+                return attemptResult;
+
+            } catch (IllegalArgumentException e) {
+
+                lastError = e.getMessage();
+
+                attemptLog.result =
+                        new QueryResultDto(
+                                List.of(),
+                                List.of(),
+                                0,
+                                0,
+                                lastError
+                        );
+            }
+
+            attemptLog.success = false;
+
+            attemptResult.attemptLogs.add(attemptLog);
+
+            /*
+             * Nếu SQL Preview thất bại:
+             *
+             * lần self-correct đầu tiên được phép dùng fullSchema
+             * để có thêm thông tin sửa SQL.
+             */
+            if (attempt < MAX_RETRIES) {
+
+                currentSql =
+                        selfCorrect(
+                                currentSql,
+                                lastError,
+                                fullSchema,
+                                conversationHistory
+                        );
+            }
+        }
+
+        attemptResult.success = false;
+        attemptResult.sql = currentSql;
+
+        attemptResult.finalResult =
+                new QueryResultDto(
+                        List.of(),
+                        List.of(),
+                        0,
+                        0,
+                        lastError
+                );
+
+        return attemptResult;
+    }
+
     private String generate(String question, DatabaseSchema schema, String conversationHistory) {
         return (conversationHistory == null || conversationHistory.isBlank())
                 ? nl2SQLEngine.generateSQL(question, schema)                 // đúng y hệt lời gọi cũ
