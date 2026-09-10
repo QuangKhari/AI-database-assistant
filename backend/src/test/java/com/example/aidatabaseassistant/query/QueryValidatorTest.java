@@ -611,4 +611,72 @@ class QueryValidatorTest {
                 )
         );
     }
+
+    // =========================================================
+    // DUPLICATE ALIAS
+    // =========================================================
+
+    @Test
+    void shouldRejectDuplicateAliases() {
+
+        String sql = """
+                SELECT
+                    SUM(id) AS total,
+                    COUNT(*) AS total
+                FROM orders
+                """;
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> queryValidator.validate(
+                                sql,
+                                schema
+                        )
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("alias bị trùng")
+        );
+    }
+
+
+    @Test
+    void shouldAllowDifferentAliasesForDifferentMetrics() {
+
+        String sql = """
+                SELECT
+                    SUM(id) AS total_revenue,
+                    COUNT(*) AS total_orders
+                FROM orders
+                """;
+
+        assertDoesNotThrow(() ->
+                queryValidator.validate(
+                        sql,
+                        schema
+                )
+        );
+    }
+
+
+    @Test
+    void shouldRejectDuplicateAliasesRegardlessOfCase() {
+
+        String sql = """
+                SELECT
+                    SUM(id) AS TOTAL,
+                    COUNT(*) AS total
+                FROM orders
+                """;
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> queryValidator.validate(
+                        sql,
+                        schema
+                )
+        );
+    }
 }

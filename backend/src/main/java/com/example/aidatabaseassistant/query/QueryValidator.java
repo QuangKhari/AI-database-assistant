@@ -10,6 +10,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class QueryValidator {
@@ -21,6 +25,7 @@ public class QueryValidator {
         Statement statement = parse(sql);
         checkReadOnly(statement);
         checkSchemaMatch(statement, schema);
+        checkDuplicateAliases(sql);
     }
 
     private Statement parse(String sql) {
@@ -177,6 +182,90 @@ public class QueryValidator {
                             + "pg_read_file, pg_ls_dir, lo_export/lo_import, "
                             + "COPY, TO PROGRAM)"
             );
+        }
+    }
+
+    // =========================================================
+    // DUPLICATE ALIAS PROTECTION
+    // =========================================================
+
+    /**
+     * Phát hiện alias bị trùng trong cùng câu SELECT.
+     *
+     * Ví dụ KHÔNG hợp lệ:
+     *
+     * SELECT
+     *     SUM(amount) AS total,
+     *     COUNT(*) AS total
+     * FROM orders;
+     *
+     * Hai metric khác nhau nhưng cùng alias "total".
+     *
+     * Điều này đặc biệt nguy hiểm với kết quả trả về dạng:
+     *
+     * Map<String, Object>
+     *
+     * vì database / JDBC có thể khiến một giá trị bị ghi đè hoặc
+     * việc mapping kết quả trở nên không xác định.
+     *
+     * Ví dụ HỢP LỆ:
+     *
+     * SELECT
+     *     SUM(amount) AS total_revenue,
+     *     COUNT(*) AS total_orders
+     * FROM orders;
+     *
+     * LƯU Ý:
+     * - Chỉ kiểm tra alias được viết rõ bằng AS.
+     * - Không cố đoán alias implicit của mọi dialect.
+     * - Không thay đổi SQL của AI, chỉ reject SQL có duplicate AS alias.
+     */
+    private static final Pattern AS_ALIAS_PATTERN =
+            Pattern.compile(
+                    "\\bAS\\s+([A-Za-z_][A-Za-z0-9_$]*)\\b",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+    private void checkDuplicateAliases(String sql) {
+
+        if (sql == null || sql.isBlank()) {
+            return;
+        }
+
+        Matcher matcher =
+                AS_ALIAS_PATTERN.matcher(sql);
+
+        Map<String, Integer> aliasCounts =
+                new HashMap<>();
+
+        while (matcher.find()) {
+
+            String alias =
+                    matcher.group(1)
+                            .trim()
+                            .toLowerCase(
+                                    java.util.Locale.ROOT
+                            );
+
+            aliasCounts.merge(
+                    alias,
+                    1,
+                    Integer::sum
+            );
+        }
+
+        for (Map.Entry<String, Integer> entry :
+                aliasCounts.entrySet()) {
+
+            if (entry.getValue() > 1) {
+
+                throw new IllegalArgumentException(
+                        "SQL chứa alias bị trùng: "
+                                + entry.getKey()
+                                + ". Mỗi cột/metric trong SELECT "
+                                + "phải có alias duy nhất."
+                );
+            }
         }
     }
 }
