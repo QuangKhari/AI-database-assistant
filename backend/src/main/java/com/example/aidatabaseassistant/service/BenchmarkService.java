@@ -551,14 +551,31 @@ public class BenchmarkService {
             QueryResultDto generated,
             QueryResultDto expected) {
 
-        // Một trong hai query có lỗi => benchmark fail.
-        if (generated.getError() != null
-                || expected.getError() != null) {
+        /*
+         * =========================================================
+         * 1. KIỂM TRA ERROR
+         * =========================================================
+         */
+
+        if (generated == null || expected == null) {
             return false;
         }
 
-        // Khác số dòng => kết quả khác nhau.
-        if (generated.getRowCount() != expected.getRowCount()) {
+        if (generated.getError() != null
+                || expected.getError() != null) {
+
+            return false;
+        }
+
+        /*
+         * =========================================================
+         * 2. KIỂM TRA SỐ DÒNG
+         * =========================================================
+         */
+
+        if (generated.getRowCount()
+                != expected.getRowCount()) {
+
             return false;
         }
 
@@ -568,65 +585,151 @@ public class BenchmarkService {
         List<Map<String, Object>> expectedRows =
                 expected.getRows();
 
-        // Cả hai không có dữ liệu => kết quả tương đương.
+        /*
+         * =========================================================
+         * 3. KHÔNG CÓ DỮ LIỆU
+         * =========================================================
+         *
+         * Hai query đều trả 0 row:
+         *
+         *     => kết quả tương đương.
+         */
+
         if (generatedRows.isEmpty()
                 && expectedRows.isEmpty()) {
+
             return true;
         }
 
-        // Trường hợp bất thường: rowCount bằng nhau nhưng một bên
-        // không có row.
+        /*
+         * Trường hợp bất thường:
+         *
+         * rowCount giống nhau nhưng một bên không có rows.
+         */
         if (generatedRows.isEmpty()
                 || expectedRows.isEmpty()) {
+
             return false;
         }
 
         /*
-         * Dùng thứ tự cột của expected SQL làm chuẩn.
+         * =========================================================
+         * 4. KIỂM TRA SỐ CỘT
+         * =========================================================
          *
-         * Kết quả được sort theo từng row để không phụ thuộc
-         * thứ tự record trả về từ database.
+         * KHÔNG dùng tên alias để map.
+         *
+         * Ví dụ:
+         *
+         * Generated:
+         *
+         *     product_name | total
+         *
+         * Expected:
+         *
+         *     product_name | total_revenue
+         *
+         * Hai kết quả vẫn có thể hoàn toàn tương đương.
+         *
+         * Vì vậy dùng thứ tự cột JDBC:
+         *
+         *     column 1 <-> column 1
+         *     column 2 <-> column 2
          */
+
+        List<String> generatedColumns =
+                generated.getColumns();
+
         List<String> expectedColumns =
-                new ArrayList<>(
-                        expectedRows.get(0).keySet()
-                );
+                expected.getColumns();
+
+        if (generatedColumns == null
+                || expectedColumns == null) {
+
+            return false;
+        }
+
+        if (generatedColumns.size()
+                != expectedColumns.size()) {
+
+            return false;
+        }
+
+        /*
+         * =========================================================
+         * 5. KIỂM TRA TỪNG ROW THEO ORDINAL COLUMN
+         * =========================================================
+         *
+         * Không phụ thuộc:
+         *
+         *     alias
+         *     tên column
+         *
+         * Chỉ phụ thuộc:
+         *
+         *     column position
+         *     actual value
+         */
 
         List<String> generatedNormalized =
-                generatedRows.stream()
-                        .map(row ->
-                                expectedColumns.stream()
-                                        .map(column ->
-                                                normalizeValue(
-                                                        row.get(column)
-                                                )
-                                        )
-                                        .collect(
-                                                Collectors.joining("|")
-                                        )
-                        )
+                normalizeRowsByColumnOrder(
+                        generatedRows,
+                        generatedColumns
+                );
+
+        List<String> expectedNormalized =
+                normalizeRowsByColumnOrder(
+                        expectedRows,
+                        expectedColumns
+                );
+
+        /*
+         * Không phụ thuộc thứ tự row.
+         *
+         * Ví dụ:
+         *
+         * Generated:
+         * A
+         * B
+         *
+         * Expected:
+         * B
+         * A
+         *
+         * vẫn được coi là đúng nếu dữ liệu tương đương.
+         */
+        generatedNormalized =
+                generatedNormalized.stream()
                         .sorted()
                         .toList();
 
-        List<String> expectedNormalized =
-                expectedRows.stream()
-                        .map(row ->
-                                expectedColumns.stream()
-                                        .map(column ->
-                                                normalizeValue(
-                                                        row.get(column)
-                                                )
-                                        )
-                                        .collect(
-                                                Collectors.joining("|")
-                                        )
-                        )
+        expectedNormalized =
+                expectedNormalized.stream()
                         .sorted()
                         .toList();
 
         return generatedNormalized.equals(
                 expectedNormalized
         );
+    }
+
+    private List<String> normalizeRowsByColumnOrder(
+            List<Map<String, Object>> rows,
+            List<String> columns) {
+
+        return rows.stream()
+                .map(row ->
+                        columns.stream()
+                                .map(column ->
+                                        normalizeValue(
+                                                row.get(column)
+                                        )
+                                )
+                                .collect(
+                                        Collectors.joining("|")
+                                )
+                )
+                .toList();
     }
 
     private String normalizeValue(Object value) {
