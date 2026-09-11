@@ -32,6 +32,10 @@ public class DatabaseConnection {
     @Column(name = "db_type", nullable = false, length = 20)
     private String dbType;
 
+    @Column(name = "ssl_enabled", nullable = false)
+    @Builder.Default
+    private boolean sslEnabled = false;
+
     @Column(nullable = false, length = 100)
     private String host;
 

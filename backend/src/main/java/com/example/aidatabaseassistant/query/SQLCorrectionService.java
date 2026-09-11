@@ -21,6 +21,44 @@ public class SQLCorrectionService {
     private final QueryValidator queryValidator;
     private final QueryExecutor queryExecutor;
 
+    /**
+     * Thực thi query theo cấu hình SSL của connection.
+     *
+     * SSL OFF -> dùng overload QueryExecutor cũ (7 tham số).
+     * SSL ON  -> dùng overload mới có sslEnabled=true.
+     *
+     * Cách này giữ backward compatibility cho các test/caller hiện tại,
+     * đồng thời vẫn hỗ trợ PostgreSQL yêu cầu SSL.
+     */
+    private QueryResultDto executeQuery(
+            DatabaseConnection connection,
+            String rawPassword,
+            String sql
+    ) {
+        if (connection.isSslEnabled()) {
+            return queryExecutor.executeQuery(
+                    connection.getDbType(),
+                    connection.getHost(),
+                    connection.getPort(),
+                    connection.getDatabaseName(),
+                    connection.getUsername(),
+                    rawPassword,
+                    sql,
+                    true
+            );
+        }
+
+        return queryExecutor.executeQuery(
+                connection.getDbType(),
+                connection.getHost(),
+                connection.getPort(),
+                connection.getDatabaseName(),
+                connection.getUsername(),
+                rawPassword,
+                sql
+        );
+    }
+
     public AttemptResult run(String question, DatabaseSchema filteredSchema, DatabaseSchema fullSchema,
                              DatabaseConnection connection, String rawPassword) {
         return run(question, filteredSchema, fullSchema, connection, rawPassword, null); // hành vi cũ
@@ -116,12 +154,8 @@ public class SQLCorrectionService {
                 );
 
                 QueryResultDto queryResult =
-                        queryExecutor.executeQuery(
-                                connection.getDbType(),
-                                connection.getHost(),
-                                connection.getPort(),
-                                connection.getDatabaseName(),
-                                connection.getUsername(),
+                        executeQuery(
+                                connection,
                                 rawPassword,
                                 currentSql
                         );
@@ -299,12 +333,8 @@ public class SQLCorrectionService {
                 );
 
                 QueryResultDto queryResult =
-                        queryExecutor.executeQuery(
-                                connection.getDbType(),
-                                connection.getHost(),
-                                connection.getPort(),
-                                connection.getDatabaseName(),
-                                connection.getUsername(),
+                        executeQuery(
+                                connection,
                                 rawPassword,
                                 currentSql
                         );

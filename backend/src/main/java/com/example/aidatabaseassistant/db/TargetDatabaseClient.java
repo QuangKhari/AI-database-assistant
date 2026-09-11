@@ -51,12 +51,7 @@ public class TargetDatabaseClient {
     ) throws SQLException {
 
         return openConnection(
-                "mysql",
-                host,
-                port,
-                databaseName,
-                username,
-                password
+                "mysql", host, port, databaseName, username, password, false
         );
     }
 
@@ -80,6 +75,18 @@ public class TargetDatabaseClient {
             String username,
             String password
     ) throws SQLException {
+        return openConnection(dbType, host, port, databaseName, username, password, false);
+    }
+
+    public Connection openConnection(
+            String dbType,
+            String host,
+            Integer port,
+            String databaseName,
+            String username,
+            String password,
+            boolean sslEnabled
+    ) throws SQLException {
 
         if ("excel".equalsIgnoreCase(dbType)) {
 
@@ -87,7 +94,8 @@ public class TargetDatabaseClient {
                     dbType,
                     host,
                     port,
-                    databaseName
+                    databaseName,
+                    false
             );
 
             return DriverManager.getConnection(url, buildDuckDbReadOnlyProperties());
@@ -105,7 +113,8 @@ public class TargetDatabaseClient {
                 dbType,
                 host,
                 port,
-                databaseName
+                databaseName,
+                sslEnabled
         );
 
         return DriverManager.getConnection(
@@ -142,6 +151,18 @@ public class TargetDatabaseClient {
             String username,
             String password
     ) {
+        return testConnection(dbType, host, port, databaseName, username, password, false);
+    }
+
+    public boolean testConnection(
+            String dbType,
+            String host,
+            Integer port,
+            String databaseName,
+            String username,
+            String password,
+            boolean sslEnabled
+    ) {
 
         log.debug("JVM TimeZone = {}", java.util.TimeZone.getDefault().getID());
 
@@ -152,7 +173,8 @@ public class TargetDatabaseClient {
                              port,
                              databaseName,
                              username,
-                             password
+                             password,
+                             sslEnabled
                      )) {
 
             return conn.isValid(3);

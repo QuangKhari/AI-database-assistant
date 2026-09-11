@@ -33,13 +33,33 @@ class JdbcUrlBuilderTest {
     }
 
     @Test
-    void build_shouldReturnPostgresJdbcUrl() {
+    void build_shouldReturnPostgresJdbcUrl_withoutSsl() {
 
         String url = jdbcUrlBuilder.build(
                 "postgres",
                 "localhost",
                 5432,
-                "shop"
+                "shop",
+                false
+        );
+
+        assertEquals(
+                "jdbc:postgresql://localhost:5432/shop"
+                        + "?connectTimeout=5"
+                        + "&socketTimeout=15",
+                url
+        );
+    }
+
+    @Test
+    void build_shouldReturnPostgresJdbcUrl_withSsl() {
+
+        String url = jdbcUrlBuilder.build(
+                "postgres",
+                "localhost",
+                5432,
+                "shop",
+                true
         );
 
         assertEquals(
@@ -58,7 +78,8 @@ class JdbcUrlBuilderTest {
                 "postgresql",
                 "localhost",
                 5432,
-                "shop"
+                "shop",
+                true
         );
 
         assertEquals(

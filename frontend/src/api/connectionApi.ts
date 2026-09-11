@@ -31,10 +31,6 @@ export const connectionApi = {
   disconnect: (id: number) =>
     apiRequest<void>(`/connections/${id}`, { method: "DELETE" }),
 
-  // MỚI: upload file Excel làm nguồn dữ liệu (POST /api/connections/excel,
-  // multipart/form-data - KHÔNG set Content-Type thủ công, để trình duyệt tự
-  // thêm boundary; apiRequest() chỉ set JSON header khi body không phải FormData
-  // nên cần gọi fetch riêng ở đây để không bị ép Content-Type sai).
   uploadExcel: (file: File, name: string) => {
     const form = new FormData();
     form.append("file", file);

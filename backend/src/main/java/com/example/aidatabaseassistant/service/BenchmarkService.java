@@ -97,6 +97,44 @@ public class BenchmarkService {
     private final SchemaLoaderService schemaLoaderService;
     private final com.example.aidatabaseassistant.security.ConnectionAccessGuard connectionAccessGuard;
 
+    /**
+     * Thực thi query theo cấu hình SSL của connection.
+     *
+     * SSL OFF -> dùng overload QueryExecutor cũ (7 tham số).
+     * SSL ON  -> dùng overload mới có sslEnabled=true.
+     *
+     * Nhờ đó benchmark hiện tại vẫn tương thích với các test Mockito cũ,
+     * nhưng PostgreSQL + SSL vẫn được truyền đúng xuống JDBC.
+     */
+    private QueryResultDto executeConnectionQuery(
+            DatabaseConnection connection,
+            String rawPassword,
+            String sql
+    ) {
+        if (connection.isSslEnabled()) {
+            return queryExecutor.executeQuery(
+                    connection.getDbType(),
+                    connection.getHost(),
+                    connection.getPort(),
+                    connection.getDatabaseName(),
+                    connection.getUsername(),
+                    rawPassword,
+                    sql,
+                    true
+            );
+        }
+
+        return queryExecutor.executeQuery(
+                connection.getDbType(),
+                connection.getHost(),
+                connection.getPort(),
+                connection.getDatabaseName(),
+                connection.getUsername(),
+                rawPassword,
+                sql
+        );
+    }
+
     public BenchmarkQuestionResponse addQuestion( String username,
                                                   Long connectionId,
                                                   BenchmarkQuestionRequest request) {
@@ -411,22 +449,14 @@ public class BenchmarkService {
                 // kể connection thực tế là PostgreSQL/Excel, khiến
                 // benchmark chạy sai driver và luôn lỗi trên các
                 // connection không phải MySQL.
-                generatedResult = queryExecutor.executeQuery(
-                        connection.getDbType(),
-                        connection.getHost(),
-                        connection.getPort(),
-                        connection.getDatabaseName(),
-                        connection.getUsername(),
+                generatedResult = executeConnectionQuery(
+                        connection,
                         rawPassword,
                         generatedSql
                 );
 
-                QueryResultDto expectedResult = queryExecutor.executeQuery(
-                        connection.getDbType(),
-                        connection.getHost(),
-                        connection.getPort(),
-                        connection.getDatabaseName(),
-                        connection.getUsername(),
+                QueryResultDto expectedResult = executeConnectionQuery(
+                        connection,
                         rawPassword,
                         question.getExpectedSql()
                 );

@@ -9,11 +9,23 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ConnectionResponse {
 
+    public ConnectionResponse(
+            Long id, String name, String dbType, String host, Integer port,
+            String databaseName, String username, boolean active,
+            LocalDateTime lastTestedAt, Boolean lastTestSuccessful,
+            LocalDateTime createdAt, LocalDateTime updatedAt
+    ) {
+        this(id, name, dbType, false, host, port, databaseName, username,
+                active, lastTestedAt, lastTestSuccessful, createdAt, updatedAt);
+    }
+
     private Long id;
 
     private String name;
 
     private String dbType;
+
+    private boolean sslEnabled;
 
     private String host;
 
