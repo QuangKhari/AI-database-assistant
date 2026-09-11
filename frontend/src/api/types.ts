@@ -35,7 +35,7 @@ export interface OperationResponse {
 // dbType thực tế BE hỗ trợ (xem TargetDatabaseClient/JdbcUrlBuilder):
 // mysql, postgresql qua ConnectionRequest thường; excel qua endpoint riêng
 // POST /api/connections/excel (dbType trả về "excel").
-export type DbType = "mysql" | "postgresql" | "excel" | "duckdb";
+export type DbType = "mysql" | "postgresql" | "excel";
 
 export interface DatabaseConnection {
   id: number;
