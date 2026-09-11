@@ -22,12 +22,6 @@ public class ConnectionController {
     private final SchemaDiscoveryService schemaDiscoveryService;
     private final SuggestedQuestionService suggestedQuestionService;
     private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
-//    private final com.example.aidatabaseassistant.ai.LLMClient llmClient;
-//
-//    @GetMapping("/test-ai")
-//    public ResponseEntity<String> testAi() {
-//        return ResponseEntity.ok(llmClient.generateResponse("Xin chào, bạn là ai?"));
-//    }
 
     // GIỮ LẠI để không phá FE cũ nào còn gọi endpoint này, nhưng FE hiện tại
     // (SchemaExplorerPage) đã dùng /api/schema/connections/{id}/sync (xem

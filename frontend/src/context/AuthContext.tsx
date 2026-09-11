@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { authApi } from "../api/authApi";
-import { getStoredToken, removeToken, storeToken } from "../api/client";
 import type { UserInfo } from "../api/types";
 
 const USER_KEY = "aidb_user";
@@ -32,39 +31,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // LICH SU: truoc day ham nay chi kiem tra co token trong localStorage hay
+  // khong (dong bo, khong goi mang) - nay JWT nam trong cookie httpOnly ma
+  // JS khong doc duoc nua, nen CACH DUY NHAT de biet "co dang dang nhap hop
+  // le hay khong" la thuc su hoi BE (GET /users/me): neu cookie con hop le,
+  // BE tra ve 200 kem thong tin user; neu khong, BE tra 401.
   const refreshUser = useCallback(async () => {
-    const token = getStoredToken();
-
-    if (!token) {
-      setUser(null);
-      return;
-    }
-
-    const storedUser = localStorage.getItem(USER_KEY);
-
-    if (!storedUser) {
-      setUser(null);
-      return;
-    }
-
     try {
-      setUser(JSON.parse(storedUser) as UserInfo);
+      const profile = await authApi.getProfile();
+
+      const nextUser: UserInfo = {
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.displayName,
+        email: profile.email,
+        role: profile.role,
+        // UserProfile (GET /users/me) không có trường createdAt (chỉ
+        // AuthResponse lúc login/register có sẵn từ trước, và cũng không
+        // trả field này) - giữ rỗng như hành vi cũ, không có UI nào hiện
+        // đang hiển thị ngày tạo tài khoản.
+        createdAt: "",
+      };
+
+      localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      setUser(nextUser);
     } catch {
+      // Khong dang nhap (chua co cookie/cookie het han) - day la truong hop
+      // BINH THUONG (VD: lan dau vao app), khong phai loi can bao cho user.
       localStorage.removeItem(USER_KEY);
       setUser(null);
     }
   }, []);
 
   useEffect(() => {
-    refreshUser()
-      .catch(() => {
-        removeToken();
-        setUser(null);
-      })
-      .finally(() => setLoading(false));
+    refreshUser().finally(() => setLoading(false));
 
     const handleUnauthorized = () => {
-      removeToken();
       localStorage.removeItem(USER_KEY);
       setUser(null);
     };
@@ -76,7 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (identifier: string, password: string) => {
     const response = await authApi.login({ identifier, password });
 
-    storeToken(response.token);
+    // KHONG con storeToken(response.token) - BE da tu dat cookie httpOnly
+    // access_token qua header Set-Cookie cua chinh response nay roi, FE
+    // khong can (va khong nen) tu tay giu lai token o dau ca.
 
     // AuthResponse (/auth/login) không trả email, chỉ có token/username/role.
     // Gọi thêm /users/me để lấy email thật - trước đây hard-code email: ""
@@ -111,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: { username: string; email: string; password: string }) => {
       const response = await authApi.register(payload);
 
-      storeToken(response.token);
+      // KHONG con storeToken(response.token) - ly do giong login() o tren.
 
       const user: UserInfo = {
         id: 0,
@@ -134,9 +138,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    // JWT stateless: BE không có endpoint /api/auth/logout, nên chỉ cần xóa
-    // token + user phía client (đúng theo kế hoạch đồng bộ FE/BE).
-    removeToken();
+    // Cookie httpOnly access_token khong the xoa boi JS -> phai goi BE de
+    // BE tu ghi de bang 1 cookie da het han (xem AuthController.logout()).
+    // Van xoa user o client ngay ca khi goi mang that bai (VD: mat mang),
+    // de nguoi dung khong bi "ket" o trang thai tuong nhu van dang nhap.
+    try {
+      await authApi.logout();
+    } catch {
+      // Bo qua - du sao cung se xoa trang thai client ben duoi.
+    }
     localStorage.removeItem(USER_KEY);
     setUser(null);
   }, []);

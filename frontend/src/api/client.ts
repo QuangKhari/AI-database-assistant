@@ -2,7 +2,44 @@ import type { ApiErrorBody } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-const TOKEN_KEY = "aidb_access_token";
+const CSRF_COOKIE_NAME = "XSRF-TOKEN";
+const CSRF_HEADER_NAME = "X-XSRF-TOKEN";
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// Cac path KHONG doi hoi dang nhap (xem AuthController.java + SecurityConfig
+// permitAll "/api/auth/**") - 1 loi 401 tu day la BINH THUONG (VD: sai mat
+// khau luc login), KHONG phai dau hieu phien dang nhap (cookie) het han.
+function isPublicAuthPath(path: string): boolean {
+  return path.startsWith("/auth/");
+}
+
+// Doc gia tri 1 cookie thuong (KHONG httpOnly) tu document.cookie.
+// Dung de lay CSRF token ma BE (CookieCsrfTokenRepository.withHttpOnlyFalse())
+// co tinh de FE doc duoc va gui lai qua header - day la co che
+// "double-submit cookie" tieu chuan cho SPA, khac voi cookie access_token
+// (httpOnly, FE khong bao gio doc duoc va cung khong can doc).
+function readCookie(name: string): string | null {
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${name}=`));
+
+  return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : null;
+}
+
+function applyCsrfHeader(headers: Headers, method?: string): void {
+  const normalizedMethod = (method ?? "GET").toUpperCase();
+
+  if (!MUTATING_METHODS.has(normalizedMethod)) {
+    return;
+  }
+
+  const csrfToken = readCookie(CSRF_COOKIE_NAME);
+
+  if (csrfToken) {
+    headers.set(CSRF_HEADER_NAME, csrfToken);
+  }
+}
 
 export class ApiError extends Error {
   status: number;
@@ -35,18 +72,6 @@ function parseRetryAfter(response: Response): number | undefined {
   return Number.isFinite(seconds) ? seconds : undefined;
 }
 
-export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function storeToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function removeToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -62,19 +87,21 @@ export async function apiRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const token = getStoredToken();
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
+    // Bat buoc de trinh duyet gui kem cookie access_token/XSRF-TOKEN ke ca
+    // khi FE (Vite dev server) va BE khac origin (VD: FE :5173, BE :8081) -
+    // mac dinh "same-origin" cua fetch() se KHONG gui cookie trong truong
+    // hop khac origin nay.
+    credentials: "include",
   });
 
-  if (response.status === 401 && token) {
-    removeToken();
+  const authenticatedRequest = !isPublicAuthPath(path);
+
+  if (response.status === 401 && authenticatedRequest) {
     window.dispatchEvent(new Event("auth:unauthorized"));
   }
 
@@ -91,7 +118,11 @@ export async function apiRequest<T>(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
+    throw new ApiError(
+      errorBody,
+      parseRetryAfter(response),
+      authenticatedRequest,
+    );
   }
 
   if (response.status === 204) {
@@ -113,16 +144,15 @@ export async function apiRequestBlob(
     headers.set("Content-Type", "application/json");
   }
 
-  const token = getStoredToken();
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
+    credentials: "include",
   });
+
+  const authenticatedRequest = !isPublicAuthPath(path);
 
   if (!response.ok) {
     let errorBody: ApiErrorBody;
@@ -137,7 +167,11 @@ export async function apiRequestBlob(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
+    throw new ApiError(
+      errorBody,
+      parseRetryAfter(response),
+      authenticatedRequest,
+    );
   }
 
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -188,20 +222,18 @@ export async function apiRequestSse(
   // Báo cho BE rằng FE mong muốn nhận SSE.
   headers.set("Accept", "text/event-stream");
 
-  const token = getStoredToken();
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
+    credentials: "include",
   });
 
+  const authenticatedRequest = !isPublicAuthPath(path);
+
   // Giữ behavior authentication giống apiRequest().
-  if (response.status === 401 && token) {
-    removeToken();
+  if (response.status === 401 && authenticatedRequest) {
     window.dispatchEvent(new Event("auth:unauthorized"));
   }
 
@@ -219,7 +251,11 @@ export async function apiRequestSse(
       };
     }
 
-    throw new ApiError(errorBody, parseRetryAfter(response), Boolean(token));
+    throw new ApiError(
+      errorBody,
+      parseRetryAfter(response),
+      authenticatedRequest,
+    );
   }
 
   // Browser phải cung cấp ReadableStream.

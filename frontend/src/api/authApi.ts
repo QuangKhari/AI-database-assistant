@@ -20,10 +20,14 @@ export const authApi = {
       }),
     }),
 
-  // BE dùng JWT stateless và KHÔNG có POST /api/auth/logout (xem
-  // AuthController.java: chỉ có register/login/forgot-password/reset-password).
-  // Gọi API ở đây sẽ luôn 404. Logout chỉ cần xóa token phía client.
-  // -> xử lý trực tiếp trong AuthContext.logout(), không gọi network nữa.
+  // BE gio co POST /api/auth/logout (xem AuthController.java) de xoa cookie
+  // httpOnly access_token phia server (ghi de bang cookie da het han).
+  // JWT van la stateless (khong co "session" nao khac de huy), nhung can
+  // goi endpoint nay vi FE khong con doc/xoa duoc cookie truc tiep nua.
+  logout: () =>
+    apiRequest<OperationResponse>("/auth/logout", {
+      method: "POST",
+    }),
 
   forgotPassword: (email: string) =>
     apiRequest<OperationResponse>("/auth/forgot-password", {
