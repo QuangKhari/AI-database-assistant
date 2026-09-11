@@ -44,7 +44,8 @@ class JdbcUrlBuilderTest {
 
         assertEquals(
                 "jdbc:postgresql://localhost:5432/shop"
-                        + "?connectTimeout=5"
+                        + "?sslmode=require"
+                        + "&connectTimeout=5"
                         + "&socketTimeout=15",
                 url
         );
@@ -62,7 +63,8 @@ class JdbcUrlBuilderTest {
 
         assertEquals(
                 "jdbc:postgresql://localhost:5432/shop"
-                        + "?connectTimeout=5"
+                        + "?sslmode=require"
+                        + "&connectTimeout=5"
                         + "&socketTimeout=15",
                 url
         );
