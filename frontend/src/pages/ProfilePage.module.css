@@ -1,167 +1,797 @@
+/* =========================================================
+   PROFILE PAGE
+   ========================================================= */
+
 .page {
   display: grid;
-  gap: 28px;
+  gap: 24px;
 }
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
 .heading {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
 }
+
 .heading p {
-  margin: 0 0 6px;
+  margin: 0 0 7px;
   color: #0b7a75;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
   text-transform: uppercase;
-  font-weight: 750;
-  letter-spacing: 1px;
 }
+
 .heading h1 {
   margin: 0 0 8px;
   color: #1e393c;
-  font-size: 30px;
-  letter-spacing: -0.7px;
+  font-size: 34px;
+  line-height: 1.2;
+  letter-spacing: -1px;
 }
+
 .heading span {
   color: #718083;
+  font-size: 15px;
+  line-height: 1.6;
 }
-.member {
-  padding: 10px 14px;
-  border-left: 2px solid #88cec2;
-  color: #7c898b;
+
+/* =========================================================
+   PROFILE HERO
+   ========================================================= */
+
+.profileHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  padding: 25px 28px;
+  border: 1px solid #dce7e4;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(11 122 117 / 8%), transparent 35%),
+    linear-gradient(135deg, #ffffff 0%, #f7fbfa 100%);
+  box-shadow: 0 15px 40px rgb(32 66 65 / 6%);
+}
+
+.profileIdentity {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 76px;
+  height: 76px;
+  border: 5px solid #e3f5f2;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #0b8c83, #086c67);
+  font-size: 28px;
+  font-weight: 800;
+  box-shadow: 0 8px 20px rgb(11 122 117 / 18%);
+}
+
+.identityContent {
+  min-width: 0;
+}
+
+.identityTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.identityTop h2 {
+  margin: 0;
+  color: #203b3e;
+  font-size: 23px;
+  line-height: 1.3;
+}
+
+.identityContent > p {
+  margin: 3px 0 2px;
+  color: #64777a;
+  font-size: 14px;
+}
+
+.email {
+  display: block;
+  overflow: hidden;
+  color: #849193;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid #cce8e1;
+  border-radius: 999px;
+  color: #08756f;
+  background: #effaf7;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1aa37a;
+  box-shadow: 0 0 0 3px rgb(26 163 122 / 12%);
+}
+
+.profileMeta {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-shrink: 0;
+}
+
+.metaItem {
+  display: grid;
+  gap: 5px;
+}
+
+.metaItem > span {
+  color: #8a999b;
   font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.metaItem > strong {
+  color: #294548;
+  font-size: 14px;
+}
+
+.activeText {
+  color: #08756f !important;
+}
+
+.metaDivider {
+  width: 1px;
+  height: 38px;
+  background: #dce7e4;
+}
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #f1c2ca;
+  border-radius: 12px;
+  color: #a42b40;
+  background: #fff2f4;
+}
+
+.errorIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  color: #fff;
+  background: #c3314c;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.error strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 14px;
+}
+
+.error p {
+  margin: 0;
+  font-size: 14px;
   line-height: 1.55;
 }
-.member strong {
-  color: #334b4e;
-  font-size: 13px;
-}
+
+/* =========================================================
+   MAIN COLUMNS
+   ========================================================= */
+
 .columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   align-items: start;
 }
+
+/* =========================================================
+   PANEL
+   ========================================================= */
+
 .panel {
-  padding: 28px;
-  border: 1px solid #dfe8e5;
-  border-radius: 16px;
-  background: white;
+  min-width: 0;
+  padding: 27px;
+  border: 1px solid #dce6e3;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(32 66 65 / 4%);
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
+
+.panel:hover {
+  box-shadow: 0 16px 38px rgb(32 66 65 / 7%);
+}
+
+/* =========================================================
+   PANEL TITLE
+   ========================================================= */
+
 .panelTitle {
   display: flex;
   gap: 13px;
   padding-bottom: 20px;
-  margin-bottom: 22px;
+  margin-bottom: 23px;
   border-bottom: 1px solid #e5ecea;
 }
-.panelTitle > span {
+
+.sectionIcon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   color: #08756f;
   background: #e6f6f3;
-  font-size: 11px;
-  font-weight: 800;
 }
+
+.sectionIcon span {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.securityIcon {
+  color: #4965a5;
+  background: #eef2ff;
+}
+
 .panelTitle h2 {
-  margin: 0 0 4px;
+  margin: 0 0 5px;
   color: #294245;
-  font-size: 17px;
+  font-size: 19px;
+  line-height: 1.35;
 }
+
 .panelTitle p {
   margin: 0;
   color: #849193;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.5;
 }
+
+/* =========================================================
+   FORM
+   ========================================================= */
+
 .panel form {
   display: grid;
-  gap: 17px;
+  gap: 19px;
 }
+
 .panel label {
   display: grid;
-  gap: 7px;
-  color: #42575a;
-  font-size: 12px;
-  font-weight: 700;
+  gap: 8px;
 }
-.panel input {
+
+.labelText {
+  color: #42575a;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.inputWrapper input {
   width: 100%;
-  padding: 11px 12px;
+  min-height: 46px;
+  padding: 11px 13px 11px 43px;
   border: 1px solid #cfdbd8;
-  border-radius: 9px;
+  border-radius: 10px;
   outline: none;
   color: #233b3e;
-  background: white;
+  background: #fff;
+  font-size: 15px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
-.panel input:focus {
+
+.inputWrapper input:focus {
   border-color: #0b8c83;
   box-shadow: 0 0 0 3px rgb(11 140 131 / 10%);
 }
-.panel input:disabled {
+
+.inputWrapper input:disabled {
   color: #849092;
-  background: #f3f6f5;
-}
-.panel button {
-  justify-self: start;
-  border: 0;
-  border-radius: 9px;
-  padding: 11px 16px;
-  color: white;
-  background: #0b7a75;
-  font-weight: 700;
-  cursor: pointer;
-}
-.panel button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-.error {
-  margin: 0;
-  padding: 9px 11px;
-  border-radius: 8px;
-  color: #aa2940;
-  background: #fff0f2;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.loading {
-  color: #728184;
+  background: #f4f7f6;
+  cursor: not-allowed;
 }
 
-.readonlyInfo {
-  display: grid;
-  gap: 12px;
+.inputIcon {
+  position: absolute;
+  left: 14px;
+  z-index: 1;
+  color: #829395;
+  font-size: 15px;
+  font-weight: 800;
+  pointer-events: none;
 }
-.readonlyInfo div {
+
+.lockBadge,
+.roleBadge {
+  position: absolute;
+  right: 9px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lockBadge {
+  color: #7c898b;
+  background: #e9eeec;
+}
+
+.roleBadge {
+  color: #08756f;
+  background: #e1f5f1;
+}
+
+.helper {
+  color: #8a999b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* =========================================================
+   FORM FOOTER
+   ========================================================= */
+
+.formFooter {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid #eef2f1;
+  gap: 15px;
+  padding-top: 4px;
 }
-.readonlyInfo dt {
-  color: #718083;
+
+.formHint {
+  max-width: 280px;
+  color: #94a3a5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.panel button[type="submit"] {
+  flex-shrink: 0;
+  min-height: 43px;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 17px;
+  color: #fff;
+  background: #0b7a75;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 750;
+  box-shadow: 0 7px 18px rgb(11 122 117 / 15%);
+  transition:
+    background 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.panel button[type="submit"]:hover:not(:disabled) {
+  background: #086c67;
+  transform: translateY(-1px);
+  box-shadow: 0 9px 22px rgb(11 122 117 / 20%);
+}
+
+.panel button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+
+/* =========================================================
+   SECURITY NOTICE
+   ========================================================= */
+
+.securityNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: -5px 0 19px;
+  padding: 12px 13px;
+  border: 1px solid #d9e4fb;
+  border-radius: 10px;
+  background: #f5f8ff;
+}
+
+.securityNoticeIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  color: #3156a0;
+  background: #e4ebff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.securityNotice strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #314875;
   font-size: 13px;
 }
-.readonlyInfo dd {
+
+.securityNotice p {
   margin: 0;
-  font-weight: 600;
-  color: #1e393c;
+  color: #6b7d9c;
+  font-size: 12px;
+  line-height: 1.55;
 }
-.note {
-  margin: 18px 0 0;
-  color: #94a3b8;
+
+/* =========================================================
+   PASSWORD
+   ========================================================= */
+
+.passwordWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.passwordWrapper input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #cfdbd8;
+  border-radius: 10px;
+  padding: 11px 58px 11px 13px;
+  color: #233b3e;
+  background: #fff;
+  outline: none;
+  font-size: 15px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.passwordWrapper input::placeholder {
+  color: #a0acad;
+}
+
+.passwordWrapper input:focus {
+  border-color: #0b8c83;
+  box-shadow: 0 0 0 3px rgb(11 140 131 / 10%);
+}
+
+.passwordWrapper input:disabled {
+  color: #849092;
+  background: #f4f7f6;
+  cursor: not-allowed;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid #d9e3e0 !important;
+  border-radius: 7px !important;
+  color: #557174 !important;
+  background: #f8faf9 !important;
+  box-shadow: none !important;
+  transform: translateY(-50%);
+  cursor: pointer !important;
+  font-size: 11px !important;
+  font-weight: 750 !important;
+}
+
+.passwordToggle:hover {
+  color: #08756f !important;
+  border-color: #a9cbc6 !important;
+  background: #eff8f6 !important;
+  transform: translateY(-50%) !important;
+}
+
+.passwordToggle:focus-visible {
+  outline: 2px solid #0b8c83;
+  outline-offset: 2px;
+}
+
+/* =========================================================
+   SECURITY FOOTER
+   ========================================================= */
+
+.securityFooter {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 17px 19px;
+  border: 1px solid #d8e9e5;
+  border-radius: 13px;
+  background: #f5fbf9;
+}
+
+.securityFooterIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: #08756f;
+  background: #ddf3ee;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.securityFooter strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #294c4b;
   font-size: 13px;
 }
-@media (max-width: 800px) {
+
+.securityFooter p {
+  margin: 0;
+  color: #708583;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* =========================================================
+   LOADING
+   ========================================================= */
+
+.loadingCard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 130px;
+  padding: 25px 28px;
+  border: 1px solid #dce7e4;
+  border-radius: 17px;
+  background: #fff;
+}
+
+.loadingAvatar,
+.loadingLineLarge,
+.loadingLine,
+.loadingLineShort {
+  background: linear-gradient(90deg, #edf2f0 25%, #f7f9f8 50%, #edf2f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+.loadingAvatar {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.loadingContent {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.loadingLineLarge,
+.loadingLine,
+.loadingLineShort {
+  height: 14px;
+  border-radius: 6px;
+}
+
+.loadingLineLarge {
+  width: 190px;
+  height: 20px;
+}
+
+.loadingLine {
+  width: 280px;
+}
+
+.loadingLineShort {
+  width: 150px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* =========================================================
+   RESPONSIVE - TABLET
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .profileHero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profileMeta {
+    width: 100%;
+    padding-top: 16px;
+    border-top: 1px solid #e1e9e7;
+  }
+
   .columns {
     grid-template-columns: 1fr;
   }
+}
+
+/* =========================================================
+   RESPONSIVE - MOBILE
+   ========================================================= */
+
+@media (max-width: 620px) {
+  .page {
+    gap: 18px;
+  }
+
   .heading {
     display: block;
   }
-  .member {
-    margin-top: 20px;
+
+  .heading h1 {
+    font-size: 29px;
+  }
+
+  .heading span {
+    font-size: 14px;
+  }
+
+  .profileHero {
+    padding: 20px;
+  }
+
+  .profileIdentity {
+    width: 100%;
+    gap: 14px;
+  }
+
+  .avatar {
+    width: 62px;
+    height: 62px;
+    font-size: 23px;
+  }
+
+  .identityTop h2 {
+    font-size: 19px;
+  }
+
+  .email {
+    font-size: 13px;
+  }
+
+  .profileMeta {
+    gap: 17px;
+  }
+
+  .panel {
+    padding: 21px;
+  }
+
+  .panelTitle {
+    padding-bottom: 17px;
+    margin-bottom: 19px;
+  }
+
+  .panelTitle h2 {
+    font-size: 17px;
+  }
+
+  .panelTitle p {
+    font-size: 12px;
+  }
+
+  .formFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .formHint {
+    max-width: none;
+  }
+
+  .panel button[type="submit"] {
+    width: 100%;
+  }
+
+  .securityFooter {
+    align-items: flex-start;
+  }
+}
+
+/* =========================================================
+   RESPONSIVE - SMALL PHONE
+   ========================================================= */
+
+@media (max-width: 430px) {
+  .profileIdentity {
+    align-items: flex-start;
+  }
+
+  .identityTop {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .profileMeta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .metaDivider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .sectionIcon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .panel {
+    padding: 18px;
+  }
+
+  .inputWrapper input,
+  .passwordWrapper input {
+    font-size: 14px;
+  }
+
+  .securityFooter {
+    padding: 14px;
   }
 }

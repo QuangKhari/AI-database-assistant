@@ -17,6 +17,38 @@ const emptyForm: ConnectionPayload = {
   sslEnabled: false,
 };
 
+type DatabaseType = ConnectionPayload["dbType"];
+
+const databaseOptions: Array<{
+  type: DatabaseType;
+  icon: string;
+  name: string;
+  description: string;
+  detail: string;
+}> = [
+  {
+    type: "mysql",
+    icon: "🐬",
+    name: "MySQL",
+    description: "Relational SQL database",
+    detail: "Phù hợp cho dữ liệu quan hệ và truy vấn SQL.",
+  },
+  {
+    type: "postgresql",
+    icon: "🐘",
+    name: "PostgreSQL",
+    description: "Advanced SQL database",
+    detail: "Hỗ trợ SQL mạnh và cấu hình SSL.",
+  },
+  {
+    type: "excel",
+    icon: "📊",
+    name: "Excel",
+    description: "Spreadsheet data source",
+    detail: "Kết nối dữ liệu dạng bảng từ Excel.",
+  },
+];
+
 export function ConnectionFormPage() {
   const { id } = useParams();
   const connectionId = id ? Number(id) : null;
@@ -30,6 +62,8 @@ export function ConnectionFormPage() {
   const [loading, setLoading] = useState(editing);
 
   const [working, setWorking] = useState<"test" | "save" | null>(null);
+
+  const [showPassword, setShowPassword] = useState(false);
 
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -85,7 +119,7 @@ export function ConnectionFormPage() {
     setMessage(null);
   }
 
-  function selectDatabaseType(dbType: ConnectionPayload["dbType"]) {
+  function selectDatabaseType(dbType: DatabaseType) {
     setForm((current) => ({
       ...current,
       dbType,
@@ -201,285 +235,500 @@ export function ConnectionFormPage() {
   }
 
   if (loading) {
-    return <p>Đang tải connection…</p>;
+    return (
+      <div className={styles.loadingPage}>
+        <div className={styles.loadingCard}>
+          <div className={styles.loadingSpinner} />
+          <strong>Đang tải connection</strong>
+          <span>Vui lòng chờ trong giây lát...</span>
+        </div>
+      </div>
+    );
   }
+
+  const selectedDatabase = databaseOptions.find(
+    (item) => item.type === form.dbType,
+  );
 
   return (
     <div className={styles.page}>
-      <Link className={styles.back} to="/connections">
-        ← Danh sách connections
-      </Link>
+      <div className={styles.topbar}>
+        <Link className={styles.back} to="/connections">
+          <span className={styles.backIcon}>←</span>
+          <span>Danh sách connections</span>
+        </Link>
 
-      <header>
-        <p>Target Database</p>
+        <div className={styles.topbarBadge}>
+          <span className={styles.topbarDot} />
+          Database connection
+        </div>
+      </div>
 
-        <h1>{editing ? "Chỉnh sửa connection" : "Thêm connection"}</h1>
+      <header className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <div className={styles.eyebrow}>
+            {editing ? "EDIT CONNECTION" : "NEW CONNECTION"}
+          </div>
 
-        <span>
-          Chỉ lưu sau khi kết nối thành công và xác minh tài khoản chỉ có quyền
-          đọc.
-        </span>
+          <h1>{editing ? "Chỉnh sửa connection" : "Kết nối cơ sở dữ liệu"}</h1>
+
+          <p>
+            {editing
+              ? "Cập nhật thông tin kết nối và xác minh cấu hình trước khi lưu."
+              : "Thêm một nguồn dữ liệu mới để AI có thể phân tích schema và hỗ trợ truy vấn SQL."}
+          </p>
+        </div>
+
+        <div className={styles.heroVisual} aria-hidden="true">
+          <div className={styles.heroGlow} />
+          <div className={styles.heroDatabase}>
+            <div className={styles.heroDatabaseTop}>
+              <span />
+              <span />
+              <span />
+            </div>
+
+            <div className={styles.heroDatabaseBody}>
+              <div className={styles.databaseCylinder}>
+                <div className={styles.databaseCylinderTop} />
+                <div className={styles.databaseCylinderLine} />
+                <div className={styles.databaseCylinderLine} />
+                <div className={styles.databaseCylinderBottom} />
+              </div>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <form className={styles.form} onSubmit={save}>
-        <section className={styles.panel}>
-          <h2>Thông tin kết nối</h2>
+      <div className={styles.layout}>
+        <main>
+          <form className={styles.form} onSubmit={save}>
+            {/* DATABASE TYPE */}
+            <section className={styles.panel}>
+              <div className={styles.sectionHeader}>
+                <div className={styles.sectionIcon}>01</div>
 
-          <div className={styles.grid}>
-            {/* Tên connection */}
-            <label className={styles.full}>
-              <span>Tên hiển thị *</span>
-
-              <input
-                value={form.name}
-                maxLength={100}
-                onChange={(e) => update("name", e.target.value)}
-                placeholder="Ví dụ: Database bán hàng"
-              />
-            </label>
-
-            {/* Host */}
-            <label className={styles.full}>
-              <span>Host *</span>
-
-              <input
-                value={form.host}
-                maxLength={253}
-                onChange={(e) => update("host", e.target.value)}
-                placeholder="localhost hoặc địa chỉ MySQL"
-              />
-
-              <small>
-                Không nhập JDBC URL. Local dev cho phép localhost, mạng riêng và
-                Docker.
-              </small>
-            </label>
-
-            {/* Port */}
-            <label>
-              <span>Port *</span>
-
-              <input
-                type="number"
-                min="1"
-                max="65535"
-                value={form.port}
-                onChange={(e) => update("port", Number(e.target.value))}
-              />
-            </label>
-
-            {/* Database type */}
-            <div className={`${styles.full} ${styles.databaseTypeSection}`}>
-              <div className={styles.databaseHeading}>
-                <span className={styles.sectionLabel}>Loại cơ sở dữ liệu</span>
-
-                <small className={styles.sectionDescription}>
-                  Chọn loại database mà bạn muốn kết nối
-                </small>
+                <div>
+                  <h2>Chọn loại dữ liệu</h2>
+                  <p>Chọn nguồn dữ liệu mà hệ thống sẽ kết nối tới.</p>
+                </div>
               </div>
 
               <div className={styles.databaseGrid}>
-                {/* MySQL */}
-                <button
-                  type="button"
-                  aria-pressed={form.dbType === "mysql"}
-                  className={`${styles.databaseCard} ${
-                    form.dbType === "mysql" ? styles.databaseCardActive : ""
-                  }`}
-                  onClick={() => selectDatabaseType("mysql")}
-                >
-                  <div className={styles.databaseIcon}>🐬</div>
+                {databaseOptions.map((database) => {
+                  const active = form.dbType === database.type;
 
-                  <div className={styles.databaseInfo}>
-                    <strong>MySQL</strong>
+                  return (
+                    <button
+                      key={database.type}
+                      type="button"
+                      aria-pressed={active}
+                      className={`${styles.databaseCard} ${
+                        active ? styles.databaseCardActive : ""
+                      }`}
+                      onClick={() => selectDatabaseType(database.type)}
+                    >
+                      <div className={styles.databaseCardIcon}>
+                        {database.icon}
+                      </div>
 
-                    <span>Relational SQL database</span>
+                      <div className={styles.databaseInfo}>
+                        <strong>{database.name}</strong>
+
+                        <span>{database.description}</span>
+
+                        <small>{database.detail}</small>
+                      </div>
+
+                      <span
+                        className={`${styles.databaseRadio} ${
+                          active ? styles.databaseRadioActive : ""
+                        }`}
+                      >
+                        {active && "✓"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* BASIC INFORMATION */}
+            <section className={styles.panel}>
+              <div className={styles.sectionHeader}>
+                <div className={styles.sectionIcon}>02</div>
+
+                <div>
+                  <h2>Thông tin kết nối</h2>
+                  <p>Nhập thông tin server và database cần truy cập.</p>
+                </div>
+              </div>
+
+              <div className={styles.grid}>
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>
+                    Tên hiển thị
+                    <b>*</b>
+                  </span>
+
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>◈</span>
+
+                    <input
+                      value={form.name}
+                      maxLength={100}
+                      onChange={(e) => update("name", e.target.value)}
+                      placeholder="Ví dụ: Database bán hàng"
+                    />
                   </div>
 
-                  {form.dbType === "mysql" && (
-                    <span className={styles.databaseCheck} aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </button>
+                  <small>
+                    Tên giúp bạn dễ dàng nhận diện connection trong danh sách.
+                  </small>
+                </label>
 
-                {/* PostgreSQL */}
-                <button
-                  type="button"
-                  aria-pressed={form.dbType === "postgresql"}
-                  className={`${styles.databaseCard} ${
-                    form.dbType === "postgresql"
-                      ? styles.databaseCardActive
-                      : ""
-                  }`}
-                  onClick={() => selectDatabaseType("postgresql")}
-                >
-                  <div className={styles.databaseIcon}>🐘</div>
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>
+                    Host
+                    <b>*</b>
+                  </span>
 
-                  <div className={styles.databaseInfo}>
-                    <strong>PostgreSQL</strong>
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>⌁</span>
 
-                    <span>Advanced SQL database</span>
+                    <input
+                      value={form.host}
+                      maxLength={253}
+                      onChange={(e) => update("host", e.target.value)}
+                      placeholder="localhost hoặc địa chỉ server"
+                    />
                   </div>
 
-                  {form.dbType === "postgresql" && (
-                    <span className={styles.databaseCheck} aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </button>
+                  <small>
+                    Không nhập JDBC URL. Có thể sử dụng localhost, mạng riêng
+                    hoặc Docker.
+                  </small>
+                </label>
 
-                {/* Excel */}
-                <button
-                  type="button"
-                  aria-pressed={form.dbType === "excel"}
-                  className={`${styles.databaseCard} ${
-                    form.dbType === "excel" ? styles.databaseCardActive : ""
-                  }`}
-                  onClick={() => selectDatabaseType("excel")}
-                >
-                  <div className={styles.databaseIcon}>📊</div>
+                <label className={styles.field}>
+                  <span>
+                    Port
+                    <b>*</b>
+                  </span>
 
-                  <div className={styles.databaseInfo}>
-                    <strong>Excel</strong>
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>#</span>
 
-                    <span>Spreadsheet data source</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={form.port}
+                      onChange={(e) => update("port", Number(e.target.value))}
+                    />
                   </div>
 
-                  {form.dbType === "excel" && (
-                    <span className={styles.databaseCheck} aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </button>
+                  <small>1 – 65535</small>
+                </label>
+
+                <label className={styles.field}>
+                  <span>
+                    Tên database
+                    <b>*</b>
+                  </span>
+
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>▣</span>
+
+                    <input
+                      value={form.databaseName}
+                      maxLength={64}
+                      onChange={(e) => update("databaseName", e.target.value)}
+                      placeholder="sample_store"
+                    />
+                  </div>
+
+                  <small>Database/schema cần được truy cập.</small>
+                </label>
+              </div>
+            </section>
+
+            {/* CREDENTIALS */}
+            <section className={styles.panel}>
+              <div className={styles.sectionHeader}>
+                <div className={styles.sectionIcon}>03</div>
+
+                <div>
+                  <h2>Thông tin xác thực</h2>
+                  <p>Sử dụng tài khoản database có quyền đọc dữ liệu.</p>
+                </div>
+              </div>
+
+              <div className={styles.grid}>
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>
+                    Username DB
+                    <b>*</b>
+                  </span>
+
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>♙</span>
+
+                    <input
+                      autoComplete="username"
+                      value={form.username}
+                      maxLength={64}
+                      onChange={(e) => update("username", e.target.value)}
+                      placeholder="aidb_reader"
+                    />
+                  </div>
+
+                  <small>
+                    Khuyến nghị sử dụng một tài khoản read-only riêng cho hệ
+                    thống.
+                  </small>
+                </label>
+
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>Mật khẩu DB {!editing && <b>*</b>}</span>
+
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>◆</span>
+
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      value={form.password}
+                      maxLength={256}
+                      onChange={(e) => update("password", e.target.value)}
+                      placeholder={
+                        editing
+                          ? "Để trống nếu giữ mật khẩu cũ"
+                          : "Nhập mật khẩu của tài khoản read-only"
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      className={styles.passwordToggle}
+                      onClick={() => setShowPassword((current) => !current)}
+                      aria-label={
+                        showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"
+                      }
+                    >
+                      {showPassword ? "Ẩ" : "Hi"}
+                    </button>
+                  </div>
+
+                  <small>
+                    {editing
+                      ? "Để trống khi muốn giữ nguyên mật khẩu hiện tại. Nhập lại nếu muốn thay đổi hoặc test connection."
+                      : "Mật khẩu được mã hóa AES-GCM trước khi lưu và không được hiển thị lại."}
+                  </small>
+                </label>
+              </div>
+            </section>
+
+            {/* POSTGRES SSL */}
+            {form.dbType === "postgresql" && (
+              <section className={styles.securityPanel}>
+                <div className={styles.securityIcon}>✓</div>
+
+                <div className={styles.securityContent}>
+                  <div className={styles.securityTitle}>
+                    <div>
+                      <strong>Cấu hình bảo mật</strong>
+                      <span>PostgreSQL SSL</span>
+                    </div>
+
+                    <label className={styles.switch}>
+                      <input
+                        type="checkbox"
+                        checked={form.sslEnabled}
+                        onChange={(e) => update("sslEnabled", e.target.checked)}
+                      />
+
+                      <span className={styles.slider} />
+                    </label>
+                  </div>
+
+                  <p>
+                    Bật SSL nếu PostgreSQL yêu cầu kết nối mã hóa, ví dụ các
+                    database cloud như Neon.
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* MESSAGE */}
+            {message && (
+              <div
+                role="alert"
+                className={`${styles.message} ${
+                  message.type === "success" ? styles.success : styles.error
+                }`}
+              >
+                <span className={styles.messageIcon}>
+                  {message.type === "success" ? "✓" : "!"}
+                </span>
+
+                <div>
+                  <strong>
+                    {message.type === "success"
+                      ? "Kết nối thành công"
+                      : "Không thể thực hiện"}
+                  </strong>
+
+                  <span>{message.text}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ACTIONS */}
+            <div className={styles.actions}>
+              <Link className={styles.cancelButton} to="/connections">
+                Hủy
+              </Link>
+
+              <button
+                type="button"
+                className={styles.testButton}
+                disabled={working !== null}
+                onClick={testConnection}
+              >
+                <span className={styles.buttonIcon}>
+                  {working === "test" ? "…" : "✓"}
+                </span>
+
+                {working === "test" ? "Đang kiểm tra..." : "Kiểm tra kết nối"}
+              </button>
+
+              <button
+                type="submit"
+                className={styles.saveButton}
+                disabled={working !== null}
+              >
+                <span className={styles.buttonIcon}>
+                  {working === "save" ? "…" : "→"}
+                </span>
+
+                {working === "save"
+                  ? "Đang xác minh..."
+                  : editing
+                    ? "Lưu thay đổi"
+                    : "Xác minh và tạo"}
+              </button>
+            </div>
+          </form>
+        </main>
+
+        {/* RIGHT SIDEBAR */}
+        <aside className={styles.sidebar}>
+          <div className={styles.summaryCard}>
+            <div className={styles.summaryHeader}>
+              <span className={styles.summaryStatus}>
+                <span />
+                READY
+              </span>
+
+              <span className={styles.summaryNumber}>
+                0{editing ? "2" : "1"}
+              </span>
+            </div>
+
+            <h3>
+              {editing ? "Cập nhật nguồn dữ liệu" : "Thiết lập nguồn dữ liệu"}
+            </h3>
+
+            <p>
+              {selectedDatabase
+                ? `Bạn đang cấu hình ${selectedDatabase.name}.`
+                : "Hoàn tất thông tin bên trái để tạo connection."}
+            </p>
+
+            <div className={styles.summaryLine} />
+
+            <div className={styles.summaryRow}>
+              <span>Database</span>
+              <strong>{selectedDatabase?.name ?? "—"}</strong>
+            </div>
+
+            <div className={styles.summaryRow}>
+              <span>Host</span>
+              <strong className={styles.summaryValue}>
+                {form.host || "Chưa nhập"}
+              </strong>
+            </div>
+
+            <div className={styles.summaryRow}>
+              <span>Port</span>
+              <strong>{form.port || "—"}</strong>
+            </div>
+
+            <div className={styles.summaryRow}>
+              <span>SSL</span>
+              <strong>
+                {form.dbType === "postgresql"
+                  ? form.sslEnabled
+                    ? "Enabled"
+                    : "Disabled"
+                  : "N/A"}
+              </strong>
+            </div>
+          </div>
+
+          <div className={styles.safetyCard}>
+            <div className={styles.safetyHeader}>
+              <span className={styles.safetyIcon}>✓</span>
+
+              <div>
+                <strong>Security first</strong>
+                <span>Kết nối an toàn</span>
               </div>
             </div>
 
-            {/* PostgreSQL SSL */}
-            {form.dbType === "postgresql" && (
-              <label className={`${styles.full} ${styles.sslOption}`}>
-                <span>Cấu hình bảo mật</span>
+            <ul>
+              <li>
+                <span>✓</span>
+                Tài khoản chỉ nên có quyền SELECT.
+              </li>
 
-                <div className={styles.sslRow}>
-                  <input
-                    type="checkbox"
-                    checked={form.sslEnabled}
-                    onChange={(e) => update("sslEnabled", e.target.checked)}
-                  />
+              <li>
+                <span>✓</span>
+                Timeout kết nối tối đa 5 giây.
+              </li>
 
-                  <div>
-                    <strong>Sử dụng SSL</strong>
+              <li>
+                <span>✓</span>
+                Timeout truy vấn tối đa 15 giây.
+              </li>
 
-                    <small>
-                      Bật nếu database yêu cầu kết nối SSL, ví dụ PostgreSQL
-                      trên Neon.
-                    </small>
-                  </div>
-                </div>
-              </label>
-            )}
+              <li>
+                <span>✓</span>
+                Connection được đóng sau khi kiểm tra.
+              </li>
 
-            {/* Database name */}
-            <label>
-              <span>Tên database *</span>
-
-              <input
-                value={form.databaseName}
-                maxLength={64}
-                onChange={(e) => update("databaseName", e.target.value)}
-                placeholder="sample_store"
-              />
-            </label>
-
-            {/* Username */}
-            <label>
-              <span>Username DB *</span>
-
-              <input
-                autoComplete="username"
-                value={form.username}
-                maxLength={64}
-                onChange={(e) => update("username", e.target.value)}
-                placeholder="aidb_reader"
-              />
-            </label>
-
-            {/* Password */}
-            <label className={styles.full}>
-              <span>Mật khẩu DB {editing ? "" : "*"}</span>
-
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={form.password}
-                maxLength={256}
-                onChange={(e) => update("password", e.target.value)}
-                placeholder={
-                  editing
-                    ? "Để trống nếu giữ mật khẩu cũ"
-                    : "Mật khẩu của tài khoản read-only (MySQL/PostgreSQL)"
-                }
-              />
-
-              <small>
-                Mật khẩu được mã hóa AES-GCM trước khi lưu và không hiển thị
-                lại.
-              </small>
-            </label>
+              <li>
+                <span>✓</span>
+                Tối đa 10 lần kiểm tra/phút/tài khoản.
+              </li>
+            </ul>
           </div>
-        </section>
 
-        {/* Safety */}
-        <aside className={styles.safety}>
-          <strong>Điều kiện an toàn</strong>
+          <div className={styles.helpCard}>
+            <span className={styles.helpIcon}>?</span>
 
-          <ul>
-            <li>Tài khoản DB cần có quyền SELECT và không có quyền ghi.</li>
+            <div>
+              <strong>Cần lưu ý?</strong>
 
-            <li>Timeout kết nối 5 giây, timeout thực thi truy vấn 15 giây.</li>
-
-            <li>Kết nối được đóng ngay sau khi kiểm tra.</li>
-
-            <li>Tối đa 10 lần kiểm tra/phút/tài khoản.</li>
-          </ul>
+              <p>
+                Sau khi tạo connection, bạn có thể đồng bộ schema để AI hiểu cấu
+                trúc dữ liệu trước khi bắt đầu chat.
+              </p>
+            </div>
+          </div>
         </aside>
-
-        {/* Message */}
-        {message && (
-          <div
-            role="alert"
-            className={
-              message.type === "success" ? styles.success : styles.error
-            }
-          >
-            {message.text}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.secondary}
-            disabled={working !== null}
-            onClick={testConnection}
-          >
-            {working === "test" ? "Đang kiểm tra…" : "Kiểm tra kết nối"}
-          </button>
-
-          <button
-            type="submit"
-            className={styles.primary}
-            disabled={working !== null}
-          >
-            {working === "save"
-              ? "Đang xác minh và lưu…"
-              : editing
-                ? "Lưu thay đổi"
-                : "Xác minh và tạo"}
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }
