@@ -32,11 +32,6 @@ export function HistoryPage() {
 
   const { error, handleError, setError } = useApiError();
 
-  /**
-   * Load conversations with server-side pagination.
-   *
-   * Spring Data pagination starts from page 0.
-   */
   const loadConversations = useCallback(
     async (page = 0) => {
       setLoading(true);
@@ -167,10 +162,6 @@ export function HistoryPage() {
         setMessages([]);
       }
 
-      /*
-       * If this was the last conversation on the current page,
-       * move back one page when possible.
-       */
       const nextPage =
         conversations.length === 1 && currentPage > 0
           ? currentPage - 1
@@ -236,10 +227,18 @@ export function HistoryPage() {
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
-        <div>
-          <p>Query history</p>
+        <div className={styles.headingCopy}>
+          <div className={styles.eyebrow}>
+            <span className={styles.eyebrowDot} />
+            Query history
+          </div>
+
           <h1>Lịch sử trò chuyện</h1>
-          <span>Xem lại, tìm kiếm và ghim các câu hỏi/kết quả trước đây.</span>
+
+          <p>
+            Xem lại, tìm kiếm và quản lý các câu hỏi, câu trả lời và truy vấn
+            SQL trước đây.
+          </p>
         </div>
 
         <button
@@ -247,16 +246,18 @@ export function HistoryPage() {
           className={styles.dangerButton}
           onClick={() => void removeAll()}
         >
+          <span className={styles.dangerIcon}>⌫</span>
           Xóa toàn bộ
         </button>
       </header>
 
-      <nav className={styles.tabs}>
+      <nav className={styles.tabs} aria-label="Lịch sử">
         <button
           type="button"
           className={tab === "all" ? styles.tabActive : ""}
           onClick={() => switchTab("all")}
         >
+          <span className={styles.tabIcon}>◷</span>
           Tất cả
         </button>
 
@@ -265,6 +266,7 @@ export function HistoryPage() {
           className={tab === "pinned" ? styles.tabActive : ""}
           onClick={() => switchTab("pinned")}
         >
+          <span className={styles.tabIcon}>★</span>
           Đã ghim
         </button>
 
@@ -273,26 +275,46 @@ export function HistoryPage() {
           className={tab === "search" ? styles.tabActive : ""}
           onClick={() => switchTab("search")}
         >
+          <span className={styles.tabIcon}>⌕</span>
           Tìm kiếm
         </button>
       </nav>
 
       {error && (
         <div className={styles.error} role="alert">
-          {error}
+          <span className={styles.errorIcon}>!</span>
+          <span>{error}</span>
         </div>
       )}
 
       {tab === "all" && (
         <div className={styles.content}>
-          <aside className={styles.list}>
-            {loading && conversations.length === 0 ? (
-              <p className={styles.center}>Đang tải…</p>
-            ) : conversations.length === 0 ? (
-              <p className={styles.center}>Chưa có cuộc trò chuyện nào.</p>
-            ) : (
-              <>
-                {conversations.map((item) => (
+          <aside className={styles.listPanel}>
+            <div className={styles.listHeader}>
+              <div>
+                <span className={styles.sectionLabel}>CONVERSATIONS</span>
+                <h2>Lịch sử gần đây</h2>
+              </div>
+
+              <span className={styles.countBadge}>{conversations.length}</span>
+            </div>
+
+            <div className={styles.list}>
+              {loading && conversations.length === 0 ? (
+                <>
+                  <div className={styles.skeletonItem} />
+                  <div className={styles.skeletonItem} />
+                  <div className={styles.skeletonItem} />
+                  <div className={styles.skeletonItem} />
+                </>
+              ) : conversations.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyIcon}>◷</div>
+                  <strong>Chưa có cuộc trò chuyện</strong>
+                  <span>Các cuộc trò chuyện của bạn sẽ xuất hiện ở đây.</span>
+                </div>
+              ) : (
+                conversations.map((item) => (
                   <div
                     className={
                       item.id === selectedId ? styles.itemSelected : styles.item
@@ -301,179 +323,326 @@ export function HistoryPage() {
                   >
                     <button
                       type="button"
+                      className={styles.itemMain}
                       onClick={() => void openConversation(item.id)}
                     >
-                      <strong>{item.title}</strong>
+                      <span className={styles.itemIndicator} />
 
-                      <small>
-                        {new Date(item.updatedAt).toLocaleString("vi-VN")}
-                      </small>
+                      <span className={styles.itemContent}>
+                        <strong>{item.title}</strong>
+
+                        <small>
+                          {new Date(item.updatedAt).toLocaleString("vi-VN")}
+                        </small>
+                      </span>
                     </button>
 
                     <button
                       type="button"
+                      className={styles.deleteButton}
                       aria-label={`Xóa ${item.title}`}
                       onClick={() => void removeConversation(item)}
                     >
                       ×
                     </button>
                   </div>
-                ))}
+                ))
+              )}
+            </div>
 
-                {totalPages > 1 && (
-                  <div className={styles.pagination}>
-                    <button
-                      type="button"
-                      disabled={currentPage === 0 || loading}
-                      onClick={goToPreviousPage}
-                    >
-                      ← Trước
-                    </button>
+            {totalPages > 1 && (
+              <div className={styles.pagination}>
+                <button
+                  type="button"
+                  disabled={currentPage === 0 || loading}
+                  onClick={goToPreviousPage}
+                >
+                  ←
+                </button>
 
-                    <span>
-                      Trang <strong>{currentPage + 1}</strong> / {totalPages}
-                    </span>
+                <span>
+                  Trang <strong>{currentPage + 1}</strong> / {totalPages}
+                </span>
 
-                    <button
-                      type="button"
-                      disabled={currentPage >= totalPages - 1 || loading}
-                      onClick={goToNextPage}
-                    >
-                      Sau →
-                    </button>
-                  </div>
-                )}
-              </>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages - 1 || loading}
+                  onClick={goToNextPage}
+                >
+                  →
+                </button>
+              </div>
             )}
           </aside>
 
-          <section className={styles.detail}>
-            {selectedId === null ? (
-              <p className={styles.center}>
-                Chọn một cuộc trò chuyện để xem chi tiết.
-              </p>
+          <section className={styles.detailPanel}>
+            <div className={styles.detailHeader}>
+              <div>
+                <span className={styles.sectionLabel}>CONVERSATION</span>
+                <h2>Chi tiết trò chuyện</h2>
+              </div>
+
+              {selectedId !== null && (
+                <span className={styles.liveBadge}>
+                  <span />
+                  Đã chọn
+                </span>
+              )}
+            </div>
+
+            <div className={styles.detail}>
+              {selectedId === null ? (
+                <div className={styles.detailEmpty}>
+                  <div className={styles.detailEmptyIcon}>☷</div>
+                  <h3>Chọn một cuộc trò chuyện</h3>
+                  <p>
+                    Chọn một mục bên trái để xem lại câu hỏi, câu trả lời và SQL
+                    đã được tạo.
+                  </p>
+                </div>
+              ) : loading && messages.length === 0 ? (
+                <div className={styles.detailLoading}>
+                  <div className={styles.loadingBar} />
+                  <div className={styles.loadingBarShort} />
+                  <div className={styles.loadingBox} />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className={styles.detailEmpty}>
+                  <div className={styles.detailEmptyIcon}>☷</div>
+                  <h3>Chưa có nội dung</h3>
+                  <p>Cuộc trò chuyện này chưa có tin nhắn.</p>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <article
+                    className={
+                      message.role === "user"
+                        ? styles.userMessage
+                        : styles.assistantMessage
+                    }
+                    key={message.id}
+                  >
+                    <header className={styles.messageHeader}>
+                      <div className={styles.author}>
+                        <span
+                          className={
+                            message.role === "user"
+                              ? styles.userAvatar
+                              : styles.aiAvatar
+                          }
+                        >
+                          {message.role === "user" ? "B" : "AI"}
+                        </span>
+
+                        <span>
+                          {message.role === "user" ? "Bạn" : "AI QueryMate"}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className={styles.pinButton}
+                        onClick={() => void togglePin(message.id)}
+                      >
+                        {message.pinned ? "★ Đã ghim" : "☆ Ghim"}
+                      </button>
+                    </header>
+
+                    <p className={styles.messageContent}>{message.content}</p>
+
+                    {message.generatedSql && (
+                      <div className={styles.sqlBlock}>
+                        <div className={styles.sqlHeader}>
+                          <span>
+                            <span className={styles.sqlDot} />
+                            Generated SQL
+                          </span>
+                        </div>
+
+                        <pre>
+                          <code>{message.generatedSql}</code>
+                        </pre>
+                      </div>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === "pinned" && (
+        <section className={styles.singlePanel}>
+          <div className={styles.singlePanelHeader}>
+            <div>
+              <span className={styles.sectionLabel}>SAVED MESSAGES</span>
+              <h2>Tin nhắn đã ghim</h2>
+              <p>Những nội dung bạn muốn lưu lại để xem nhanh.</p>
+            </div>
+
+            <span className={styles.countBadge}>{pinnedMessages.length}</span>
+          </div>
+
+          <div className={styles.pinnedList}>
+            {loading ? (
+              <>
+                <div className={styles.skeletonCard} />
+                <div className={styles.skeletonCard} />
+              </>
+            ) : pinnedMessages.length === 0 ? (
+              <div className={styles.emptyStateLarge}>
+                <div className={styles.emptyIcon}>★</div>
+                <strong>Chưa ghim tin nhắn nào</strong>
+                <span>
+                  Khi ghim một tin nhắn trong lịch sử, nội dung sẽ xuất hiện ở
+                  đây.
+                </span>
+              </div>
             ) : (
-              messages.map((message) => (
-                <article
-                  className={
-                    message.role === "user"
-                      ? styles.userMessage
-                      : styles.assistantMessage
-                  }
-                  key={message.id}
-                >
+              pinnedMessages.map((message) => (
+                <article className={styles.pinnedCard} key={message.id}>
                   <header>
-                    <span>
-                      {message.role === "user" ? "Bạn" : "AI QueryMate"}
-                    </span>
+                    <div className={styles.pinnedMeta}>
+                      <span className={styles.starBadge}>★</span>
+                      <span>
+                        {new Date(message.createdAt).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
 
                     <button
                       type="button"
                       onClick={() => void togglePin(message.id)}
                     >
-                      {message.pinned ? "★ Đã ghim" : "☆ Ghim"}
+                      Bỏ ghim
                     </button>
                   </header>
 
                   <p>{message.content}</p>
 
                   {message.generatedSql && (
-                    <pre>
-                      <code>{message.generatedSql}</code>
-                    </pre>
+                    <div className={styles.sqlBlock}>
+                      <div className={styles.sqlHeader}>
+                        <span>
+                          <span className={styles.sqlDot} />
+                          Generated SQL
+                        </span>
+                      </div>
+
+                      <pre>
+                        <code>{message.generatedSql}</code>
+                      </pre>
+                    </div>
                   )}
                 </article>
               ))
             )}
-          </section>
-        </div>
-      )}
-
-      {tab === "pinned" && (
-        <div className={styles.pinnedList}>
-          {loading ? (
-            <p className={styles.center}>Đang tải…</p>
-          ) : pinnedMessages.length === 0 ? (
-            <p className={styles.center}>Chưa ghim tin nhắn nào.</p>
-          ) : (
-            pinnedMessages.map((message) => (
-              <article className={styles.pinnedCard} key={message.id}>
-                <header>
-                  <span>
-                    {new Date(message.createdAt).toLocaleString("vi-VN")}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => void togglePin(message.id)}
-                  >
-                    Bỏ ghim
-                  </button>
-                </header>
-
-                <p>{message.content}</p>
-
-                {message.generatedSql && (
-                  <pre>
-                    <code>{message.generatedSql}</code>
-                  </pre>
-                )}
-              </article>
-            ))
-          )}
-        </div>
+          </div>
+        </section>
       )}
 
       {tab === "search" && (
-        <div>
-          <form className={styles.searchForm} onSubmit={submitSearch}>
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Tìm theo nội dung câu hỏi hoặc SQL…"
-            />
+        <section className={styles.singlePanel}>
+          <div className={styles.singlePanelHeader}>
+            <div>
+              <span className={styles.sectionLabel}>SEARCH</span>
+              <h2>Tìm kiếm lịch sử</h2>
+              <p>Tìm lại câu hỏi hoặc câu SQL từ các cuộc trò chuyện.</p>
+            </div>
+          </div>
 
-            <button type="submit">Tìm</button>
+          <form className={styles.searchForm} onSubmit={submitSearch}>
+            <div className={styles.searchInputWrapper}>
+              <span className={styles.searchIcon}>⌕</span>
+
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Tìm theo nội dung câu hỏi hoặc SQL…"
+              />
+
+              {searchInput && (
+                <button
+                  type="button"
+                  className={styles.clearSearch}
+                  onClick={() => setSearchInput("")}
+                  aria-label="Xóa từ khóa"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <button type="submit" className={styles.searchButton}>
+              <span>⌕</span>
+              Tìm kiếm
+            </button>
           </form>
 
-          <div className={styles.pinnedList}>
-            {searchResults.length === 0 ? (
-              <p className={styles.center}>
-                Chưa có kết quả. Nhập từ khóa và nhấn Tìm.
-              </p>
+          <div className={styles.searchResults}>
+            {loading ? (
+              <>
+                <div className={styles.skeletonCard} />
+                <div className={styles.skeletonCard} />
+              </>
+            ) : searchResults.length === 0 ? (
+              <div className={styles.emptyStateLarge}>
+                <div className={styles.emptyIcon}>⌕</div>
+                <strong>Chưa có kết quả</strong>
+                <span>
+                  Nhập từ khóa để tìm kiếm trong nội dung câu hỏi và SQL.
+                </span>
+              </div>
             ) : (
               searchResults.map((result) => (
-                <article className={styles.pinnedCard} key={result.messageId}>
+                <article className={styles.searchCard} key={result.messageId}>
                   <header>
-                    <span>{result.conversationTitle}</span>
+                    <div>
+                      <span className={styles.searchConversation}>
+                        {result.conversationTitle}
+                      </span>
 
-                    <span>
-                      {new Date(result.createdAt).toLocaleString("vi-VN")}
-                    </span>
+                      <span className={styles.searchDate}>
+                        {new Date(result.createdAt).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
+
+                    <span className={styles.resultBadge}>Kết quả</span>
                   </header>
 
                   <p>{result.content}</p>
 
                   {result.generatedSql && (
-                    <pre>
-                      <code>{result.generatedSql}</code>
-                    </pre>
+                    <div className={styles.sqlBlock}>
+                      <div className={styles.sqlHeader}>
+                        <span>
+                          <span className={styles.sqlDot} />
+                          Generated SQL
+                        </span>
+                      </div>
+
+                      <pre>
+                        <code>{result.generatedSql}</code>
+                      </pre>
+                    </div>
                   )}
 
                   <button
                     type="button"
+                    className={styles.openConversationButton}
                     onClick={() => {
                       setTab("all");
                       void openConversation(result.conversationId);
                     }}
                   >
-                    Mở cuộc trò chuyện →
+                    Mở cuộc trò chuyện
+                    <span>→</span>
                   </button>
                 </article>
               ))
             )}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

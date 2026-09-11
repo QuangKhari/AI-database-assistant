@@ -1,48 +1,78 @@
+/* =========================================================
+   CHAT PAGE
+   AI DATABASE ASSISTANT
+   ========================================================= */
+
 .page {
   display: grid;
   gap: 22px;
 }
+
+/* =========================================================
+   PAGE HEADER
+   ========================================================= */
+
 .heading {
   display: flex;
   justify-content: space-between;
   align-items: end;
   gap: 20px;
 }
+
 .heading p {
-  margin: 0 0 6px;
+  margin: 0 0 7px;
   color: #0b7a75;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+
 .heading h1 {
   margin: 0 0 8px;
   color: #1e393c;
-  font-size: 30px;
+  font-size: 32px;
+  line-height: 1.2;
 }
+
 .heading span {
   color: #718083;
+  font-size: 14px;
+  line-height: 1.5;
 }
+
 .heading label {
   display: grid;
-  gap: 7px;
-  min-width: 270px;
+  gap: 8px;
+  min-width: 300px;
   color: #718083;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
+
 .heading select {
-  min-height: 42px;
+  min-height: 46px;
   border: 1px solid #cfddda;
-  border-radius: 9px;
-  padding: 9px 11px;
+  border-radius: 10px;
+  padding: 10px 13px;
   color: #2d474a;
   background: #fff;
+  outline: none;
+  font-size: 14px;
 }
+
+.heading select:focus {
+  border-color: #45a19a;
+  box-shadow: 0 0 0 3px #dff4f0;
+}
+
+/* =========================================================
+   WORKSPACE
+   ========================================================= */
+
 .workspace {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 270px minmax(0, 1fr);
   min-height: 650px;
   overflow: hidden;
   border: 1px solid #dce6e3;
@@ -50,337 +80,402 @@
   background: #fff;
   box-shadow: 0 18px 50px rgb(32 66 65 / 6%);
 }
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
+
 .sidebar {
-  padding: 16px;
+  padding: 18px;
   border-right: 1px solid #e1e9e7;
   background: #f8faf9;
 }
+
 .sidebar > button {
   width: 100%;
+  min-height: 42px;
   border: 1px solid #0b7a75;
-  border-radius: 9px;
-  padding: 10px;
+  border-radius: 10px;
+  padding: 11px 12px;
   color: #08756f;
   background: #fff;
   cursor: pointer;
+  font-size: 13px;
   font-weight: 750;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
 }
+
+.sidebar > button:hover {
+  color: #fff;
+  background: #0b7a75;
+  transform: translateY(-1px);
+}
+
 .sidebar h2 {
-  margin: 24px 5px 10px;
+  margin: 25px 5px 11px;
   color: #829092;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.8px;
   text-transform: uppercase;
 }
+
 .conversationList {
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
+
 .conversationList > small {
   padding: 12px 5px;
   color: #899698;
+  font-size: 12px;
 }
+
 .conversationList > div {
   display: flex;
   align-items: stretch;
-  border-radius: 9px;
+  border-radius: 10px;
 }
+
 .conversationList > div:hover,
 .conversationList .selected {
   background: #e7f4f1;
 }
+
 .conversationList button {
   border: 0;
   color: #40575a;
   background: transparent;
   cursor: pointer;
 }
+
 .conversationList div > button:first-child {
   display: grid;
   flex: 1;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
-  padding: 10px;
+  padding: 11px;
   text-align: left;
 }
+
 .conversationList strong {
   overflow: hidden;
-  font-size: 11px;
+  color: #304b4e;
+  font-size: 15px;
+  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .conversationList span {
   color: #8b9799;
-  font-size: 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
+
 .conversationList div > button:last-child {
   padding: 0 9px;
   color: #a86b74;
-  font-size: 18px;
+  font-size: 19px;
 }
+
 .conversationsPagination {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
-  padding: 8px 5px 0;
+  margin-top: 12px;
+  padding: 10px 5px 0;
   border-top: 1px solid #e1e9e7;
   color: #829092;
-  font-size: 10px;
+  font-size: 12px;
 }
+
 .conversationsPagination div {
   display: flex;
-  gap: 5px;
+  gap: 6px;
 }
+
 .conversationsPagination button {
   border: 1px solid #cbd9d6;
   border-radius: 7px;
-  padding: 5px 8px;
+  padding: 6px 9px;
   color: #40575a;
   background: #fff;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
+
 .conversationsPagination button:disabled {
   opacity: 0.45;
   cursor: default;
 }
+
+/* =========================================================
+   CHAT PANEL
+   ========================================================= */
+
 .chatPanel {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
 }
+
 .messages {
   overflow-y: auto;
   max-height: 520px;
-  padding: 28px clamp(20px, 5vw, 68px);
+  padding: 30px clamp(22px, 5vw, 70px);
+  scroll-behavior: smooth;
 }
+
+/* Custom scrollbar */
+
+.messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c9d9d6;
+}
+
+.messages::-webkit-scrollbar-thumb:hover {
+  background: #a9c3bf;
+}
+
+/* =========================================================
+   WELCOME
+   ========================================================= */
+
 .welcome {
   display: grid;
   justify-items: center;
   padding: 110px 20px;
   text-align: center;
 }
+
 .welcome > span {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
   color: #fff;
   background: #0b7a75;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 800;
+  box-shadow: 0 10px 24px rgb(11 122 117 / 18%);
 }
+
 .welcome h2 {
-  margin: 18px 0 7px;
+  margin: 20px 0 9px;
   color: #294548;
+  font-size: 26px;
+  line-height: 1.3;
 }
+
 .welcome p {
-  margin: 0 0 10px;
+  margin: 0 0 11px;
   color: #718083;
+  font-size: 15px;
+  line-height: 1.65;
 }
+
 .welcome small {
   color: #98a3a5;
+  font-size: 12px;
+  line-height: 1.5;
 }
+
+/* =========================================================
+   MESSAGES
+   ========================================================= */
+
 .userMessage,
 .assistantMessage {
-  width: min(90%, 680px);
-  margin-bottom: 22px;
+  width: min(90%, 700px);
+  margin-bottom: 25px;
 }
+
 .userMessage {
   margin-left: auto;
 }
+
 .userMessage header,
 .assistantMessage header {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   color: #718083;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 750;
+  line-height: 1.4;
 }
+
 .userMessage p,
 .assistantMessage > p {
   margin: 0;
-  border-radius: 12px;
-  padding: 12px 15px;
-  line-height: 1.55;
+  border-radius: 14px;
+  padding: 16px 19px;
+  font-size: 18px;
+  line-height: 1.75;
   white-space: pre-wrap;
+  word-break: break-word;
 }
+
 .userMessage p {
   color: #fff;
   background: #176d69;
-  border-bottom-right-radius: 3px;
+  border-bottom-right-radius: 4px;
 }
+
 .assistantMessage > p {
   color: #3f5659;
   background: #eef4f2;
-  border-bottom-left-radius: 3px;
+  border-bottom-left-radius: 4px;
 }
+
+/* =========================================================
+   SQL
+   ========================================================= */
+
 .sql {
   overflow: hidden;
-  margin-top: 9px;
+  margin-top: 11px;
   border: 1px solid #d6e2df;
   border-radius: 11px;
   background: #173639;
 }
+
 .sql > div {
   display: flex;
   justify-content: space-between;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
   color: #9bcac4;
   background: #204447;
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 750;
   text-transform: uppercase;
 }
+
 .sql pre {
   overflow-x: auto;
   margin: 0;
-  padding: 15px;
+  padding: 19px;
   color: #d9f4ef;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.75;
   white-space: pre-wrap;
-}
-.composer {
-  padding: 16px 20px;
-  border-top: 1px solid #e0e9e6;
-  background: #fbfcfc;
-}
-.composer textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid #cbdad7;
-  border-radius: 11px;
-  padding: 12px 14px;
-  color: #304b4e;
-  outline: 0;
-}
-.composer textarea:focus {
-  border-color: #45a19a;
-  box-shadow: 0 0 0 3px #dff4f0;
-}
-.composer > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
-}
-.composer small {
-  color: #94a0a2;
-}
-.composer button {
-  border: 0;
-  border-radius: 9px;
-  padding: 10px 14px;
-  color: #fff;
-  background: #0b7a75;
-  cursor: pointer;
-  font-weight: 750;
-}
-.composer button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.error {
-  padding: 12px 14px;
-  border: 1px solid #f1c2ca;
-  border-radius: 10px;
-  color: #a42b40;
-  background: #fff0f2;
-}
-.center {
-  padding: 50px;
-  color: #718083;
-  text-align: center;
-}
-.emptyPage {
-  padding: 70px 20px;
-  border: 1px dashed #b9ceca;
-  border-radius: 16px;
-  text-align: center;
-  background: #ffffff90;
-}
-.emptyPage h1 {
-  color: #294245;
-}
-.emptyPage p {
-  color: #7c898b;
-}
-@media (max-width: 800px) {
-  .heading {
-    align-items: start;
-  }
-  .heading label {
-    min-width: 220px;
-  }
-  .workspace {
-    grid-template-columns: 190px minmax(0, 1fr);
-  }
-  .messages {
-    padding-inline: 20px;
-  }
-}
-@media (max-width: 620px) {
-  .heading {
-    display: grid;
-  }
-  .heading label {
-    width: 100%;
-  }
-  .workspace {
-    display: block;
-  }
-  .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid #e1e9e7;
-  }
-  .conversationList {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .messages {
-    min-height: 410px;
-    max-height: 470px;
-  }
-  .welcome {
-    padding: 80px 10px;
-  }
+  word-break: break-word;
 }
 
+.sql pre::-webkit-scrollbar {
+  height: 7px;
+}
+
+.sql pre::-webkit-scrollbar-track {
+  background: #173639;
+}
+
+.sql pre::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #527978;
+}
+
+/* =========================================================
+   SQL TOOLS
+   ========================================================= */
+
+.sqlToolsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.sqlToolsRow button {
+  padding: 8px 14px;
+  border: 1px solid #cfddda;
+  border-radius: 999px;
+  color: #2d474a;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.sqlToolsRow button:hover {
+  border-color: #0b7a75;
+  color: #0b7a75;
+  background: #f1fbf9;
+  transform: translateY(-1px);
+}
+
+.sqlToolsRow button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* =========================================================
+   PREVIEW PANEL
+   ========================================================= */
+
 .previewPanel {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: 17px;
+  padding: 18px;
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #f8fafc;
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .previewPanel > button {
-  margin-top: 12px;
-  padding: 10px 16px;
+  margin-top: 13px;
+  padding: 11px 17px;
   border: 0;
   border-radius: 8px;
   background: #2563eb;
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
 }
 
 .previewPanel > button:hover {
   background: #1d4ed8;
+  transform: translateY(-1px);
 }
 
 .previewPanel > button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
 }
 
+/* =========================================================
+   RESULT PANEL
+   ========================================================= */
+
 .resultPanel {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: 17px;
+  padding: 18px;
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #fff;
@@ -391,16 +486,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .resultHeader strong {
-  font-size: 15px;
+  color: #1e293b;
+  font-size: 17px;
 }
 
 .resultHeader span {
   color: #64748b;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .resultTableWrapper {
@@ -414,12 +510,12 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 520px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .resultTable th,
 .resultTable td {
-  padding: 10px 12px;
+  padding: 13px 15px;
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   vertical-align: top;
@@ -429,11 +525,13 @@
 .resultTable th {
   background: #f8fafc;
   color: #334155;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .resultTable td {
   color: #475569;
+  font-size: 15px;
 }
 
 .resultTable tbody tr:last-child td {
@@ -444,148 +542,106 @@
   background: #f8fafc;
 }
 
+/* =========================================================
+   QUERY ERROR
+   ========================================================= */
+
 .queryError {
-  margin: 12px 0 0;
-  padding: 10px 12px;
+  margin: 13px 0 0;
+  padding: 12px 14px;
   border-radius: 8px;
   background: #fef2f2;
   color: #b91c1c;
-  font-size: 13px;
-}
-
-.summary {
-  margin: 14px 0 0;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: #f8fafc;
-  color: #475569;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
 }
 
-/* ===== MỚI: Suggested Questions ===== */
+/* =========================================================
+   SUMMARY
+   ========================================================= */
+
+.summary {
+  margin: 15px 0 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* =========================================================
+   SUGGESTED QUESTIONS
+   ========================================================= */
+
 .suggestions {
-  margin: 8px 0 16px;
-  font-size: 13px;
+  margin: 10px 0 18px;
   color: #64748b;
+  font-size: 15px;
 }
 
 .suggestions > span {
   display: block;
-  margin-bottom: 8px;
-  font-weight: 600;
+  margin-bottom: 10px;
+  color: #475569;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .suggestions > div {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 9px;
 }
 
 .suggestions button {
-  padding: 6px 12px;
-  border-radius: 999px;
+  padding: 10px 15px;
   border: 1px solid #e2e8f0;
-  background: #fff;
+  border-radius: 999px;
   color: #334155;
-  font-size: 13px;
+  background: #fff;
   cursor: pointer;
+  font-size: 15px;
+  line-height: 1.45;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
 }
 
 .suggestions button:hover {
   border-color: #6366f1;
   color: #6366f1;
+  background: #f8f8ff;
+  transform: translateY(-1px);
 }
 
-/* ===== MỚI: Kết quả - actions (export) ===== */
-.resultActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.resultActions button {
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.resultActions button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* ===== MỚI: Data Insight ===== */
-.insightPanel {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #eef2ff;
-  color: #3730a3;
-}
-
-.insightPanel strong {
-  display: block;
-  margin-bottom: 6px;
-}
-
-.insightPanel dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin: 10px 0 0;
-  font-size: 13px;
-}
-
-.insightPanel dt {
-  font-weight: 600;
-  color: #4338ca;
-}
-
-.insightPanel dd {
-  margin: 2px 0 0;
-}
-
-/* ===== MỚI: Chart suggestion (CSS bar chart đơn giản) ===== */
-.chartPanel {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.chartReason {
-  margin: 4px 0 12px;
-  font-size: 13px;
-  color: #64748b;
-}
+/* =========================================================
+   SUGGESTIONS HEADER
+   ========================================================= */
 
 .suggestionsHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .suggestionsHeader > span {
   margin-bottom: 0;
+  font-size: 15px;
 }
 
 .suggestionsHeader > button {
-  padding: 5px 10px;
+  padding: 7px 12px;
   border: 1px solid #dbe3ef;
   border-radius: 7px;
-  background: #fff;
   color: #475569;
+  background: #fff;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .suggestionsHeader > button:hover {
@@ -598,20 +654,165 @@
   cursor: not-allowed;
 }
 
-.anomalies {
+/* =========================================================
+   RESULT ACTIONS
+   ========================================================= */
+
+.resultActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 14px;
-  padding-top: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.resultActions button {
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.resultActions button:hover {
+  border-color: #0b7a75;
+  color: #0b7a75;
+}
+
+.resultActions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   DATA INSIGHT
+   ========================================================= */
+
+.insightPanel {
+  margin-top: 16px;
+  padding: 17px;
+  border-radius: 11px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.insightPanel strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.insightPanel > p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.insightPanel dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  font-size: 15px;
+}
+
+.insightPanel dt {
+  color: #4338ca;
+  font-weight: 700;
+}
+
+.insightPanel dd {
+  margin: 4px 0 0;
+}
+
+/* =========================================================
+   CHART PANEL
+   ========================================================= */
+
+.chartPanel {
+  margin-top: 16px;
+  padding: 17px;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.chartReason {
+  margin: 6px 0 14px;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* =========================================================
+   CHART
+   ========================================================= */
+
+.chartContainer {
+  width: 100%;
+  min-height: 320px;
+  margin-top: 16px;
+}
+
+.chartAxis {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.chartTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.chartTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.chartTable th,
+.chartTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.chartTable th {
+  background: #f8fafc;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* =========================================================
+   ANOMALIES
+   ========================================================= */
+
+.anomalies {
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid rgb(67 56 202 / 15%);
+  font-size: 15px;
 }
 
 .anomalies > strong {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  font-size: 15px;
 }
 
 .anomalies ul {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -620,92 +821,47 @@
 .anomalies li {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 2px 10px;
-  padding: 8px 10px;
+  gap: 4px 11px;
+  padding: 10px 12px;
   border-radius: 8px;
   background: rgb(255 255 255 / 60%);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .anomalies li > strong {
   text-align: right;
+  font-size: 14px;
 }
 
 .anomalies li small {
   grid-column: 1 / -1;
   color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.chartContainer {
-  width: 100%;
-  min-height: 320px;
-  margin-top: 14px;
-}
-
-.chartAxis {
-  display: block;
-  margin-top: 6px;
-  color: #64748b;
-}
-
-.chartTableWrapper {
-  width: 100%;
-  overflow-x: auto;
-  margin-top: 14px;
-}
-
-.chartTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.chartTable th,
-.chartTable td {
-  padding: 9px 10px;
-  border-bottom: 1px solid #e2e8f0;
-  text-align: left;
-}
-
-.chartTable th {
-  background: #f8fafc;
-  font-weight: 600;
-}
-
-/* ===== MỚI: Giải thích SQL / Tối ưu SQL (per-message tools) ===== */
-.sqlToolsRow {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.sqlToolsRow button {
-  padding: 5px 12px;
-  border: 1px solid #cfddda;
-  border-radius: 999px;
-  background: #fff;
-  color: #2d474a;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.sqlToolsRow button:hover {
-  border-color: #0b7a75;
-  color: #0b7a75;
-}
+/* =========================================================
+   AI PANEL
+   ========================================================= */
 
 .aiPanel {
-  margin-top: 10px;
-  padding: 12px 14px;
+  margin-top: 11px;
+  padding: 14px 16px;
   border-radius: 10px;
   background: #f8fafc;
   color: #64748b;
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1.75;
 }
 
+/* =========================================================
+   SQL EXPLANATION
+   ========================================================= */
+
 .explainPanel {
-  margin-top: 10px;
-  padding: 14px 16px;
+  margin-top: 11px;
+  padding: 17px 19px;
   border-radius: 12px;
   background: #f0fdfa;
   color: #134e4a;
@@ -713,69 +869,45 @@
 
 .explainPanel > strong {
   display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
+  margin-bottom: 8px;
+  color: #134e4a;
+  font-size: 16px;
 }
 
 .explainPanel > p {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   color: #0f766e;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 .explainPanel ol {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding-left: 18px;
+  padding-left: 21px;
 }
 
 .explainPanel li {
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .explainPanel li code {
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   color: #0b7a75;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 750;
 }
 
 .explainPanel li span {
   color: #235953;
 }
 
-.optimizePanel {
-  margin-top: 10px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-}
-
-.optimizePanel > strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  color: #1e293b;
-}
-
-.optimizePanel > p {
-  margin: 0 0 12px;
-  color: #475569;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.subHeading {
-  display: block;
-  margin: 12px 0 8px;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 750;
-  text-transform: uppercase;
-}
+/* =========================================================
+   EXPLANATION TABLE
+   ========================================================= */
 
 .explainTableWrapper {
   width: 100%;
@@ -788,12 +920,12 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 620px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .explainTable th,
 .explainTable td {
-  padding: 8px 10px;
+  padding: 11px 12px;
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   white-space: nowrap;
@@ -802,16 +934,62 @@
 .explainTable th {
   background: #f8fafc;
   color: #334155;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .explainTable td {
   color: #475569;
+  font-size: 14px;
 }
+
+/* =========================================================
+   SQL OPTIMIZATION
+   ========================================================= */
+
+.optimizePanel {
+  margin-top: 11px;
+  padding: 17px 19px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.optimizePanel > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #1e293b;
+  font-size: 16px;
+}
+
+.optimizePanel > p {
+  margin: 0 0 14px;
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* =========================================================
+   SUB HEADING
+   ========================================================= */
+
+.subHeading {
+  display: block;
+  margin: 14px 0 10px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* =========================================================
+   ISSUE LIST
+   ========================================================= */
 
 .issueList ul {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -820,35 +998,42 @@
 .issueList li {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 13px 15px;
   border-radius: 8px;
   background: #f8fafc;
 }
 
 .issueList li > div {
   flex: 1;
+  min-width: 0;
 }
 
 .issueList li strong {
   display: block;
-  font-size: 12px;
   color: #1e293b;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .issueList li p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   color: #475569;
-  font-size: 12px;
+  font-size: 15px;
+  line-height: 1.7;
 }
+
+/* =========================================================
+   SEVERITY
+   ========================================================= */
 
 .severityHigh,
 .severityMedium,
 .severityLow {
   flex-shrink: 0;
-  padding: 3px 8px;
+  padding: 5px 10px;
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -867,13 +1052,17 @@
   background: #dbeafe;
 }
 
+/* =========================================================
+   INDEX SUGGESTIONS
+   ========================================================= */
+
 .indexList {
   display: grid;
-  gap: 10px;
+  gap: 11px;
 }
 
 .indexCard {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #f8fafc;
@@ -882,8 +1071,8 @@
 .indexCard > div:first-child {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 15px;
 }
 
 .indexCard > div:first-child strong {
@@ -892,39 +1081,366 @@
 
 .indexCard > div:first-child span {
   color: #64748b;
+  font-size: 14px;
 }
 
 .indexCard > p {
-  margin: 4px 0 8px;
+  margin: 6px 0 10px;
   color: #475569;
-  font-size: 12px;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .indexSqlRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .indexSqlRow code {
   overflow-x: auto;
   flex: 1;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 6px;
   background: #173639;
   color: #d9f4ef;
-  font-size: 11px;
+  font-size: 14px;
   white-space: pre;
 }
 
 .indexSqlRow button {
   flex-shrink: 0;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid #cfddda;
   border-radius: 6px;
-  background: #fff;
   color: #2d474a;
-  font-size: 11px;
-  font-weight: 700;
+  background: #fff;
   cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.indexSqlRow button:hover {
+  border-color: #0b7a75;
+  color: #0b7a75;
+}
+
+/* =========================================================
+   COMPOSER
+   ========================================================= */
+
+.composer {
+  padding: 18px 20px;
+  border-top: 1px solid #e0e9e6;
+  background: #fbfcfc;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid #cbdad7;
+  border-radius: 12px;
+  padding: 16px 17px;
+  color: #304b4e;
+  outline: 0;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1.65;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.composer textarea::placeholder {
+  color: #94a0a2;
+  font-size: 16px;
+}
+
+.composer textarea:focus {
+  border-color: #45a19a;
+  box-shadow: 0 0 0 3px #dff4f0;
+}
+
+.composer > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+}
+
+.composer small {
+  color: #94a0a2;
+  font-size: 12px;
+}
+
+.composer button {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  color: #fff;
+  background: #0b7a75;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 750;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.composer button:hover:not(:disabled) {
+  background: #096963;
+  transform: translateY(-1px);
+}
+
+.composer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+.error {
+  padding: 13px 15px;
+  border: 1px solid #f1c2ca;
+  border-radius: 10px;
+  color: #a42b40;
+  background: #fff0f2;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* =========================================================
+   CENTER
+   ========================================================= */
+
+.center {
+  padding: 50px;
+  color: #718083;
+  text-align: center;
+  font-size: 15px;
+}
+
+/* =========================================================
+   EMPTY PAGE
+   ========================================================= */
+
+.emptyPage {
+  padding: 70px 20px;
+  border: 1px dashed #b9ceca;
+  border-radius: 16px;
+  text-align: center;
+  background: #ffffff90;
+}
+
+.emptyPage h1 {
+  margin-bottom: 10px;
+  color: #294245;
+  font-size: 28px;
+}
+
+.emptyPage p {
+  color: #7c898b;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* =========================================================
+   RESPONSIVE - TABLET
+   ========================================================= */
+
+@media (max-width: 800px) {
+  .heading {
+    align-items: start;
+  }
+
+  .heading label {
+    min-width: 230px;
+  }
+
+  .workspace {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  .messages {
+    padding-inline: 22px;
+  }
+
+  .userMessage,
+  .assistantMessage {
+    width: min(94%, 700px);
+  }
+
+  .userMessage p,
+  .assistantMessage > p {
+    font-size: 17px;
+    line-height: 1.7;
+  }
+
+  .sql pre {
+    font-size: 15px;
+  }
+
+  .resultTable {
+    font-size: 14px;
+  }
+}
+
+/* =========================================================
+   RESPONSIVE - MOBILE
+   ========================================================= */
+
+@media (max-width: 620px) {
+  .heading {
+    display: grid;
+  }
+
+  .heading h1 {
+    font-size: 28px;
+  }
+
+  .heading label {
+    width: 100%;
+  }
+
+  .workspace {
+    display: block;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #e1e9e7;
+  }
+
+  .conversationList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .messages {
+    min-height: 410px;
+    max-height: 470px;
+    padding: 24px 16px;
+  }
+
+  .userMessage,
+  .assistantMessage {
+    width: min(96%, 700px);
+  }
+
+  .userMessage p,
+  .assistantMessage > p {
+    padding: 15px 17px;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  .sql pre {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .suggestions button {
+    font-size: 14px;
+  }
+
+  .resultTable {
+    font-size: 14px;
+  }
+
+  .resultTable th,
+  .resultTable td {
+    padding: 12px 13px;
+  }
+
+  .composer {
+    padding: 15px;
+  }
+
+  .composer textarea {
+    min-height: 84px;
+    font-size: 16px;
+  }
+
+  .composer textarea::placeholder {
+    font-size: 15px;
+  }
+}
+
+/* =========================================================
+   RESPONSIVE - SMALL PHONE
+   ========================================================= */
+
+@media (max-width: 470px) {
+  .heading h1 {
+    font-size: 25px;
+  }
+
+  .heading span {
+    font-size: 13px;
+  }
+
+  .conversationList {
+    grid-template-columns: 1fr;
+  }
+
+  .userMessage,
+  .assistantMessage {
+    width: 100%;
+  }
+
+  .userMessage p,
+  .assistantMessage > p {
+    padding: 14px 16px;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  .userMessage header,
+  .assistantMessage header {
+    font-size: 12px;
+  }
+
+  .sql pre {
+    padding: 16px;
+    font-size: 14px;
+  }
+
+  .suggestions button {
+    width: 100%;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  .resultTable {
+    font-size: 13px;
+  }
+
+  .resultTable th,
+  .resultTable td {
+    padding: 11px 12px;
+  }
+
+  .composer > div {
+    align-items: flex-end;
+  }
+
+  .composer small {
+    font-size: 11px;
+  }
+
+  .composer textarea {
+    font-size: 16px;
+  }
+
+  .composer textarea::placeholder {
+    font-size: 15px;
+  }
+
+  .composer button {
+    padding: 11px 14px;
+    font-size: 13px;
+  }
 }
