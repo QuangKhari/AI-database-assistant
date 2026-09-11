@@ -3,6 +3,7 @@ package com.example.aidatabaseassistant.security;
 import com.example.aidatabaseassistant.config.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService userDetailsService;
 
+    /**
+     * Lay token JWT tu request.
+     *
+     * UU TIEN cookie httpOnly "access_token" (luong browser that, dat boi
+     * AuthController sau khi login/register) - FALLBACK ve header
+     * "Authorization: Bearer ..." de:
+     *   1. Khong pha cac integration test hien co dang tu set header nay
+     *      truc tiep (TestRestTemplate/MockMvc).
+     *   2. Van ho tro client kieu API thuan (Postman, script, mobile...)
+     *      khong dung cookie.
+     */
+    private String resolveToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (AuthCookie.ACCESS_TOKEN_COOKIE.equals(cookie.getName())
+                        && cookie.getValue() != null
+                        && !cookie.getValue().isBlank()) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        String header = request.getHeader("Authorization");
+
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+
+        return null;
+    }
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -36,11 +70,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        String header = request.getHeader("Authorization");
+        String token = resolveToken(request);
 
-        if (header != null && header.startsWith("Bearer ")) {
-
-            String token = header.substring(7);
+        if (token != null) {
 
             if (jwtUtil.validateToken(token)) {
                 try {
@@ -88,22 +120,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         request.getRequestURI()
                 );
             }
-        } else if (header != null) {
-
-            // Co header Authorization nhung khong dung dinh dang "Bearer ..."
-            log.warn(
-                    "Header Authorization sai dinh dang (khong bat dau bang 'Bearer ') cho request {} {}",
-                    request.getMethod(),
-                    request.getRequestURI()
-            );
         } else {
 
-            // Hoan toan khong co header Authorization - binh thuong voi cac
-            // endpoint public (/api/auth/**), nhung neu xay ra voi endpoint
-            // can dang nhap thi day chinh la nguyen nhan. Chi log DEBUG vi
-            // se rat nhieu voi cac request public.
+            // Khong co cookie "access_token" lan header "Authorization" hop
+            // dinh dang - binh thuong voi cac endpoint public (/api/auth/**),
+            // nhung neu xay ra voi endpoint can dang nhap thi day chinh la
+            // nguyen nhan. Chi log DEBUG vi se rat nhieu voi cac request
+            // public.
             log.debug(
-                    "Khong co header Authorization cho request {} {}",
+                    "Khong tim thay token (cookie/Authorization) cho request {} {}",
                     request.getMethod(),
                     request.getRequestURI()
             );
