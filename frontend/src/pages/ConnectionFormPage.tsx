@@ -352,30 +352,6 @@ export function ConnectionFormPage() {
                     </span>
                   )}
                 </button>
-
-                {/* DuckDB */}
-                <button
-                  type="button"
-                  aria-pressed={form.dbType === "duckdb"}
-                  className={`${styles.databaseCard} ${
-                    form.dbType === "duckdb" ? styles.databaseCardActive : ""
-                  }`}
-                  onClick={() => selectDatabaseType("duckdb")}
-                >
-                  <div className={styles.databaseIcon}>🦆</div>
-
-                  <div className={styles.databaseInfo}>
-                    <strong>DuckDB</strong>
-
-                    <span>Analytics database</span>
-                  </div>
-
-                  {form.dbType === "duckdb" && (
-                    <span className={styles.databaseCheck} aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </button>
               </div>
             </div>
 
