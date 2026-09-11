@@ -69,7 +69,8 @@ public class JdbcUrlBuilder {
                 + port
                 + "/"
                 + databaseName
-                + "?connectTimeout="
+                + "?sslmode=require"
+                + "&connectTimeout="
                 + MYSQL_CONNECT_TIMEOUT_MS
                 + "&socketTimeout="
                 + MYSQL_SOCKET_TIMEOUT_MS;
