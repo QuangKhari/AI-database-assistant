@@ -6,6 +6,10 @@ import com.example.aidatabaseassistant.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +22,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
+    private final CsrfTokenRepository csrfTokenRepository;
 
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
@@ -58,21 +63,55 @@ public class AuthController {
                 .build();
     }
 
+    private void ensureCsrfToken(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        CsrfToken csrfToken = csrfTokenRepository.loadToken(request);
+
+        if (csrfToken == null) {
+            csrfToken = csrfTokenRepository.generateToken(request);
+            csrfTokenRepository.saveToken(
+                    csrfToken,
+                    request,
+                    response
+            );
+        }
+    }
+
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
+
         AuthResponse response = authService.register(request);
 
+        ensureCsrfToken(httpRequest, httpResponse);
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildAccessTokenCookie(response.getToken()).toString())
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        buildAccessTokenCookie(response.getToken()).toString()
+                )
                 .body(response);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
+
         AuthResponse response = authService.login(request);
 
+        ensureCsrfToken(httpRequest, httpResponse);
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildAccessTokenCookie(response.getToken()).toString())
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        buildAccessTokenCookie(response.getToken()).toString()
+                )
                 .body(response);
     }
 

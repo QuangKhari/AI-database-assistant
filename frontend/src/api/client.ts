@@ -106,6 +106,8 @@ export async function apiRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  const csrfTokenBeforeRequest = readCookie(CSRF_COOKIE_NAME);
+
   applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -137,10 +139,14 @@ export async function apiRequest<T>(
       };
     }
 
+    const csrfTokenAfterResponse = readCookie(CSRF_COOKIE_NAME);
+
     if (
       !_isCsrfRetry &&
       response.status === 403 &&
-      shouldRetryOnCsrfFailure(options.method)
+      shouldRetryOnCsrfFailure(options.method) &&
+      !csrfTokenBeforeRequest &&
+      !!csrfTokenAfterResponse
     ) {
       return apiRequest<T>(path, options, true);
     }
@@ -172,6 +178,8 @@ export async function apiRequestBlob(
     headers.set("Content-Type", "application/json");
   }
 
+  const csrfTokenBeforeRequest = readCookie(CSRF_COOKIE_NAME);
+
   applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -195,10 +203,14 @@ export async function apiRequestBlob(
       };
     }
 
+    const csrfTokenAfterResponse = readCookie(CSRF_COOKIE_NAME);
+
     if (
       !_isCsrfRetry &&
       response.status === 403 &&
-      shouldRetryOnCsrfFailure(options.method)
+      shouldRetryOnCsrfFailure(options.method) &&
+      !csrfTokenBeforeRequest &&
+      !!csrfTokenAfterResponse
     ) {
       return apiRequestBlob(path, options, true);
     }
@@ -259,6 +271,8 @@ export async function apiRequestSse(
   // Báo cho BE rằng FE mong muốn nhận SSE.
   headers.set("Accept", "text/event-stream");
 
+  const csrfTokenBeforeRequest = readCookie(CSRF_COOKIE_NAME);
+
   applyCsrfHeader(headers, options.method);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -288,10 +302,14 @@ export async function apiRequestSse(
       };
     }
 
+    const csrfTokenAfterResponse = readCookie(CSRF_COOKIE_NAME);
+
     if (
       !_isCsrfRetry &&
       response.status === 403 &&
-      shouldRetryOnCsrfFailure(options.method)
+      shouldRetryOnCsrfFailure(options.method) &&
+      !csrfTokenBeforeRequest &&
+      !!csrfTokenAfterResponse
     ) {
       return apiRequestSse(path, options, onEvent, true);
     }
