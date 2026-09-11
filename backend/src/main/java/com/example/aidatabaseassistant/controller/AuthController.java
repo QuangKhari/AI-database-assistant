@@ -11,7 +11,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.web.csrf.CsrfToken;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -20,6 +22,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
+    private final CsrfTokenRepository csrfTokenRepository;
 
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
@@ -68,6 +71,28 @@ public class AuthController {
     // thu tu header, gia tri do lai KHONG duoc Spring Security dang ky ->
     // fragile, phu thuoc thu tu filter/controller va cach reverse proxy
     // xu ly header trung ten).
+
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        CsrfToken csrfToken = csrfTokenRepository.loadToken(request);
+
+        if (csrfToken == null) {
+            csrfToken = csrfTokenRepository.generateToken(request);
+            csrfTokenRepository.saveToken(
+                    csrfToken,
+                    request,
+                    response
+            );
+        } else {
+            // Đảm bảo token được resolve và cookie tồn tại.
+            csrfToken.getToken();
+        }
+
+        return ResponseEntity.noContent().build();
+    }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
