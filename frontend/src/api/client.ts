@@ -41,6 +41,24 @@ function applyCsrfHeader(headers: Headers, method?: string): void {
   }
 }
 
+// Request MUTATING (POST/PUT/PATCH/DELETE) dau tien trong 1 phien co the bi
+// 403 du user da dang nhap hop le: cookie "XSRF-TOKEN" chi duoc BE cap that
+// su tren response cua request NAY (xem CsrfCookieFilter ben BE), nen luc
+// browser GUI request thi cookie chua ton tai -> FE khong gan duoc header
+// X-XSRF-TOKEN -> BE tu choi voi 403 (xem RestAccessDeniedHandler).
+//
+// Sau response 403 do, cookie XSRF-TOKEN DA co san trong trinh duyet (BE
+// van cap no kem theo loi). Nen chi can retry dung 1 LAN voi header CSRF
+// moi doc lai - khong can nguoi dung tu bam lai lan 2 nhu truoc.
+//
+// AN TOAN de retry: request bi chan ngay o tang Spring Security filter,
+// CHUA TUNG chay toi controller/service, nen khong co side-effect nao xay
+// ra o lan dau (khong insert trung, khong goi Gemini 2 lan...).
+function shouldRetryOnCsrfFailure(method?: string): boolean {
+  const normalizedMethod = (method ?? "GET").toUpperCase();
+  return MUTATING_METHODS.has(normalizedMethod);
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -75,6 +93,7 @@ function parseRetryAfter(response: Response): number | undefined {
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
+  _isCsrfRetry = false,
 ): Promise<T> {
   const headers = new Headers(options.headers);
 
@@ -118,6 +137,14 @@ export async function apiRequest<T>(
       };
     }
 
+    if (
+      !_isCsrfRetry &&
+      response.status === 403 &&
+      shouldRetryOnCsrfFailure(options.method)
+    ) {
+      return apiRequest<T>(path, options, true);
+    }
+
     throw new ApiError(
       errorBody,
       parseRetryAfter(response),
@@ -137,6 +164,7 @@ export async function apiRequest<T>(
 export async function apiRequestBlob(
   path: string,
   options: RequestInit = {},
+  _isCsrfRetry = false,
 ): Promise<{ blob: Blob; filename: string }> {
   const headers = new Headers(options.headers);
 
@@ -165,6 +193,14 @@ export async function apiRequestBlob(
         code: "HTTP_ERROR",
         message: "Không thể xuất file. Vui lòng thử lại.",
       };
+    }
+
+    if (
+      !_isCsrfRetry &&
+      response.status === 403 &&
+      shouldRetryOnCsrfFailure(options.method)
+    ) {
+      return apiRequestBlob(path, options, true);
     }
 
     throw new ApiError(
@@ -211,6 +247,7 @@ export async function apiRequestSse(
   path: string,
   options: RequestInit = {},
   onEvent: (event: SseEvent) => void,
+  _isCsrfRetry = false,
 ): Promise<void> {
   const headers = new Headers(options.headers);
 
@@ -249,6 +286,14 @@ export async function apiRequestSse(
         code: "HTTP_ERROR",
         message: "Không thể xử lý yêu cầu. Vui lòng thử lại.",
       };
+    }
+
+    if (
+      !_isCsrfRetry &&
+      response.status === 403 &&
+      shouldRetryOnCsrfFailure(options.method)
+    ) {
+      return apiRequestSse(path, options, onEvent, true);
     }
 
     throw new ApiError(
