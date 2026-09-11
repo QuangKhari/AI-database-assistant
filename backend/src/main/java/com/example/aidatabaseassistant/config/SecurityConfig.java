@@ -20,16 +20,23 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.OncePerRequestFilter;
 
+import java.io.IOException;
 import java.util.List;
 
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
 @EnableWebSecurity
@@ -166,9 +173,52 @@ public class SecurityConfig {
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
+                )
+
+                // QUAN TRONG: CookieCsrfTokenRepository dung co che
+                // "deferred token" - token CSRF chi thuc su duoc ghi vao
+                // cookie XSRF-TOKEN khi co code nao do goi
+                // csrfToken.getToken() de "resolve" no ra. Neu khong co
+                // filter nay, khong ai goi ham do -> cookie XSRF-TOKEN
+                // KHONG BAO GIO duoc tao -> FE khong co gi de gan vao
+                // header X-XSRF-TOKEN -> moi request POST/PUT/PATCH/DELETE
+                // deu bi chan 403 boi Spring Security, vinh vien, ke ca
+                // sau co che retry o FE (client.ts).
+                .addFilterAfter(
+                        new CsrfCookieFilter(),
+                        CsrfFilter.class
                 );
 
         return http.build();
+    }
+
+    // Ep Spring Security "resolve" deferred CsrfToken tren MOI request,
+    // qua do CookieCsrfTokenRepository moi thuc su ghi Set-Cookie:
+    // XSRF-TOKEN=... vao response. Day la pattern chinh thuc cua Spring
+    // Security cho CSRF trong SPA (xem tai lieu "CSRF for Single Page
+    // Applications"). Dat SAU CsrfFilter.class de dam bao request
+    // attribute CsrfToken.class.getName() da duoc CsrfFilter set truoc do.
+    public static final class CsrfCookieFilter extends OncePerRequestFilter {
+
+        @Override
+        protected void doFilterInternal(
+                HttpServletRequest request,
+                HttpServletResponse response,
+                FilterChain filterChain
+        ) throws ServletException, IOException {
+
+            CsrfToken csrfToken =
+                    (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+
+            if (csrfToken != null) {
+                // Goi getToken() chinh la hanh dong "resolve" deferred
+                // token -> kich hoat CookieCsrfTokenRepository.saveToken()
+                // -> Set-Cookie: XSRF-TOKEN duoc ghi vao response nay.
+                csrfToken.getToken();
+            }
+
+            filterChain.doFilter(request, response);
+        }
     }
 
     private boolean hasNoAccessTokenCookie(

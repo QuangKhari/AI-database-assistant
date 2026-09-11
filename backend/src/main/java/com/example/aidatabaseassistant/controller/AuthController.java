@@ -12,7 +12,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -61,14 +60,14 @@ public class AuthController {
                 .build();
     }
 
-    private ResponseCookie buildCsrfTokenCookie(String token) {
-        return ResponseCookie.from("XSRF-TOKEN", token)
-                .httpOnly(false)
-                .secure(cookieSecure)
-                .sameSite("Lax")
-                .path("/")
-                .build();
-    }
+    // XOA buildCsrfTokenCookie(): cookie XSRF-TOKEN gio da duoc phat hanh
+    // THONG NHAT boi SecurityConfig.CsrfCookieFilter + CookieCsrfTokenRepository
+    // cho MOI request (khong rieng auth), khong can controller nao tu tay
+    // tao UUID rieng nua. Truoc day 2 noi cung set 1 cookie trung ten se
+    // gay xung dot Set-Cookie (browser chi giu lai 1 gia tri "thang" theo
+    // thu tu header, gia tri do lai KHONG duoc Spring Security dang ky ->
+    // fragile, phu thuoc thu tu filter/controller va cach reverse proxy
+    // xu ly header trung ten).
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
@@ -76,19 +75,11 @@ public class AuthController {
 
         AuthResponse response = authService.register(request);
 
-        String csrfToken = UUID.randomUUID().toString();
-
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.SET_COOKIE,
                         buildAccessTokenCookie(
                                 response.getToken()
-                        ).toString()
-                )
-                .header(
-                        HttpHeaders.SET_COOKIE,
-                        buildCsrfTokenCookie(
-                                csrfToken
                         ).toString()
                 )
                 .body(response);
@@ -100,19 +91,11 @@ public class AuthController {
 
         AuthResponse response = authService.login(request);
 
-        String csrfToken = UUID.randomUUID().toString();
-
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.SET_COOKIE,
                         buildAccessTokenCookie(
                                 response.getToken()
-                        ).toString()
-                )
-                .header(
-                        HttpHeaders.SET_COOKIE,
-                        buildCsrfTokenCookie(
-                                csrfToken
                         ).toString()
                 )
                 .body(response);
@@ -126,27 +109,19 @@ public class AuthController {
      * (Max-Age=0), khien trinh duyet xoa no di. permitAll vi ke ca khi
      * cookie da het han/khong hop le, goi logout van phai luon thanh cong
      * (khong co gi de mat).
+     *
+     * KHONG con tu xoa cookie XSRF-TOKEN thu cong o day: no khong phai gia
+     * tri nhay cam (chi dung de doi chieu double-submit), de nguyen trong
+     * trinh duyet cung khong ro ri thong tin gi; lan dang nhap/lan request
+     * tiep theo, CsrfCookieFilter se tu cap lai token moi khi can.
      */
     @PostMapping("/logout")
     public ResponseEntity<OperationResponse> logout() {
-
-        ResponseCookie expiredCsrfCookie =
-                ResponseCookie.from("XSRF-TOKEN", "")
-                        .httpOnly(false)
-                        .secure(cookieSecure)
-                        .sameSite("Lax")
-                        .path("/")
-                        .maxAge(0)
-                        .build();
 
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.SET_COOKIE,
                         buildExpiredAccessTokenCookie().toString()
-                )
-                .header(
-                        HttpHeaders.SET_COOKIE,
-                        expiredCsrfCookie.toString()
                 )
                 .body(
                         new OperationResponse("Đã đăng xuất.")
