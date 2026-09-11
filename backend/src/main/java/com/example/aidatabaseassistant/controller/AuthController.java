@@ -8,12 +8,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.security.web.csrf.CsrfToken;
-import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -22,7 +21,6 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.example.aidatabaseassistant.service.RateLimitService rateLimitService;
-    private final CsrfTokenRepository csrfTokenRepository;
 
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
@@ -63,54 +61,59 @@ public class AuthController {
                 .build();
     }
 
-    private void ensureCsrfToken(
-            HttpServletRequest request,
-            HttpServletResponse response) {
-
-        CsrfToken csrfToken = csrfTokenRepository.loadToken(request);
-
-        if (csrfToken == null) {
-            csrfToken = csrfTokenRepository.generateToken(request);
-            csrfTokenRepository.saveToken(
-                    csrfToken,
-                    request,
-                    response
-            );
-        }
+    private ResponseCookie buildCsrfTokenCookie(String token) {
+        return ResponseCookie.from("XSRF-TOKEN", token)
+                .httpOnly(false)
+                .secure(cookieSecure)
+                .sameSite("Lax")
+                .path("/")
+                .build();
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
-            @Valid @RequestBody RegisterRequest request,
-            HttpServletRequest httpRequest,
-            HttpServletResponse httpResponse) {
+            @Valid @RequestBody RegisterRequest request) {
 
         AuthResponse response = authService.register(request);
 
-        ensureCsrfToken(httpRequest, httpResponse);
+        String csrfToken = UUID.randomUUID().toString();
 
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.SET_COOKIE,
-                        buildAccessTokenCookie(response.getToken()).toString()
+                        buildAccessTokenCookie(
+                                response.getToken()
+                        ).toString()
+                )
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        buildCsrfTokenCookie(
+                                csrfToken
+                        ).toString()
                 )
                 .body(response);
     }
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(
-            @Valid @RequestBody LoginRequest request,
-            HttpServletRequest httpRequest,
-            HttpServletResponse httpResponse) {
+            @Valid @RequestBody LoginRequest request) {
 
         AuthResponse response = authService.login(request);
 
-        ensureCsrfToken(httpRequest, httpResponse);
+        String csrfToken = UUID.randomUUID().toString();
 
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.SET_COOKIE,
-                        buildAccessTokenCookie(response.getToken()).toString()
+                        buildAccessTokenCookie(
+                                response.getToken()
+                        ).toString()
+                )
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        buildCsrfTokenCookie(
+                                csrfToken
+                        ).toString()
                 )
                 .body(response);
     }
@@ -126,9 +129,28 @@ public class AuthController {
      */
     @PostMapping("/logout")
     public ResponseEntity<OperationResponse> logout() {
+
+        ResponseCookie expiredCsrfCookie =
+                ResponseCookie.from("XSRF-TOKEN", "")
+                        .httpOnly(false)
+                        .secure(cookieSecure)
+                        .sameSite("Lax")
+                        .path("/")
+                        .maxAge(0)
+                        .build();
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildExpiredAccessTokenCookie().toString())
-                .body(new OperationResponse("Đã đăng xuất."));
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        buildExpiredAccessTokenCookie().toString()
+                )
+                .header(
+                        HttpHeaders.SET_COOKIE,
+                        expiredCsrfCookie.toString()
+                )
+                .body(
+                        new OperationResponse("Đã đăng xuất.")
+                );
     }
 
     @PostMapping("/forgot-password")
