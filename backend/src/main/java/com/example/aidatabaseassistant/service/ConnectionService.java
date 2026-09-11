@@ -66,7 +66,8 @@ public class ConnectionService {
                 request.getPort(),
                 request.getDatabaseName(),
                 request.getUsername(),
-                request.getPassword()
+                request.getPassword(),
+                request.isSslEnabled()
         );
 
         long durationMs = System.currentTimeMillis() - startTime;
@@ -132,6 +133,12 @@ public class ConnectionService {
                 .user(user)
                 .name(request.getName())
                 .dbType(request.getDbType())
+                .sslEnabled(
+                        "postgres".equalsIgnoreCase(request.getDbType())
+                                || "postgresql".equalsIgnoreCase(request.getDbType())
+                                ? request.isSslEnabled()
+                                : false
+                )
                 .host(request.getHost())
                 .port(request.getPort())
                 .databaseName(request.getDatabaseName())
@@ -197,6 +204,7 @@ public class ConnectionService {
                 connection.getId(),
                 connection.getName(),
                 connection.getDbType(),
+                connection.isSslEnabled(),
                 connection.getHost(),
                 connection.getPort(),
                 connection.getDatabaseName(),
@@ -229,6 +237,12 @@ public class ConnectionService {
         connection.setPort(request.getPort());
         connection.setDatabaseName(request.getDatabaseName());
         connection.setUsername(request.getUsername());
+        connection.setSslEnabled(
+                "postgres".equalsIgnoreCase(connection.getDbType())
+                        || "postgresql".equalsIgnoreCase(connection.getDbType())
+                        ? request.isSslEnabled()
+                        : false
+        );
 
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             connection.setEncryptedPassword(encryptionUtil.encrypt(request.getPassword()));
@@ -270,7 +284,8 @@ public class ConnectionService {
                     connection.getPort(),
                     connection.getDatabaseName(),
                     connection.getUsername(),
-                    rawPassword
+                    rawPassword,
+                    connection.isSslEnabled()
             );
         } catch (Exception e) {
             successful = false;

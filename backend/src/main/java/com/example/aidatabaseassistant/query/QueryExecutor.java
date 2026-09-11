@@ -47,9 +47,14 @@ public class QueryExecutor {
      */
     public QueryResultDto executeQuery(String dbType, String host, Integer port, String databaseName,
                                        String username, String password, String sql) {
+        return executeQuery(dbType, host, port, databaseName, username, password, sql, false);
+    }
+
+    public QueryResultDto executeQuery(String dbType, String host, Integer port, String databaseName,
+                                       String username, String password, String sql, boolean sslEnabled) {
         long start = System.currentTimeMillis();
 
-        try (Connection conn = targetDatabaseClient.openConnection(dbType, host, port, databaseName, username, password);
+        try (Connection conn = targetDatabaseClient.openConnection(dbType, host, port, databaseName, username, password, sslEnabled);
              Statement stmt = conn.createStatement()) {
 
             stmt.setMaxRows(MAX_ROWS);

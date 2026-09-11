@@ -417,7 +417,8 @@ public class SchemaDiscoveryService {
                                  connection.getPort(),
                                  connection.getDatabaseName(),
                                  connection.getUsername(),
-                                 rawPassword
+                                 rawPassword,
+                                 connection.isSslEnabled()
                          )) {
 
                 DatabaseMetaData metaData =

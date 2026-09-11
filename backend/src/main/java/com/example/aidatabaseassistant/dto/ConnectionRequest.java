@@ -40,4 +40,6 @@ public class ConnectionRequest {
 
     @NotBlank
     private String password;
+
+    private boolean sslEnabled = false;
 }

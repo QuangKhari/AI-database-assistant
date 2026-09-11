@@ -649,7 +649,8 @@ class ConnectionServiceTest {
                 eq(0),
                 eq("/data/excel-dbs/user_1/sales.duckdb"),
                 eq("excel-file"),
-                eq("-")
+                eq("-"),
+                eq(false)
         )).thenReturn(true);
 
         var result =
@@ -686,7 +687,8 @@ class ConnectionServiceTest {
                 5432,
                 "x",
                 "x",
-                "x"
+                "x",
+                false
         )).thenThrow(
                 new IllegalArgumentException(
                         "Loại database chưa được hỗ trợ: postgres"

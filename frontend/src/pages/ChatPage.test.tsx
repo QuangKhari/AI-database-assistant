@@ -33,6 +33,7 @@ describe("ChatPage", () => {
         port: 3306,
         databaseName: "shop",
         username: "reader",
+        sslEnabled: false,
         active: true,
         lastTestedAt: null,
         lastTestSuccessful: true,

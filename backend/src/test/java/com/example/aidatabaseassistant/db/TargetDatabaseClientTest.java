@@ -59,7 +59,8 @@ class TargetDatabaseClientTest {
                 "postgres",
                 "localhost",
                 5432,
-                "shop"
+                "shop",
+                false
         )).thenReturn(url);
 
         try (MockedStatic<DriverManager> driverManager =
@@ -90,7 +91,41 @@ class TargetDatabaseClientTest {
                 "postgres",
                 "localhost",
                 5432,
-                "shop"
+                "shop",
+                false
         );
     }
+
+    @Test
+    void openConnection_shouldBuildPostgresUrl_withSsl() throws Exception {
+
+        String url =
+                "jdbc:postgresql://localhost:5432/shop"
+                        + "?sslmode=require"
+                        + "&connectTimeout=5"
+                        + "&socketTimeout=15";
+
+        when(jdbcUrlBuilder.build(
+                "postgres", "localhost", 5432, "shop", true
+        )).thenReturn(url);
+
+        try (MockedStatic<DriverManager> driverManager = mockStatic(DriverManager.class)) {
+            driverManager.when(() -> DriverManager.getConnection(
+                    url, "shop_user", "shop_pass"
+            )).thenReturn(expectedConnection);
+
+            Connection actual = client.openConnection(
+                    "postgres", "localhost", 5432, "shop",
+                    "shop_user", "shop_pass", true
+            );
+
+            assertSame(expectedConnection, actual);
+        }
+
+        verify(ssrfProtection).validateHost("localhost");
+        verify(jdbcUrlBuilder).build(
+                "postgres", "localhost", 5432, "shop", true
+        );
+    }
+
 }

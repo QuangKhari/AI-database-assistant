@@ -33,4 +33,6 @@ public class ConnectionUpdateRequest {
     private String username;
 
     private String password;
+
+    private boolean sslEnabled = false;
 }
