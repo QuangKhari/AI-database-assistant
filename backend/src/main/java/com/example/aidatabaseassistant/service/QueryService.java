@@ -82,6 +82,41 @@ public class QueryService {
                 connectionAccessGuard.requireOwnedConnection(user, request.getDatabaseConnectionId());
 
         /*
+         * CHẶN THAO TÁC GHI (INSERT/UPDATE/DELETE/ALTER/xoá/sửa/thêm...)
+         * NGAY TỪ ĐẦU - KHÔNG đi qua luồng hỏi-đáp bình thường.
+         *
+         * Trước đây: câu hỏi kiểu "xoá bảng khách hàng" vẫn được
+         * NL2SQLEngine sinh ra một câu SELECT giả (SELECT '...' AS
+         * message) rồi đi tiếp qua toàn bộ luồng Preview -> Execute ->
+         * chart/insight/summary giống một câu hỏi bình thường. Hệ quả:
+         * FE hiển thị cả khối SQL "Đã thực thi", nút "Giải thích SQL"/
+         * "Tối ưu SQL" cho một câu không hề có ý nghĩa truy vấn thật -
+         * trải nghiệm rất kỳ quặc.
+         *
+         * Sửa: nhận diện thao tác ghi ngay tại Preview, KHÔNG load
+         * schema, KHÔNG gọi RAG/Gemini, KHÔNG có SQL nào được sinh ra.
+         * Trả về PreviewResponse với blocked=true để FE chỉ hiện MỘT
+         * thông báo, không hiện khối SQL, không cho bấm "Thực thi SQL".
+         */
+        if (nl2SQLEngine.isWriteOperationQuestion(request.getQuestion())) {
+
+            String blockedMessage =
+                    nl2SQLEngine.blockedOperationMessage(request.getQuestion());
+
+            log.info(
+                    "[WRITE-OP BLOCKED] Chặn câu hỏi có thao tác ghi tại bước Preview, question=\"{}\"",
+                    request.getQuestion()
+            );
+
+            return new PreviewResponse(
+                    null,
+                    false,
+                    blockedMessage,
+                    true
+            );
+        }
+
+        /*
          * Luôn load FULL schema trước.
          *
          * fullSchema được dùng cho:
@@ -130,7 +165,8 @@ public class QueryService {
             return new PreviewResponse(
                     generatedSql,
                     true,
-                    null
+                    null,
+                    false
             );
 
         } catch (ReadOnlyViolationException e) {
@@ -138,7 +174,8 @@ public class QueryService {
             return new PreviewResponse(
                     generatedSql,
                     false,
-                    e.getMessage()
+                    e.getMessage(),
+                    false
             );
 
         } catch (IllegalArgumentException e) {
@@ -146,7 +183,8 @@ public class QueryService {
             return new PreviewResponse(
                     generatedSql,
                     false,
-                    e.getMessage()
+                    e.getMessage(),
+                    false
             );
         }
     }
@@ -206,6 +244,30 @@ public class QueryService {
         User user = connectionAccessGuard.requireUser(username);
         DatabaseConnection connection =
                 connectionAccessGuard.requireOwnedConnection(user, request.getDatabaseConnectionId());
+
+        /*
+         * CHẶN THAO TÁC GHI - lớp bảo vệ thứ hai.
+         *
+         * Bình thường FE luôn gọi Preview trước (đã chặn ở
+         * previewQuery()), nên nhánh này hiếm khi chạy tới. Nhưng vẫn
+         * cần chặn lại ở đây để phòng trường hợp client gọi thẳng
+         * /execute hoặc /execute/stream mà bỏ qua bước Preview.
+         *
+         * Xử lý: lưu lại đúng 1 lượt hỏi-đáp (để lịch sử conversation
+         * nhất quán) với nội dung là thông báo chặn, KHÔNG có SQL,
+         * KHÔNG chạy xuống DB, KHÔNG gọi chart/insight/summary.
+         */
+        if (nl2SQLEngine.isWriteOperationQuestion(request.getQuestion())) {
+
+            log.info(
+                    "[WRITE-OP BLOCKED] Chặn câu hỏi có thao tác ghi tại bước Execute, question=\"{}\"",
+                    request.getQuestion()
+            );
+
+            listener.onProgress("STATUS", "Hoàn tất.");
+
+            return buildBlockedQueryResponse(user, connection, request);
+        }
 
         listener.onProgress("STATUS", "Đang tải schema database...");
 
@@ -712,6 +774,59 @@ public class QueryService {
          * Không dùng generateResponse() vì method đó có retry + timeout 60s.
          */
         return llmClient.generateOptionalResponse(prompt);
+    }
+
+    /**
+     * Xây dựng QueryResponse cho trường hợp câu hỏi bị chặn vì là thao
+     * tác ghi (INSERT/UPDATE/DELETE/xoá/sửa/thêm...).
+     *
+     * Vẫn lưu lại đúng 1 lượt hỏi (user) - đáp (assistant) để lịch sử
+     * conversation hiển thị nhất quán khi tải lại trang, nhưng:
+     * - Message assistant KHÔNG có generatedSql -> FE (dựa vào
+     *   `message.generatedSql`) sẽ KHÔNG hiện khối SQL / nút "Giải
+     *   thích SQL" / "Tối ưu SQL" cho message này.
+     * - KHÔNG tạo QueryLog (không có SQL nào được chạy).
+     * - KHÔNG gọi chart suggestion / data insight / summary (Gemini).
+     */
+    private QueryResponse buildBlockedQueryResponse(
+            User user,
+            DatabaseConnection connection,
+            QueryRequest request
+    ) {
+        Conversation conversation = getOrCreateConversation(user, connection, request);
+
+        String blockedMessage =
+                nl2SQLEngine.blockedOperationMessage(request.getQuestion());
+
+        Message userMessage = Message.builder()
+                .conversation(conversation)
+                .role("user")
+                .content(request.getQuestion())
+                .build();
+        messageRepository.save(userMessage);
+
+        Message assistantMessage = Message.builder()
+                .conversation(conversation)
+                .role("assistant")
+                .content(blockedMessage)
+                .build();
+        messageRepository.save(assistantMessage);
+
+        QueryResponse response = new QueryResponse(
+                conversation.getId(),
+                assistantMessage.getId(),
+                null,
+                null,
+                null,
+                0,
+                null,
+                null
+        );
+        response.setBlocked(true);
+
+        persistQueryResponseSnapshot(assistantMessage.getId(), response);
+
+        return response;
     }
 
     private Conversation getOrCreateConversation(

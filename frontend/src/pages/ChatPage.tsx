@@ -317,8 +317,25 @@ export function ChatPage() {
         question: cleanQuestion,
       });
 
-      setPreviewQuestion(cleanQuestion);
       setQuestion("");
+
+      /**
+       * Thao tác ghi (xoá/sửa/thêm/INSERT/UPDATE/DELETE...) bị chặn
+       * ngay từ Preview.
+       *
+       * KHÔNG hiện khối "SQL preview" (không có SQL nào để hiện) -
+       * chỉ cần một thông báo (toast) rồi dừng lại, không cần đi tiếp
+       * qua luồng hỏi-đáp bình thường (không có nút "Thực thi SQL").
+       */
+      if (result.blocked) {
+        showToast(
+          result.errorMessage || "Không được phép thực hiện thao tác này.",
+          "error",
+        );
+        return;
+      }
+
+      setPreviewQuestion(cleanQuestion);
       setPreview(result);
 
       if (!result.valid) {

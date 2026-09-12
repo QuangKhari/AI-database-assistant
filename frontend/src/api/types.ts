@@ -178,6 +178,15 @@ export interface ChatPreviewResult {
   generatedSql: string;
   valid: boolean;
   errorMessage: string | null;
+  /**
+   * true khi câu hỏi bị chặn ngay từ đầu vì là thao tác ghi
+   * (xoá/sửa/thêm/cập nhật/INSERT/UPDATE/DELETE...).
+   *
+   * Khi true: generatedSql rỗng, valid=false, errorMessage là thông
+   * báo cần hiển thị. FE chỉ hiện MỘT thông báo, KHÔNG hiện khối SQL
+   * preview / nút "Thực thi SQL" như luồng hỏi-đáp bình thường.
+   */
+  blocked?: boolean;
 }
 
 export interface QueryResult {
@@ -244,6 +253,12 @@ export interface QueryResponse {
   attemptCount: number;
   chartSuggestion: ChartSuggestion | null;
   dataInsight: DataInsight | null;
+  /**
+   * true khi đây là kết quả của một câu hỏi bị chặn vì là thao tác ghi
+   * (trường hợp hiếm gặp: client gọi thẳng /execute mà bỏ qua bước
+   * Preview). Không có SQL/result/chart/insight/summary đi kèm.
+   */
+  blocked?: boolean;
 }
 
 // Khớp SuggestedQuestionsResponse.java

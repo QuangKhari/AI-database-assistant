@@ -63,14 +63,6 @@ public class AuthController {
                 .build();
     }
 
-    // XOA buildCsrfTokenCookie(): cookie XSRF-TOKEN gio da duoc phat hanh
-    // THONG NHAT boi SecurityConfig.CsrfCookieFilter + CookieCsrfTokenRepository
-    // cho MOI request (khong rieng auth), khong can controller nao tu tay
-    // tao UUID rieng nua. Truoc day 2 noi cung set 1 cookie trung ten se
-    // gay xung dot Set-Cookie (browser chi giu lai 1 gia tri "thang" theo
-    // thu tu header, gia tri do lai KHONG duoc Spring Security dang ky ->
-    // fragile, phu thuoc thu tu filter/controller va cach reverse proxy
-    // xu ly header trung ten).
 
     @GetMapping("/csrf")
     public ResponseEntity<Void> csrf(

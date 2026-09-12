@@ -144,15 +144,34 @@ public class NL2SQLEngine {
      * Anh) thay vì luôn ép tiếng Việt như trước đây.
      */
     private String blockedWriteOperationSql(String question) {
+        return "SELECT '" + blockedOperationMessage(question).replace("'", "''") + "' AS message";
+    }
+
+    /**
+     * PUBLIC API dùng cho QueryService.
+     *
+     * Cho phép QueryService kiểm tra thao tác ghi NGAY TỪ ĐẦU (trước khi
+     * load schema / gọi RAG / gọi Gemini), thay vì phải đợi generateSQL()
+     * trả về một câu SELECT giả rồi mới biết là bị chặn. Nhờ vậy luồng
+     * Preview/Execute có thể dừng sớm và trả một thông báo đơn giản, thay
+     * vì đi tiếp qua toàn bộ luồng hỏi-đáp bình thường (validate, execute
+     * xuống DB, gợi ý biểu đồ, data insight, tóm tắt bằng Gemini...).
+     */
+    public boolean isWriteOperationQuestion(String question) {
+        return containsWriteOperation(question);
+    }
+
+    /**
+     * Thông báo chặn thao tác ghi, dạng văn bản thuần (không bọc trong
+     * câu SELECT giả). Dùng khi QueryService cần hiển thị thông báo trực
+     * tiếp cho người dùng mà không cần sinh/chạy SQL.
+     */
+    public String blockedOperationMessage(String question) {
         if (QuestionLanguage.isEnglish(question)) {
-            return """
-                    SELECT 'INSERT, UPDATE, DELETE or database structure changes are not allowed' AS message
-                    """.trim();
+            return "INSERT, UPDATE, DELETE or database structure changes are not allowed";
         }
 
-        return """
-                SELECT 'Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database' AS message
-                """.trim();
+        return "Không được phép thực hiện thao tác INSERT, UPDATE, DELETE hoặc thay đổi cấu trúc database";
     }
 
     private boolean containsWriteOperation(String question) {
