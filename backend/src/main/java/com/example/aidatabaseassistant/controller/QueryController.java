@@ -111,9 +111,14 @@ public class QueryController {
             );
         }
 
-        return ResponseEntity.ok(
-                dataInsightService.analyze(authentication.getName(), request)
-        );
+        DataInsightResponse response =
+                dataInsightService.analyze(authentication.getName(), request);
+
+        if (response == null) {
+            return ResponseEntity.noContent().build();
+        }
+
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping(
