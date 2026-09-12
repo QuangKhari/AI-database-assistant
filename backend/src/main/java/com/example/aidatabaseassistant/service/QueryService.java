@@ -412,13 +412,13 @@ public class QueryService {
          * Hướng A:
          *
          * Với SSE, Summary KHÔNG nằm trên critical path.
-         * Result + Chart + DataInsight được trả về trước.
+         * Result được trả về trước.
          */
         if (result.isSuccess() && !deferSummary) {
 
             listener.onProgress(
                     "STATUS",
-                    "Đang tạo tóm tắt và gợi ý biểu đồ..."
+                    "Đang tạo tóm tắt..."
             );
 
             long tSummaryStart = System.currentTimeMillis();
@@ -435,35 +435,8 @@ public class QueryService {
             );
         }
 
-        long tChartStart = System.currentTimeMillis();
-
-        ChartSuggestionResponse chartSuggestion =
-                result.isSuccess()
-                        ? buildChartSuggestion(
-                        result.getFinalResult(),
-                        fullSchema
-                )
-                        : null;
-
-        DataInsightResponse dataInsight =
-                result.isSuccess()
-                        ? buildDataInsight(
-                        result.getFinalResult(),
-                        fullSchema
-                )
-                        : null;
-
-        log.info(
-                "[TIMING] chartSuggestion + dataInsight: {} ms",
-                System.currentTimeMillis() - tChartStart
-        );
-
         /*
-         * Khi chạy SSE:
-         *
-         * - Không chờ Summary.
-         * - QueryResponse trả summary = null.
-         * - Summary sẽ được chạy background sau khi result đã sẵn sàng.
+         * CHART SUGGESTION + DATA INSIGHT:
          */
         QueryResponse response =
                 new QueryResponse(
@@ -473,8 +446,8 @@ public class QueryService {
                         result.getFinalResult(),
                         summary,
                         logs.size(),
-                        chartSuggestion,
-                        dataInsight
+                        null,
+                        null
                 );
         persistQueryResponseSnapshot(
                 assistantMessage.getId(),
@@ -657,42 +630,6 @@ public class QueryService {
         }
     }
 
-    private DataInsightResponse buildDataInsight(
-            QueryResultDto finalResult,
-            DatabaseSchema fullSchema
-    ) {
-
-        // Giong buildChartSuggestion: day la tinh nang BO SUNG, tuyet doi
-        // khong duoc lam vo luong /execute chinh neu co loi bat ngo. Neu
-        // khong tinh duoc (analyzer tra ve null) hoac loi, FE se tu dong
-        // fallback ve hien thi "summary" (da co san, khong bi anh huong).
-        try {
-
-            return dataInsightService.analyze(
-                    finalResult.getColumns(),
-                    finalResult.getRows(),
-                    SchemaDiscoveryService.buildKeyColumnMap(fullSchema)
-            );
-
-        } catch (Exception e) {
-
-            return null;
-        }
-    }
-
-    private ChartSuggestionResponse buildChartSuggestion(QueryResultDto finalResult, DatabaseSchema fullSchema) {
-        try {
-
-            return chartSuggestionService.suggest(
-                    finalResult.getColumns(),
-                    finalResult.getRows(),
-                    SchemaDiscoveryService.buildKeyColumnMap(fullSchema));
-
-        } catch (Exception e) {
-
-            return null;
-        }
-    }
     private String safeSummarize(
             String question,
             QueryResultDto result
