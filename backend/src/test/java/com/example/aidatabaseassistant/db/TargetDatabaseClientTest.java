@@ -41,35 +41,35 @@ class TargetDatabaseClientTest {
     }
 
     /**
-     * Khong duoc mo ket noi TCP that toi localhost:5432 trong unit test
-     * (ket qua se phu thuoc vao viec may chay test co dang lang nghe cong
-     * do hay khong - flaky). Thay vao do, mockStatic DriverManager giong
-     * cach QueryExecutorSecurityTest da lam, de kiem soat hoan toan gia
-     * tri tra ve va khang dinh dung 2 dieu quan trong:
+     * Kiểm tra PostgreSQL connection không mở TCP thật.
      *
-     *     1. SSRF validation duoc goi voi dung host truoc khi mo ket noi,
-     *        va IP DA DUOC VALIDATE (khong phai hostname goc) moi la gia
-     *        tri thuc su duoc dung de mo connection - tranh DNS rebinding
-     *        (driver tu resolve lai DNS lan 2 sau khi da qua whitelist).
-     *     2. JdbcUrlBuilder duoc goi voi dung dbType/IP da validate/port/
-     *        databaseName, va URL no tra ve duoc dung de mo connection
-     *        (kem username/password)
+     * Luồng cần đảm bảo:
+     *
+     *     hostname
+     *          ↓
+     *     SSRF validation
+     *          ↓
+     *     JdbcUrlBuilder dùng hostname gốc
+     *          ↓
+     *     DriverManager.getConnection()
+     *
+     * SSRF vẫn được gọi để validate hostname,
+     * nhưng JDBC URL phải giữ hostname gốc.
      */
     @Test
     void openConnection_shouldBuildPostgresUrl() throws Exception {
 
         when(ssrfProtection.resolveValidatedAddress("localhost"))
                 .thenReturn(resolvedAddress);
-        when(resolvedAddress.getHostAddress()).thenReturn("127.0.0.1");
 
         String url =
-                "jdbc:postgresql://127.0.0.1:5432/shop"
+                "jdbc:postgresql://localhost:5432/shop"
                         + "?connectTimeout=5"
                         + "&socketTimeout=15";
 
         when(jdbcUrlBuilder.build(
                 "postgres",
-                "127.0.0.1",
+                "localhost",
                 5432,
                 "shop",
                 false
@@ -98,50 +98,205 @@ class TargetDatabaseClientTest {
             assertSame(expectedConnection, actual);
         }
 
-        verify(ssrfProtection).resolveValidatedAddress("localhost");
+        // SSRF validation phải được thực hiện.
+        verify(ssrfProtection)
+                .resolveValidatedAddress("localhost");
+
+        // JDBC URL phải dùng hostname gốc,
+        // không dùng IP đã resolve.
         verify(jdbcUrlBuilder).build(
                 "postgres",
-                "127.0.0.1",
+                "localhost",
                 5432,
                 "shop",
                 false
         );
     }
 
+    /**
+     * Kiểm tra PostgreSQL connection với SSL.
+     *
+     * Khi sslEnabled = true:
+     *
+     *     JdbcUrlBuilder phải nhận true
+     *     và tạo URL có sslmode=require.
+     */
     @Test
     void openConnection_shouldBuildPostgresUrl_withSsl() throws Exception {
 
         when(ssrfProtection.resolveValidatedAddress("localhost"))
                 .thenReturn(resolvedAddress);
-        when(resolvedAddress.getHostAddress()).thenReturn("127.0.0.1");
 
         String url =
-                "jdbc:postgresql://127.0.0.1:5432/shop"
+                "jdbc:postgresql://localhost:5432/shop"
                         + "?sslmode=require"
                         + "&connectTimeout=5"
                         + "&socketTimeout=15";
 
         when(jdbcUrlBuilder.build(
-                "postgres", "127.0.0.1", 5432, "shop", true
+                "postgres",
+                "localhost",
+                5432,
+                "shop",
+                true
         )).thenReturn(url);
 
-        try (MockedStatic<DriverManager> driverManager = mockStatic(DriverManager.class)) {
+        try (MockedStatic<DriverManager> driverManager =
+                     mockStatic(DriverManager.class)) {
+
             driverManager.when(() -> DriverManager.getConnection(
-                    url, "shop_user", "shop_pass"
+                    url,
+                    "shop_user",
+                    "shop_pass"
             )).thenReturn(expectedConnection);
 
             Connection actual = client.openConnection(
-                    "postgres", "localhost", 5432, "shop",
-                    "shop_user", "shop_pass", true
+                    "postgres",
+                    "localhost",
+                    5432,
+                    "shop",
+                    "shop_user",
+                    "shop_pass",
+                    true
             );
 
             assertSame(expectedConnection, actual);
         }
 
-        verify(ssrfProtection).resolveValidatedAddress("localhost");
+        verify(ssrfProtection)
+                .resolveValidatedAddress("localhost");
+
         verify(jdbcUrlBuilder).build(
-                "postgres", "127.0.0.1", 5432, "shop", true
+                "postgres",
+                "localhost",
+                5432,
+                "shop",
+                true
         );
     }
 
+    /**
+     * Kiểm tra MySQL vẫn hoạt động bình thường.
+     *
+     * Đây là regression test để đảm bảo việc xử lý PostgreSQL
+     * không làm ảnh hưởng MySQL.
+     */
+    @Test
+    void openConnection_shouldBuildMysqlUrl() throws Exception {
+
+        when(ssrfProtection.resolveValidatedAddress("localhost"))
+                .thenReturn(resolvedAddress);
+
+        String url =
+                "jdbc:mysql://localhost:3306/shop"
+                        + "?connectTimeout=5000"
+                        + "&socketTimeout=15000";
+
+        when(jdbcUrlBuilder.build(
+                "mysql",
+                "localhost",
+                3306,
+                "shop",
+                false
+        )).thenReturn(url);
+
+        try (MockedStatic<DriverManager> driverManager =
+                     mockStatic(DriverManager.class)) {
+
+            driverManager.when(() -> DriverManager.getConnection(
+                    url,
+                    "shop_user",
+                    "shop_pass"
+            )).thenReturn(expectedConnection);
+
+            Connection actual = client.openConnection(
+                    "mysql",
+                    "localhost",
+                    3306,
+                    "shop",
+                    "shop_user",
+                    "shop_pass"
+            );
+
+            assertSame(expectedConnection, actual);
+        }
+
+        verify(ssrfProtection)
+                .resolveValidatedAddress("localhost");
+
+        verify(jdbcUrlBuilder).build(
+                "mysql",
+                "localhost",
+                3306,
+                "shop",
+                false
+        );
+    }
+
+    /**
+     * Kiểm tra PostgreSQL Neon:
+     *
+     * Quan trọng nhất là hostname Neon phải được giữ nguyên
+     * trong JDBC URL sau khi SSRF validation.
+     */
+    @Test
+    void openConnection_shouldKeepNeonHostname_withSsl() throws Exception {
+
+        String neonHost =
+                "ep-quiet-voice-123456-pooler.c-5.us-east-2.aws.neon.tech";
+
+        when(ssrfProtection.resolveValidatedAddress(neonHost))
+                .thenReturn(resolvedAddress);
+
+        String url =
+                "jdbc:postgresql://" + neonHost + ":5432/neondb"
+                        + "?sslmode=require"
+                        + "&connectTimeout=5"
+                        + "&socketTimeout=15";
+
+        when(jdbcUrlBuilder.build(
+                "postgres",
+                neonHost,
+                5432,
+                "neondb",
+                true
+        )).thenReturn(url);
+
+        try (MockedStatic<DriverManager> driverManager =
+                     mockStatic(DriverManager.class)) {
+
+            driverManager.when(() -> DriverManager.getConnection(
+                    url,
+                    "aidb_reader",
+                    "test_password"
+            )).thenReturn(expectedConnection);
+
+            Connection actual = client.openConnection(
+                    "postgres",
+                    neonHost,
+                    5432,
+                    "neondb",
+                    "aidb_reader",
+                    "test_password",
+                    true
+            );
+
+            assertSame(expectedConnection, actual);
+        }
+
+        // Host phải được SSRF validation.
+        verify(ssrfProtection)
+                .resolveValidatedAddress(neonHost);
+
+        // Quan trọng:
+        // JdbcUrlBuilder nhận hostname Neon,
+        // KHÔNG phải IP sau DNS resolution.
+        verify(jdbcUrlBuilder).build(
+                "postgres",
+                neonHost,
+                5432,
+                "neondb",
+                true
+        );
+    }
 }

@@ -101,22 +101,11 @@ public class TargetDatabaseClient {
             return DriverManager.getConnection(url, buildDuckDbReadOnlyProperties());
         }
 
-        /*
-         * SSRF check phải xảy ra ngay trước khi mở connection.
-         *
-         * Không được dựa vào việc caller đã validate trước đó
-         * vì host có thể đã thay đổi.
-         *
-         * BUG FIX: dùng thẳng địa chỉ IP đã được resolveValidatedAddress()
-         * kiểm tra (thay vì hostname gốc) để build JDBC URL, tránh việc
-         * driver DB tự resolve DNS lại lần 2 (có thể ra kết quả khác do
-         * DNS rebinding) sau khi đã qua whitelist ở bước này.
-         */
-        String validatedIp = ssrfProtection.resolveValidatedAddress(host).getHostAddress();
+        ssrfProtection.resolveValidatedAddress(host);
 
         String url = jdbcUrlBuilder.build(
                 dbType,
-                validatedIp,
+                host,
                 port,
                 databaseName,
                 sslEnabled
