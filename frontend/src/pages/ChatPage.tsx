@@ -6,9 +6,11 @@ import { connectionApi } from "../api/connectionApi";
 import { formatErrorWithSupportCode, parseApiError } from "../api/errorUtils";
 
 import type {
+  ChartSuggestion,
   ChatMessage,
   Conversation,
   DatabaseConnection,
+  DataInsight,
   ExplainSqlResponse,
   OptimizeSqlResponse,
   QueryResponse,
@@ -117,6 +119,23 @@ export function ChatPage() {
 
   const [optimizeCache, setOptimizeCache] = useState<
     Record<number, OptimizeSqlResponse>
+  >({});
+
+  /**
+   * Vẽ biểu đồ + phân tích dữ liệu (chart suggestion + data insight).
+   * Khóa theo messageId, giống explainCache/optimizeCache.
+   */
+  const [chartOpenId, setChartOpenId] = useState<number | null>(null);
+  const [chartLoadingId, setChartLoadingId] = useState<number | null>(null);
+
+  const [chartCache, setChartCache] = useState<
+    Record<
+      number,
+      {
+        chartSuggestion: ChartSuggestion;
+        dataInsight: DataInsight | null;
+      }
+    >
   >({});
 
   const [exporting, setExporting] = useState(false);
@@ -749,6 +768,60 @@ export function ChatPage() {
   }
 
   /**
+   * Toggle "Vẽ biểu đồ" (chart suggestion + data insight).
+   *
+   * Gọi 2 endpoint stateless /query/chart-suggestion và
+   * /query/data-insight song song, truyền lại đúng columns/rows của kết
+   * quả truy vấn (không chạy lại SQL). Cache theo messageId - bấm lại
+   * chỉ đóng/mở panel, không gọi lại API.
+   */
+  async function toggleChart(messageId: number, result: QueryResponse) {
+    if (chartOpenId === messageId) {
+      setChartOpenId(null);
+      return;
+    }
+
+    setChartOpenId(messageId);
+    setExplainOpenId(null);
+    setOptimizeOpenId(null);
+
+    if (chartCache[messageId]) {
+      return;
+    }
+
+    setChartLoadingId(messageId);
+
+    try {
+      const payload = {
+        columns: result.result.columns,
+        rows: result.result.rows,
+        ...(connectionId ? { connectionId } : {}),
+      };
+
+      const [chartSuggestion, dataInsight] = await Promise.all([
+        chatApi.chartSuggestion(payload),
+        chatApi.dataInsight(payload),
+      ]);
+
+      setChartCache((prev) => ({
+        ...prev,
+        [messageId]: { chartSuggestion, dataInsight },
+      }));
+    } catch (reason) {
+      showToast(
+        formatErrorWithSupportCode(
+          parseApiError(reason, "Không thể tạo biểu đồ."),
+        ),
+        "error",
+      );
+
+      setChartOpenId(null);
+    } finally {
+      setChartLoadingId(null);
+    }
+  }
+
+  /**
    * Connection không tồn tại.
    */
   if (!loading && connections.length === 0) {
@@ -781,8 +854,11 @@ export function ChatPage() {
    * >= 2 dòng:
    *   -> Có thể chart nếu backend trả chartSuggestion.
    */
-  function canShowChart(result: QueryResponse) {
-    if (!result.chartSuggestion) {
+  function canShowChart(
+    chart: ChartSuggestion | undefined,
+    result: QueryResponse,
+  ) {
+    if (!chart) {
       return false;
     }
 
@@ -794,7 +870,7 @@ export function ChatPage() {
       return false;
     }
 
-    if (result.chartSuggestion.xAxisLabels.length < 2) {
+    if (chart.xAxisLabels.length < 2) {
       return false;
     }
 
@@ -802,15 +878,9 @@ export function ChatPage() {
   }
 
   /**
-   * Build chart data từ một QueryResponse cụ thể.
+   * Build chart data từ một ChartSuggestion đã lấy về (chartCache).
    */
-  function buildChartData(result: QueryResponse) {
-    if (!result.chartSuggestion) {
-      return [];
-    }
-
-    const chart = result.chartSuggestion;
-
+  function buildChartData(chart: ChartSuggestion) {
     return chart.xAxisLabels.map((label, index) => {
       const item: Record<string, string | number> = {
         name: label,
@@ -825,22 +895,13 @@ export function ChatPage() {
   }
 
   /**
-   * Render chart của một QueryResponse cụ thể.
+   * Render chart từ một ChartSuggestion đã lấy về (chartCache).
    *
-   * Không dùng queryResult global nữa.
+   * Không còn đọc result.chartSuggestion (backend luôn trả null) -
+   * chart giờ là dữ liệu ON-DEMAND, xem toggleChart().
    */
-  function renderChart(result: QueryResponse) {
-    if (!canShowChart(result)) {
-      return null;
-    }
-
-    const chart = result.chartSuggestion;
-
-    if (!chart) {
-      return null;
-    }
-
-    const data = buildChartData(result);
+  function renderChart(chart: ChartSuggestion) {
+    const data = buildChartData(chart);
 
     /**
      * BAR
@@ -1190,6 +1251,154 @@ export function ChatPage() {
   }
 
   /**
+   * Render panel "Vẽ biểu đồ" (data insight + chart).
+   *
+   * Giống renderExplainPanel/renderOptimizePanel: chỉ đọc từ chartCache
+   * (được điền bởi toggleChart() khi người dùng bấm nút), KHÔNG còn đọc
+   * result.dataInsight/result.chartSuggestion (backend luôn trả null từ
+   * khi chuyển 2 tính năng này thành on-demand).
+   */
+  function renderChartPanel(messageId: number, result: QueryResponse) {
+    if (chartOpenId !== messageId) {
+      return null;
+    }
+
+    if (chartLoadingId === messageId) {
+      return (
+        <div className={styles.aiPanel}>
+          <p className={styles.center}>Đang tạo biểu đồ và phân tích…</p>
+        </div>
+      );
+    }
+
+    const data = chartCache[messageId];
+
+    if (!data) {
+      return null;
+    }
+
+    const { chartSuggestion, dataInsight } = data;
+
+    return (
+      <>
+        {/* =========================
+            DATA INSIGHT
+           ========================= */}
+        {dataInsight && (
+          <div className={styles.insightPanel}>
+            <strong>Nhận định dữ liệu</strong>
+
+            <p>{dataInsight.summary}</p>
+
+            <dl>
+              <div>
+                <dt>Cao nhất</dt>
+
+                <dd>
+                  {dataInsight.highestLabel}: {dataInsight.highestValue}
+                </dd>
+              </div>
+
+              <div>
+                <dt>Thấp nhất</dt>
+
+                <dd>
+                  {dataInsight.lowestLabel}: {dataInsight.lowestValue}
+                </dd>
+              </div>
+
+              {dataInsight.growthPercent !== null && (
+                <div>
+                  <dt>Tăng trưởng</dt>
+
+                  <dd>
+                    {dataInsight.growthPercent > 0 ? "+" : ""}
+                    {dataInsight.growthPercent}%
+                    {dataInsight.periodStartLabel && dataInsight.periodEndLabel
+                      ? ` (${dataInsight.periodStartLabel} → ${dataInsight.periodEndLabel})`
+                      : ""}
+                  </dd>
+                </div>
+              )}
+
+              {dataInsight.trend && (
+                <div>
+                  <dt>Xu hướng</dt>
+
+                  <dd>
+                    {dataInsight.trend === "UP"
+                      ? "↗ Tăng"
+                      : dataInsight.trend === "DOWN"
+                        ? "↘ Giảm"
+                        : "→ Ổn định"}
+                  </dd>
+                </div>
+              )}
+
+              {dataInsight.topSharePercent !== null && (
+                <div>
+                  <dt>Tỷ trọng cao nhất</dt>
+
+                  <dd>
+                    {dataInsight.topShareLabel}: {dataInsight.topSharePercent}%
+                  </dd>
+                </div>
+              )}
+            </dl>
+
+            {dataInsight.anomalies.length > 0 && (
+              <div className={styles.anomalies}>
+                <strong>Bất thường phát hiện</strong>
+
+                <ul>
+                  {dataInsight.anomalies.map((anomaly, index) => (
+                    <li key={`${anomaly.label}-${index}`}>
+                      <span>{anomaly.label}</span>
+
+                      <strong>{anomaly.value}</strong>
+
+                      {anomaly.direction && <small>{anomaly.direction}</small>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* =========================
+            CHART
+
+            QUAN TRỌNG:
+            Chỉ hiện nếu có >= 2 rows.
+
+            1 row:
+            -> không chart
+            -> không chart reason
+           ========================= */}
+        {canShowChart(chartSuggestion, result) &&
+          chartSuggestion.chartType !== "TABLE" && (
+            <div className={styles.chartPanel}>
+              <strong>Biểu đồ đề xuất: {chartSuggestion.chartType}</strong>
+
+              <p className={styles.chartReason}>{chartSuggestion.reason}</p>
+
+              {chartSuggestion.xAxisColumn && (
+                <small className={styles.chartAxis}>
+                  Trục X: {chartSuggestion.xAxisColumn}
+                </small>
+              )}
+
+              <div className={styles.chartContainer}>
+                {renderChart(chartSuggestion)}
+              </div>
+            </div>
+          )}
+      </>
+    );
+  }
+
+  /**
    * Render QueryResult của một message.
    *
    * Đây là phần sửa lớn nhất:
@@ -1291,6 +1500,17 @@ export function ChatPage() {
                     : "⚡ Tối ưu SQL"}
                 </button>
               )}
+
+              {!result.result.error && result.result.rows.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => void toggleChart(result.messageId, result)}
+                >
+                  {chartOpenId === result.messageId
+                    ? "▲ Đóng biểu đồ"
+                    : "📊 Vẽ biểu đồ"}
+                </button>
+              )}
             </div>
 
             {/* =========================
@@ -1304,129 +1524,13 @@ export function ChatPage() {
             {renderOptimizePanel(result.messageId)}
 
             {/* =========================
-                DATA INSIGHT
+                VẼ BIỂU ĐỒ (data insight + chart)
+
+                Đã chuyển thành on-demand - xem toggleChart()/
+                renderChartPanel(). Chỉ hiện khi người dùng bấm nút
+                "📊 Vẽ biểu đồ" ở SQL TOOLS phía trên.
                ========================= */}
-            {result.dataInsight && (
-              <div className={styles.insightPanel}>
-                <strong>Nhận định dữ liệu</strong>
-
-                <p>{result.dataInsight.summary}</p>
-
-                <dl>
-                  <div>
-                    <dt>Cao nhất</dt>
-
-                    <dd>
-                      {result.dataInsight.highestLabel}:{" "}
-                      {result.dataInsight.highestValue}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt>Thấp nhất</dt>
-
-                    <dd>
-                      {result.dataInsight.lowestLabel}:{" "}
-                      {result.dataInsight.lowestValue}
-                    </dd>
-                  </div>
-
-                  {result.dataInsight.growthPercent !== null && (
-                    <div>
-                      <dt>Tăng trưởng</dt>
-
-                      <dd>
-                        {result.dataInsight.growthPercent > 0 ? "+" : ""}
-                        {result.dataInsight.growthPercent}%
-                        {result.dataInsight.periodStartLabel &&
-                        result.dataInsight.periodEndLabel
-                          ? ` (${result.dataInsight.periodStartLabel} → ${result.dataInsight.periodEndLabel})`
-                          : ""}
-                      </dd>
-                    </div>
-                  )}
-
-                  {result.dataInsight.trend && (
-                    <div>
-                      <dt>Xu hướng</dt>
-
-                      <dd>
-                        {result.dataInsight.trend === "UP"
-                          ? "↗ Tăng"
-                          : result.dataInsight.trend === "DOWN"
-                            ? "↘ Giảm"
-                            : "→ Ổn định"}
-                      </dd>
-                    </div>
-                  )}
-
-                  {result.dataInsight.topSharePercent !== null && (
-                    <div>
-                      <dt>Tỷ trọng cao nhất</dt>
-
-                      <dd>
-                        {result.dataInsight.topShareLabel}:{" "}
-                        {result.dataInsight.topSharePercent}%
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-
-                {result.dataInsight.anomalies.length > 0 && (
-                  <div className={styles.anomalies}>
-                    <strong>Bất thường phát hiện</strong>
-
-                    <ul>
-                      {result.dataInsight.anomalies.map((anomaly, index) => (
-                        <li key={`${anomaly.label}-${index}`}>
-                          <span>{anomaly.label}</span>
-
-                          <strong>{anomaly.value}</strong>
-
-                          {anomaly.direction && (
-                            <small>{anomaly.direction}</small>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* =========================
-                CHART
-               
-                QUAN TRỌNG:
-                Chỉ hiện nếu có >= 2 rows.
-               
-                1 row:
-                -> không chart
-                -> không chart reason
-                ========================= */}
-            {canShowChart(result) &&
-              result.chartSuggestion &&
-              result.chartSuggestion.chartType !== "TABLE" && (
-                <div className={styles.chartPanel}>
-                  <strong>
-                    Biểu đồ đề xuất: {result.chartSuggestion.chartType}
-                  </strong>
-
-                  <p className={styles.chartReason}>
-                    {result.chartSuggestion.reason}
-                  </p>
-
-                  {result.chartSuggestion.xAxisColumn && (
-                    <small className={styles.chartAxis}>
-                      Trục X: {result.chartSuggestion.xAxisColumn}
-                    </small>
-                  )}
-
-                  <div className={styles.chartContainer}>
-                    {renderChart(result)}
-                  </div>
-                </div>
-              )}
+            {renderChartPanel(result.messageId, result)}
           </>
         )}
       </div>
