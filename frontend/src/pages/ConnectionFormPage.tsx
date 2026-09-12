@@ -596,7 +596,7 @@ export function ConnectionFormPage() {
                 disabled={working !== null}
                 onClick={testConnection}
               >
-                <span className={styles.buttonIcon}>
+                <span className={styles.buttonIcon} aria-hidden="true">
                   {working === "test" ? "…" : "✓"}
                 </span>
 
@@ -608,7 +608,7 @@ export function ConnectionFormPage() {
                 className={styles.saveButton}
                 disabled={working !== null}
               >
-                <span className={styles.buttonIcon}>
+                <span className={styles.buttonIcon} aria-hidden="true">
                   {working === "save" ? "…" : "→"}
                 </span>
 

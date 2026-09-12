@@ -97,54 +97,6 @@ public class QueryValidator {
         }
     }
 
-    /**
-     * CHỐNG GHI/ĐỌC FILE TRÊN SERVER DATABASE (P0):
-     *
-     * MySQL:
-     *
-     *     "SELECT ... INTO OUTFILE '/path'" và "SELECT ... INTO DUMPFILE
-     *     '/path'" VẪN LÀ 1 câu lệnh kiểu SELECT trong JSqlParser, nên
-     *     checkReadOnly() (chỉ kiểm tra statement instanceof Select) KHÔNG
-     *     chặn được - nếu tài khoản DB đang dùng có quyền FILE, AI có thể
-     *     bị dẫn dụ (qua câu hỏi tự nhiên hoặc prompt injection trong dữ
-     *     liệu) sinh ra câu SQL ghi 1 file bất kỳ lên ổ đĩa server (ví dụ
-     *     ghi webshell). Tương tự, "LOAD_FILE('/etc/passwd')" là 1 hàm
-     *     dùng được ngay bên trong SELECT để ĐỌC file bất kỳ trên server.
-     *
-     * PostgreSQL (bổ sung sau khi thêm hỗ trợ multi-DB):
-     *
-     *     Có nhóm hàm/cú pháp tương đương LOAD_FILE/INTO OUTFILE của MySQL
-     *     nhưng KHÔNG bị pattern MySQL ở trên chặn:
-     *
-     *         - pg_read_file(...) / pg_read_binary_file(...): đọc file bất
-     *           kỳ trên server (mặc định cần quyền pg_read_server_files
-     *           hoặc superuser, nhưng vẫn phải chặn ở mức validator theo
-     *           đúng nguyên tắc "mọi câu SQL AI sinh ra phải qua whitelist
-     *           read-only", không dựa vào quyền DB user).
-     *         - pg_ls_dir(...): liệt kê thư mục trên server.
-     *         - lo_export(oid, path) / lo_import(path): ghi/đọc file qua
-     *           Large Object.
-     *         - COPY ... TO/FROM: ghi/đọc file; "COPY ... TO PROGRAM" còn
-     *           có thể THỰC THI LỆNH HỆ ĐIỀU HÀNH trên server (RCE-class).
-     *           COPY luôn là 1 câu lệnh Ở ĐẦU statement (không dùng được
-     *           như biểu thức con bên trong SELECT), nên kiểm tra riêng
-     *           bằng cách xem statement có BẮT ĐẦU bằng "COPY" hay không -
-     *           tránh việc regex khớp nhầm 1 cột/bảng tên trùng "copy"
-     *           (ví dụ "SELECT copy FROM orders") nếu chỉ dò từ khóa TO/
-     *           FROM xuất hiện ở đâu đó phía sau trong chuỗi.
-     *
-     *     Tất cả các hàm trên (trừ COPY) đều dùng được ngay bên trong 1
-     *     câu SELECT hợp lệ về cú pháp và KHÔNG có FROM/bảng nào, nên vừa
-     *     lọt qua checkReadOnly() (vẫn là Select) vừa lọt qua
-     *     checkSchemaMatch() (TablesNamesFinder trả về rỗng -> không có
-     *     gì để đối chiếu với schema).
-     *
-     * Chặn bằng kiểm tra chuỗi (case-insensitive, cho phép khoảng trắng/
-     * xuống dòng linh hoạt giữa các từ khóa) TRƯỚC khi parse, cùng cách
-     * tiếp cận với rejectBlockComments() ở trên - đơn giản, không phụ
-     * thuộc phiên bản JSqlParser cụ thể, và không có lý do hợp lệ nào để
-     * 1 câu hỏi NL2SQL cần dùng các cú pháp này.
-     */
     private static final java.util.regex.Pattern FILE_ACCESS_PATTERN =
             java.util.regex.Pattern.compile(
                     "\\bINTO\\s+(OUTFILE|DUMPFILE)\\b"
@@ -158,12 +110,6 @@ public class QueryValidator {
                     java.util.regex.Pattern.CASE_INSENSITIVE
             );
 
-    /**
-     * COPY chỉ nguy hiểm khi là LỆNH Ở ĐẦU statement (Postgres không cho
-     * dùng COPY như 1 biểu thức con lồng trong SELECT), nên khớp riêng ở
-     * đầu chuỗi (bỏ qua khoảng trắng đầu) thay vì tìm "COPY" ở bất kỳ đâu -
-     * tránh chặn nhầm câu SELECT hợp lệ có cột/bảng tên là "copy".
-     */
     private static final java.util.regex.Pattern COPY_STATEMENT_PATTERN =
             java.util.regex.Pattern.compile(
                     "^\\s*COPY\\b",
@@ -189,42 +135,20 @@ public class QueryValidator {
     // DUPLICATE ALIAS PROTECTION
     // =========================================================
 
-    /**
-     * Phát hiện alias bị trùng trong cùng câu SELECT.
-     *
-     * Ví dụ KHÔNG hợp lệ:
-     *
-     * SELECT
-     *     SUM(amount) AS total,
-     *     COUNT(*) AS total
-     * FROM orders;
-     *
-     * Hai metric khác nhau nhưng cùng alias "total".
-     *
-     * Điều này đặc biệt nguy hiểm với kết quả trả về dạng:
-     *
-     * Map<String, Object>
-     *
-     * vì database / JDBC có thể khiến một giá trị bị ghi đè hoặc
-     * việc mapping kết quả trở nên không xác định.
-     *
-     * Ví dụ HỢP LỆ:
-     *
-     * SELECT
-     *     SUM(amount) AS total_revenue,
-     *     COUNT(*) AS total_orders
-     * FROM orders;
-     *
-     * LƯU Ý:
-     * - Chỉ kiểm tra alias được viết rõ bằng AS.
-     * - Không cố đoán alias implicit của mọi dialect.
-     * - Không thay đổi SQL của AI, chỉ reject SQL có duplicate AS alias.
-     */
     private static final Pattern AS_ALIAS_PATTERN =
             Pattern.compile(
                     "\\bAS\\s+([A-Za-z_][A-Za-z0-9_$]*)\\b",
                     Pattern.CASE_INSENSITIVE
             );
+
+    private static final Set<String> SQL_TYPE_KEYWORDS = Set.of(
+            "int", "integer", "bigint", "smallint", "tinyint",
+            "decimal", "numeric", "float", "double", "real",
+            "char", "varchar", "text", "nchar", "nvarchar",
+            "date", "datetime", "timestamp", "time", "year",
+            "boolean", "bool", "binary", "varbinary", "blob",
+            "json", "jsonb", "unsigned", "signed", "uuid", "money"
+    );
 
     private void checkDuplicateAliases(String sql) {
 
@@ -246,6 +170,10 @@ public class QueryValidator {
                             .toLowerCase(
                                     java.util.Locale.ROOT
                             );
+
+            if (SQL_TYPE_KEYWORDS.contains(alias)) {
+                continue;
+            }
 
             aliasCounts.merge(
                     alias,

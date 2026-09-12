@@ -8,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.net.InetAddress;
 import java.sql.Connection;
 import java.sql.DriverManager;
 
@@ -26,6 +27,9 @@ class TargetDatabaseClientTest {
     @Mock
     private Connection expectedConnection;
 
+    @Mock
+    private InetAddress resolvedAddress;
+
     private TargetDatabaseClient client;
 
     @BeforeEach
@@ -43,21 +47,29 @@ class TargetDatabaseClientTest {
      * cach QueryExecutorSecurityTest da lam, de kiem soat hoan toan gia
      * tri tra ve va khang dinh dung 2 dieu quan trong:
      *
-     *     1. SSRF validation duoc goi voi dung host truoc khi mo ket noi
-     *     2. JdbcUrlBuilder duoc goi voi dung dbType/host/port/databaseName,
-     *        va URL no tra ve duoc dung de mo connection (kem username/password)
+     *     1. SSRF validation duoc goi voi dung host truoc khi mo ket noi,
+     *        va IP DA DUOC VALIDATE (khong phai hostname goc) moi la gia
+     *        tri thuc su duoc dung de mo connection - tranh DNS rebinding
+     *        (driver tu resolve lai DNS lan 2 sau khi da qua whitelist).
+     *     2. JdbcUrlBuilder duoc goi voi dung dbType/IP da validate/port/
+     *        databaseName, va URL no tra ve duoc dung de mo connection
+     *        (kem username/password)
      */
     @Test
     void openConnection_shouldBuildPostgresUrl() throws Exception {
 
+        when(ssrfProtection.resolveValidatedAddress("localhost"))
+                .thenReturn(resolvedAddress);
+        when(resolvedAddress.getHostAddress()).thenReturn("127.0.0.1");
+
         String url =
-                "jdbc:postgresql://localhost:5432/shop"
+                "jdbc:postgresql://127.0.0.1:5432/shop"
                         + "?connectTimeout=5"
                         + "&socketTimeout=15";
 
         when(jdbcUrlBuilder.build(
                 "postgres",
-                "localhost",
+                "127.0.0.1",
                 5432,
                 "shop",
                 false
@@ -86,10 +98,10 @@ class TargetDatabaseClientTest {
             assertSame(expectedConnection, actual);
         }
 
-        verify(ssrfProtection).validateHost("localhost");
+        verify(ssrfProtection).resolveValidatedAddress("localhost");
         verify(jdbcUrlBuilder).build(
                 "postgres",
-                "localhost",
+                "127.0.0.1",
                 5432,
                 "shop",
                 false
@@ -99,14 +111,18 @@ class TargetDatabaseClientTest {
     @Test
     void openConnection_shouldBuildPostgresUrl_withSsl() throws Exception {
 
+        when(ssrfProtection.resolveValidatedAddress("localhost"))
+                .thenReturn(resolvedAddress);
+        when(resolvedAddress.getHostAddress()).thenReturn("127.0.0.1");
+
         String url =
-                "jdbc:postgresql://localhost:5432/shop"
+                "jdbc:postgresql://127.0.0.1:5432/shop"
                         + "?sslmode=require"
                         + "&connectTimeout=5"
                         + "&socketTimeout=15";
 
         when(jdbcUrlBuilder.build(
-                "postgres", "localhost", 5432, "shop", true
+                "postgres", "127.0.0.1", 5432, "shop", true
         )).thenReturn(url);
 
         try (MockedStatic<DriverManager> driverManager = mockStatic(DriverManager.class)) {
@@ -122,9 +138,9 @@ class TargetDatabaseClientTest {
             assertSame(expectedConnection, actual);
         }
 
-        verify(ssrfProtection).validateHost("localhost");
+        verify(ssrfProtection).resolveValidatedAddress("localhost");
         verify(jdbcUrlBuilder).build(
-                "postgres", "localhost", 5432, "shop", true
+                "postgres", "127.0.0.1", 5432, "shop", true
         );
     }
 
