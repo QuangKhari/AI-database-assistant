@@ -225,27 +225,29 @@ public class ConnectionService {
     public ConnectionResponse updateConnection(String username, Long connectionId, ConnectionUpdateRequest request) {
         DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
-        // Ownership check (getOwnedConnection) phai chay TRUOC de IDOR test
-        // (updateConnection_shouldThrow_whenRequestedByNonOwner_IDOR) khong bi
-        // anh huong boi loi validate host. Sau khi xac nhan la chu so huu, host
-        // moi van phai duoc kiem tra SSRF vi user co the doi host sang dia chi
-        // noi bo trong luc update.
-        ssrfProtection.validateHost(request.getHost());
+        boolean isExcel = "excel".equalsIgnoreCase(connection.getDbType());
+
+        if (!isExcel) {
+            ssrfProtection.validateHost(request.getHost());
+        }
 
         connection.setName(request.getName());
-        connection.setHost(request.getHost());
-        connection.setPort(request.getPort());
-        connection.setDatabaseName(request.getDatabaseName());
-        connection.setUsername(request.getUsername());
-        connection.setSslEnabled(
-                "postgres".equalsIgnoreCase(connection.getDbType())
-                        || "postgresql".equalsIgnoreCase(connection.getDbType())
-                        ? request.isSslEnabled()
-                        : false
-        );
 
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            connection.setEncryptedPassword(encryptionUtil.encrypt(request.getPassword()));
+        if (!isExcel) {
+            connection.setHost(request.getHost());
+            connection.setPort(request.getPort());
+            connection.setDatabaseName(request.getDatabaseName());
+            connection.setUsername(request.getUsername());
+            connection.setSslEnabled(
+                    "postgres".equalsIgnoreCase(connection.getDbType())
+                            || "postgresql".equalsIgnoreCase(connection.getDbType())
+                            ? request.isSslEnabled()
+                            : false
+            );
+
+            if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                connection.setEncryptedPassword(encryptionUtil.encrypt(request.getPassword()));
+            }
         }
 
         connectionRepository.save(connection);

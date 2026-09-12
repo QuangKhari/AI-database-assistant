@@ -40,13 +40,6 @@ const databaseOptions: Array<{
     description: "Advanced SQL database",
     detail: "Hỗ trợ SQL mạnh và cấu hình SSL.",
   },
-  {
-    type: "excel",
-    icon: "📊",
-    name: "Excel",
-    description: "Spreadsheet data source",
-    detail: "Kết nối dữ liệu dạng bảng từ Excel.",
-  },
 ];
 
 export function ConnectionFormPage() {
@@ -76,6 +69,17 @@ export function ConnectionFormPage() {
     connectionApi
       .get(connectionId)
       .then((connection) => {
+        if (connection.dbType === "excel") {
+          showToast(
+            "Connection Excel được quản lý trực tiếp ở trang Connections.",
+            "error",
+          );
+
+          navigate("/connections");
+
+          return;
+        }
+
         setForm({
           name: connection.name,
 

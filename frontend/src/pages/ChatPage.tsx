@@ -1484,7 +1484,8 @@ export function ChatPage() {
               setStreamStatus("");
             }}
           >
-            + Cuộc trò chuyện mới
+            <span aria-hidden="true">+</span>
+            Cuộc trò chuyện mới
           </button>
 
           <h2>Gần đây</h2>
@@ -1596,6 +1597,9 @@ export function ChatPage() {
                     key={message.id}
                   >
                     <header>
+                      <span className={styles.avatar} aria-hidden="true">
+                        {message.role === "user" ? "B" : "AI"}
+                      </span>
                       {message.role === "user" ? "Bạn" : "AI QueryMate"}
                     </header>
 
@@ -1771,7 +1775,14 @@ export function ChatPage() {
                 type="submit"
                 disabled={sending || executing || !question.trim()}
               >
-                {sending ? "AI đang tạo SQL…" : "Tạo SQL preview"}
+                {sending ? (
+                  "AI đang tạo SQL…"
+                ) : (
+                  <>
+                    Tạo SQL preview
+                    <span aria-hidden="true">→</span>
+                  </>
+                )}
               </button>
             </div>
           </form>
