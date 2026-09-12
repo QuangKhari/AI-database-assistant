@@ -511,6 +511,61 @@ class ConnectionServiceTest {
     }
 
     @Test
+    void updateConnection_shouldOnlyRenameAndSkipSsrf_whenDbTypeIsExcel() {
+
+        // FIX: connection Excel co host/port/username la placeholder co dinh
+        // ("local-file"/0/"excel-file") va databaseName la DUONG DAN toi file
+        // .duckdb that. updateConnection() khong duoc phep:
+        //   1) goi ssrfProtection.validateHost() (se luon nem
+        //      UnknownHostException voi host gia "local-file")
+        //   2) ghi de host/port/username/databaseName tu request (se lam mat
+        //      lien ket toi file .duckdb that)
+        // Chi duoc phep doi ten hien thi (name).
+
+        DatabaseConnection excelConnection = DatabaseConnection.builder()
+                .id(10L)
+                .user(owner)
+                .name("Sales file")
+                .dbType("excel")
+                .host("local-file")
+                .port(0)
+                .databaseName("/data/excel-dbs/user_1/sales.duckdb")
+                .username("excel-file")
+                .encryptedPassword("encrypted-placeholder")
+                .build();
+
+        ConnectionUpdateRequest request = new ConnectionUpdateRequest();
+        request.setName("Sales file (renamed)");
+        request.setHost("evil.com");
+        request.setPort(9999);
+        request.setDatabaseName("hacked");
+        request.setUsername("hacker");
+
+        when(connectionAccessGuard.requireOwnedConnection("owner", 10L))
+                .thenReturn(excelConnection);
+
+        ConnectionResponse response = connectionService.updateConnection(
+                "owner",
+                10L,
+                request
+        );
+
+        assertEquals("Sales file (renamed)", response.getName());
+
+        assertEquals(
+                "/data/excel-dbs/user_1/sales.duckdb",
+                excelConnection.getDatabaseName()
+        );
+
+        assertEquals("local-file", excelConnection.getHost());
+        assertEquals(0, excelConnection.getPort());
+        assertEquals("excel-file", excelConnection.getUsername());
+
+        verify(ssrfProtection, never()).validateHost(any());
+        verify(connectionRepository).save(excelConnection);
+    }
+
+    @Test
     void updateConnection_shouldThrow_whenRequestedByNonOwner_IDOR() {
 
         ConnectionUpdateRequest request =

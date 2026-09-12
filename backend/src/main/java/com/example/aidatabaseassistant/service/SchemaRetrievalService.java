@@ -82,7 +82,7 @@ public class SchemaRetrievalService {
      *
      * schema.rag.min-tables-to-activate=8
      */
-    @Value("${schema.rag.min-tables-to-activate:8}")
+    @Value("${schema.rag.min-tables-to-activate:5}")
     private int minTablesToActivate;
 
     /**
