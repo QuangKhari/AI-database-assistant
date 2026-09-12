@@ -60,8 +60,32 @@ services:
     profiles:
       - redis
 
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD phải được set trong .env khi bật profile redis}
+
+    # BUG FIX (bảo mật):
+    #
+    # Truoc day: "6379:6379" publish Redis ra TAT CA interface cua host
+    # (0.0.0.0), khong khac gi mysql neu KHONG co "127.0.0.1:" o dau. Redis
+    # ALSO khong he duoc bat requirepass o day - REDIS_PASSWORD chi duoc
+    # truyen cho container BACKEND (de no biet dung password nao khi ket
+    # noi), con chinh Redis server thi KHONG doi hoi AUTH gi ca. Ket qua:
+    # neu deploy len 1 VPS/server co IP public va bat profile "redis" ma
+    # khong co firewall chan port 6379, BAT KY AI tren Internet co the
+    # ket noi thang vao Redis KHONG CAN mat khau - day la 1 trong nhung
+    # loi cau hinh bi khai thac nhieu nhat trong thuc te (ghi cron job/
+    # SSH key de RCE, ransomware xoa sach du lieu Redis...).
+    #
+    # Fix: (1) bat buoc REDIS_PASSWORD phai duoc set qua ":?" o tren -
+    # docker compose se BAO LOI ngay khi khoi dong neu .env quen dien,
+    # thay vi am tham chay khong mat khau; (2) truyen --requirepass thuc
+    # su cho tien trinh redis-server; (3) bind port ve 127.0.0.1 mac dinh
+    # giong het cach mysql dang lam, chi mo ra ngoai khi that su can (vi
+    # du debug tu may khac) qua REDIS_HOST_BIND.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_BIND:-127.0.0.1}:6379:6379"
 
     volumes:
       - redis_data:/data
@@ -70,7 +94,7 @@ services:
       - ai-db-assistant-net
 
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10

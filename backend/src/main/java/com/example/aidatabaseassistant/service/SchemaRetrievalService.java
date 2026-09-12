@@ -91,7 +91,7 @@ public class SchemaRetrievalService {
      *
      * schema.rag.min-similarity=0.5
      */
-    @Value("${schema.rag.min-similarity:0.5}")
+    @Value("${schema.rag.min-similarity:0.62}")
     private double minSimilarity;
 
     /**

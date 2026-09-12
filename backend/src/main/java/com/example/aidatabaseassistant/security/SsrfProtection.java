@@ -15,6 +15,14 @@ public class SsrfProtection {
     private String allowedHosts;
 
     public void validateHost(String host) {
+        resolveAndValidate(host);
+    }
+
+    public InetAddress resolveValidatedAddress(String host) {
+        return resolveAndValidate(host);
+    }
+
+    private InetAddress resolveAndValidate(String host) {
         if (host == null || host.isBlank()) {
             throw new IllegalArgumentException("Host không được để trống");
         }
@@ -22,7 +30,11 @@ public class SsrfProtection {
         String normalizedHost = host.trim();
 
         if (isAllowedHost(normalizedHost)) {
-            return;
+            try {
+                return InetAddress.getAllByName(normalizedHost)[0];
+            } catch (UnknownHostException e) {
+                throw new IllegalArgumentException("Không thể phân giải host");
+            }
         }
 
         if (blockPrivateHosts
@@ -39,6 +51,8 @@ public class SsrfProtection {
                     throw new IllegalArgumentException("Host không được phép");
                 }
             }
+
+            return addresses[0];
 
         } catch (UnknownHostException e) {
             throw new IllegalArgumentException("Không thể phân giải host");
