@@ -16,12 +16,12 @@ export function AppShell() {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <NavLink to="/" className={styles.brand}>
+        <NavLink to="/dashboard" className={styles.brand}>
           <span>AI</span> QueryMate
         </NavLink>
         <nav aria-label="Điều hướng chính">
           <NavLink
-            to="/"
+            to="/dashboard"
             end
             className={({ isActive }) => (isActive ? styles.active : undefined)}
           >

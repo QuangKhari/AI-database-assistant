@@ -27,7 +27,7 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to="/dashboard" replace />;
 
   function setField(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -57,7 +57,7 @@ export function RegisterPage() {
         email: form.email.trim(),
         password: form.password,
       });
-      navigate("/", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (reason) {
       const parsed = parseApiError(
         reason,

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminRoute } from "./components/AdminRoute";
+import { HomeRoute } from "./components/HomeRoute";
 import { AuthProvider } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
 import { AppShell } from "./layouts/AppShell";
@@ -74,6 +75,7 @@ export default function App() {
         <AuthProvider>
           <Suspense fallback={<RouteLoadingFallback />}>
             <Routes>
+              <Route path="/" element={<HomeRoute />} />
               <Route element={<AuthLayout />}>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
@@ -85,7 +87,7 @@ export default function App() {
               </Route>
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
-                  <Route index element={<DashboardPage />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
                   <Route
                     path="/connections/new"

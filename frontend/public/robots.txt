@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+Disallow: /dashboard
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /admin
+Disallow: /profile
+Disallow: /connections
+Disallow: /schema
+Disallow: /chat
+Disallow: /history
+Disallow: /benchmark

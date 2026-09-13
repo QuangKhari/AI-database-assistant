@@ -16,7 +16,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (user)
-    return <Navigate to={user.role === "ADMIN" ? "/admin" : "/"} replace />;
+    return <Navigate to={user.role === "ADMIN" ? "/admin" : "/dashboard"} replace />;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -30,7 +30,7 @@ export function LoginPage() {
       const loggedInUser = await login(identifier.trim(), password);
       const destination =
         (location.state as { from?: string } | null)?.from ??
-        (loggedInUser.role === "ADMIN" ? "/admin" : "/");
+        (loggedInUser.role === "ADMIN" ? "/admin" : "/dashboard");
       navigate(destination, { replace: true });
     } catch (reason) {
       setError(
