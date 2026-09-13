@@ -42,6 +42,16 @@ public class DataInsightAnalyzer {
 
     public DataInsightFacts analyze(List<String> columns, List<Map<String, Object>> rows,
                                     Map<String, Boolean> schemaKeyColumns) {
+
+        // Chi 1 dong du lieu -> "cao nhat/thap nhat/tang truong" khong con y
+        // nghia thong ke (vd so sanh SUM(doanh_thu) voi COUNT(*) roi goi mot
+        // trong hai la "cao nhat" la sai lech, du ChartTypeClassifier VAN co
+        // the ve duoc 1 bieu do cot KPI cho truong hop nay - xem
+        // classifySingleRow()). Insight rieng van phai bo qua o day.
+        if (rows == null || rows.size() <= 1) {
+            return null;
+        }
+
         ChartClassificationResult classification = classifier.classify(columns, rows, schemaKeyColumns);
 
         // TABLE nghia la khong tim duoc cap dimension + numeric ro rang -> khong

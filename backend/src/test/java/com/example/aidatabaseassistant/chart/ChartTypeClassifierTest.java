@@ -37,10 +37,42 @@ class ChartTypeClassifierTest {
     }
 
     @Test
-    void shouldSuggestTable_whenOnlyOneRow() {
+    void shouldSuggestBar_whenOnlyOneRow_butHasNumericColumns() {
+        // Cau hoi tong hop rat pho bien (vi du "tong doanh thu, so don
+        // hang thang nay") luon chi tra ve 1 dong - van phai ve duoc
+        // bieu do cot so sanh cac chi so, khong duoc tra ve TABLE trong.
         List<Map<String, Object>> rows = List.of(row("thang", 1, "doanh_thu", 100));
 
         ChartClassificationResult result = classifier.classify(List.of("thang", "doanh_thu"), rows);
+
+        assertEquals(ChartType.BAR, result.getChartType());
+        assertEquals(1, result.getSeries().size());
+        assertEquals(2, result.getXAxisLabels().size());
+    }
+
+    @Test
+    void shouldSuggestBar_whenOnlyOneRow_withLabelColumnAndMeasures() {
+        // 1 dong nhung co cot nhan (text) ro rang -> dung lam 1 danh muc
+        // duy nhat, cac cot so con lai la cac thanh de so sanh.
+        List<Map<String, Object>> rows = List.of(
+                row("san_pham", "Laptop Dell", "doanh_thu", 1000, "loi_nhuan", 200));
+
+        ChartClassificationResult result = classifier.classify(
+                List.of("san_pham", "doanh_thu", "loi_nhuan"), rows);
+
+        assertEquals(ChartType.BAR, result.getChartType());
+        assertEquals("san_pham", result.getDimensionColumn());
+        assertEquals(List.of("Laptop Dell"), result.getXAxisLabels());
+        assertEquals(2, result.getSeries().size());
+    }
+
+    @Test
+    void shouldSuggestTable_whenOnlyOneRow_andNoNumericColumn() {
+        // 1 dong va khong co cot so nao ca -> khong co gi de ve, van giu
+        // TABLE nhu cu.
+        List<Map<String, Object>> rows = List.of(row("email", "a@example.com"));
+
+        ChartClassificationResult result = classifier.classify(List.of("email"), rows);
 
         assertEquals(ChartType.TABLE, result.getChartType());
     }

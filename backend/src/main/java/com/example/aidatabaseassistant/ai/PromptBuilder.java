@@ -171,8 +171,17 @@ public class PromptBuilder {
     7. Nếu câu hỏi yêu cầu một giá trị được TÍNH TOÁN và muốn giá trị đó
        xuất hiện trong kết quả thì PHẢI SELECT chính giá trị đó.
 
-       Nếu giá trị tính toán CHỈ được dùng để xếp hạng, lọc hoặc xác định
-       đối tượng thì KHÔNG cần SELECT giá trị đó.
+       Nếu giá trị tính toán CHỈ được dùng để lọc hoặc xác định đối tượng
+       (không liên quan gì đến việc xếp hạng/so sánh giá trị đó) thì
+       KHÔNG cần SELECT giá trị đó.
+
+       QUAN TRỌNG: câu hỏi dạng "top N ... cao nhất/thấp nhất/nhiều
+       nhất/ít nhất" LUÔN được coi là đang hỏi VỀ chính giá trị đó (giá,
+       doanh thu, số lượng, số đơn...), nên PHẢI SELECT giá trị dùng để
+       xếp hạng, dù câu hỏi không lặp lại tên cột. Không SELECT giá trị
+       này sẽ khiến kết quả không có cột số liệu nào để vẽ biểu đồ/phân
+       tích - luôn ưu tiên SELECT thêm giá trị xếp hạng trừ khi thực sự
+       chắc chắn người dùng chỉ muốn mỗi tên/định danh đối tượng.
 
        Ví dụ:
        - "tổng doanh thu" -> SUM(...) AS total_revenue
@@ -180,17 +189,17 @@ public class PromptBuilder {
          SELECT tên khách hàng + SUM(...) AS total_revenue
        - "top 5 sản phẩm có doanh thu cao nhất" ->
          SELECT tên sản phẩm + SUM(...) AS total_revenue
-       - "Which product has the highest price?" ->
-         SELECT product_name
+       - "sản phẩm nào có giá cao nhất?" ->
+         SELECT product_name, unit_price
          FROM products
          ORDER BY unit_price DESC
          LIMIT 1;
-       - "Which customer has placed the most orders?" ->
-         SELECT c.full_name
+       - "khách hàng nào đặt nhiều đơn nhất?" ->
+         SELECT c.full_name, COUNT(o.order_id) AS so_don
          FROM customers c
          JOIN orders o ON c.customer_id = o.customer_id
          GROUP BY c.customer_id, c.full_name
-         ORDER BY COUNT(o.order_id) DESC
+         ORDER BY so_don DESC
          LIMIT 1;
 
     8. Nếu câu hỏi yêu cầu nhiều chỉ số thì PHẢI SELECT tất cả các chỉ số đó.
@@ -329,8 +338,17 @@ public class PromptBuilder {
                 7. If the question asks for a CALCULATED VALUE and expects that value
                                                                         to appear in the result, SELECT that value.
 
-                                                                        If the calculated value is ONLY used for ranking, filtering,
-                                                                        or identifying an entity, it does NOT need to be selected.
+                                                                        If the calculated value is ONLY used for filtering or identifying
+                                                                        an entity (unrelated to ranking/comparing that value), it does
+                                                                        NOT need to be selected.
+
+                                                                        IMPORTANT: questions shaped like "top N ... highest/lowest/most/
+                                                                        least" are ALWAYS considered to be asking ABOUT that value (price,
+                                                                        revenue, quantity, order count...), so the ranking value MUST be
+                                                                        SELECTed even if the question does not repeat the column name.
+                                                                        Omitting it leaves the result with no numeric column to chart or
+                                                                        analyze - always prefer SELECTing the ranking value unless it is
+                                                                        clearly certain the user only wants the entity's name/identity.
 
                                                                         Examples:
                                                                         - "total revenue" -> SUM(...) AS total_revenue
@@ -339,16 +357,16 @@ public class PromptBuilder {
                                                                         - "top 5 products by revenue" ->
                                                                           SELECT product name + SUM(...) AS total_revenue
                                                                         - "Which product has the highest price?" ->
-                                                                          SELECT product_name
+                                                                          SELECT product_name, unit_price
                                                                           FROM products
                                                                           ORDER BY unit_price DESC
                                                                           LIMIT 1;
                                                                         - "Which customer has placed the most orders?" ->
-                                                                          SELECT c.full_name
+                                                                          SELECT c.full_name, COUNT(o.order_id) AS order_count
                                                                           FROM customers c
                                                                           JOIN orders o ON c.customer_id = o.customer_id
                                                                           GROUP BY c.customer_id, c.full_name
-                                                                          ORDER BY COUNT(o.order_id) DESC
+                                                                          ORDER BY order_count DESC
                                                                           LIMIT 1;
 
                 8. If the question asks for multiple metrics, SELECT ALL requested metrics.
