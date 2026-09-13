@@ -541,46 +541,80 @@ public class QueryService {
         return response;
     }
 
-    /**
-     * Lưu toàn bộ QueryResponse vào assistant message.
-     *
-     * Persistence lỗi không được làm hỏng query chính vì đây chỉ là
-     * snapshot phục vụ việc khôi phục UI.
-     */
+    private static final int SNAPSHOT_PERSIST_MAX_ATTEMPTS = 3;
+    private static final long SNAPSHOT_PERSIST_RETRY_DELAY_MS = 150;
+
     private void persistQueryResponseSnapshot(
             Long messageId,
             QueryResponse response
     ) {
-        try {
-            Message message = messageRepository.findById(messageId)
-                    .orElse(null);
+        String json;
 
-            if (message == null) {
+        try {
+            json = OBJECT_MAPPER.writeValueAsString(response);
+        } catch (Exception e) {
+            log.error(
+                    "[QUERY SNAPSHOT] Không thể serialize QueryResponse thành JSON cho messageId={}. " +
+                            "MẤT VĨNH VIỄN bảng kết quả/nút Vẽ biểu đồ cho message này khi reload conversation.",
+                    messageId,
+                    e
+            );
+            return;
+        }
+
+        Exception lastError = null;
+
+        for (int attempt = 1; attempt <= SNAPSHOT_PERSIST_MAX_ATTEMPTS; attempt++) {
+            try {
+                Message message = messageRepository.findById(messageId)
+                        .orElse(null);
+
+                if (message == null) {
+                    lastError = new IllegalStateException(
+                            "Message id=" + messageId + " không tồn tại tại thời điểm lưu snapshot"
+                    );
+
+                    log.warn(
+                            "[QUERY SNAPSHOT] Lần {}/{}: không tìm thấy messageId={} để lưu snapshot",
+                            attempt, SNAPSHOT_PERSIST_MAX_ATTEMPTS, messageId
+                    );
+                } else {
+                    message.setQueryResponseJson(json);
+                    messageRepository.saveAndFlush(message);
+
+                    log.debug(
+                            "[QUERY SNAPSHOT] Đã lưu snapshot cho messageId={} (lần {})",
+                            messageId, attempt
+                    );
+
+                    return;
+                }
+            } catch (Exception e) {
+                lastError = e;
+
                 log.warn(
-                        "[QUERY SNAPSHOT] Không tìm thấy messageId={} để lưu snapshot",
-                        messageId
+                        "[QUERY SNAPSHOT] Lần {}/{}: lỗi khi lưu snapshot messageId={}: {}",
+                        attempt, SNAPSHOT_PERSIST_MAX_ATTEMPTS, messageId, e.toString()
                 );
-                return;
             }
 
-            message.setQueryResponseJson(
-                    OBJECT_MAPPER.writeValueAsString(response)
-            );
-
-            messageRepository.save(message);
-
-            log.debug(
-                    "[QUERY SNAPSHOT] Đã lưu snapshot cho messageId={}",
-                    messageId
-            );
-
-        } catch (Exception e) {
-            log.warn(
-                    "[QUERY SNAPSHOT] Không thể lưu snapshot messageId={}: {}",
-                    messageId,
-                    e.toString()
-            );
+            if (attempt < SNAPSHOT_PERSIST_MAX_ATTEMPTS) {
+                try {
+                    Thread.sleep(SNAPSHOT_PERSIST_RETRY_DELAY_MS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
+
+        log.error(
+                "[QUERY SNAPSHOT] Lưu snapshot THẤT BẠI sau {} lần thử cho messageId={}. " +
+                        "Message này sẽ mất vĩnh viễn bảng kết quả/nút Vẽ biểu đồ khi reload conversation.",
+                SNAPSHOT_PERSIST_MAX_ATTEMPTS,
+                messageId,
+                lastError
+        );
     }
 
     /**

@@ -279,6 +279,10 @@ export function ChatPage() {
     setOptimizeLoadingId(null);
     setOptimizeCache({});
 
+    setChartOpenId(null);
+    setChartLoadingId(null);
+    setChartCache({});
+
     setLoading(true);
 
     try {
@@ -768,24 +772,21 @@ export function ChatPage() {
   }
 
   /**
-   * Toggle "Vẽ biểu đồ" (chart suggestion + data insight).
-   *
    * Gọi 2 endpoint stateless /query/chart-suggestion và
    * /query/data-insight song song, truyền lại đúng columns/rows của kết
-   * quả truy vấn (không chạy lại SQL). Cache theo messageId - bấm lại
-   * chỉ đóng/mở panel, không gọi lại API.
+   * quả truy vấn (không chạy lại SQL). Cache theo messageId - gọi lại
+   * (vd bấm nút lần 2) sẽ không gọi lại API nếu đã có cache.
+   *
+   * Tách riêng khỏi toggleChart() để có thể gọi TỰ ĐỘNG ngay khi nhận
+   * được kết quả (xem executeQuery -> event.type === "result"), thay vì
+   * chỉ chờ người dùng bấm nút.
    */
-  async function toggleChart(messageId: number, result: QueryResponse) {
-    if (chartOpenId === messageId) {
-      setChartOpenId(null);
+  async function fetchChartData(messageId: number, result: QueryResponse) {
+    if (chartCache[messageId]) {
       return;
     }
 
-    setChartOpenId(messageId);
-    setExplainOpenId(null);
-    setOptimizeOpenId(null);
-
-    if (chartCache[messageId]) {
+    if (result.result.error || result.result.rows.length < 1) {
       return;
     }
 
@@ -814,11 +815,30 @@ export function ChatPage() {
         ),
         "error",
       );
-
-      setChartOpenId(null);
     } finally {
-      setChartLoadingId(null);
+      setChartLoadingId((current) => (current === messageId ? null : current));
     }
+  }
+
+  /**
+   * Toggle hiển thị panel "Vẽ biểu đồ" (chart suggestion + data insight).
+   *
+   * Dữ liệu thường đã có sẵn trong chartCache nhờ auto-fetch (xem
+   * executeQuery), nên hàm này chủ yếu chỉ đóng/mở panel. Vẫn gọi
+   * fetchChartData() phòng trường hợp cache chưa kịp có (vd tin nhắn cũ
+   * tải lại từ lịch sử conversation, không đi qua executeQuery).
+   */
+  async function toggleChart(messageId: number, result: QueryResponse) {
+    if (chartOpenId === messageId) {
+      setChartOpenId(null);
+      return;
+    }
+
+    setChartOpenId(messageId);
+    setExplainOpenId(null);
+    setOptimizeOpenId(null);
+
+    await fetchChartData(messageId, result);
   }
 
   /**
@@ -845,14 +865,45 @@ export function ChatPage() {
   const canOptimize = activeConnection?.dbType === "mysql";
 
   /**
-   * Kiểm tra một QueryResponse có đủ dữ liệu để biểu diễn
-   * chart hay không.
+   * Doan (heuristic, KHONG chinh xac tuyet doi) xem ket qua co cot SO nao
+   * khong - dua theo GIA TRI DAU TIEN khong null cua tung cot, giong cach
+   * ChartTypeClassifier.isNumericColumn() o BE dang lam.
    *
-   * 1 dòng:
-   *   -> Không chart.
+   * Dung de hien tooltip canh bao TRUOC khi bam nut "Ve bieu do", tranh
+   * cam giac "bam xong moi biet la trong" (xem panel rong o cau hoi
+   * "Liet ke ten va email khach hang").
    *
-   * >= 2 dòng:
-   *   -> Có thể chart nếu backend trả chartSuggestion.
+   * LUU Y: day chi la goi y UI, KHONG phai dieu kien quyet dinh cuoi cung
+   * - BE van la nguon su that (vi con co fallback dem-theo-danh-muc khi
+   * cot danh muc co gia tri lap lai, FE khong the doan truoc chinh xac
+   * 100% tu day).
+   */
+  function likelyHasNumericColumn(result: QueryResponse): boolean {
+    for (const column of result.result.columns) {
+      for (const row of result.result.rows) {
+        const value = row[column];
+
+        if (value !== null && value !== undefined) {
+          if (typeof value === "number") {
+            return true;
+          }
+
+          break; // Gia tri dau tien cua cot nay khong phai so - chuyen cot ke tiep.
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Kiểm tra một QueryResponse có đủ dữ liệu để biểu diễn chart hay không.
+   *
+   * Tin tưởng hoàn toàn quyết định BAR/PIE/LINE/TABLE của backend
+   * (ChartTypeClassifier) - BE là nguồn sự thật, kể cả với kết quả 1
+   * dòng (từ 1 dòng vẫn có thể ra BAR nếu có cột số liệu - xem
+   * classifySingleRow() ở backend). Không tự áp thêm ngưỡng "rows>=2"
+   * ở FE nữa vì sẽ chặn nhầm các trường hợp BE đã xác nhận vẽ được.
    */
   function canShowChart(
     chart: ChartSuggestion | undefined,
@@ -866,11 +917,11 @@ export function ChatPage() {
       return false;
     }
 
-    if (result.result.rows.length < 2) {
+    if (chart.chartType === "TABLE") {
       return false;
     }
 
-    if (chart.xAxisLabels.length < 2) {
+    if (chart.series.length === 0 || chart.xAxisLabels.length === 0) {
       return false;
     }
 
@@ -1367,14 +1418,33 @@ export function ChatPage() {
         )}
 
         {/* =========================
+            KHÔNG CÓ GÌ ĐỂ VẼ
+
+            Xảy ra khi kết quả CHỈ có cột dạng chữ (text), không có cột
+            số liệu nào để tính insight/vẽ biểu đồ - ví dụ: "liệt kê tên
+            và email khách hàng" (chỉ có PRODUCT_NAME/EMAIL, không có
+            cột số). Backend vẫn trả về chartSuggestion (chartType =
+            TABLE, kèm "reason" giải thích) và dataInsight = null trong
+            trường hợp này - đúng thiết kế, KHÔNG phải lỗi.
+
+            Không có nhánh fallback này thì bấm "Vẽ biểu đồ" sẽ không
+            hiện GÌ CẢ (cả 2 khối DATA INSIGHT và CHART bên dưới đều bị
+            ẩn), khiến người dùng tưởng nút bị lỗi/không hoạt động.
+           ========================= */}
+        {!dataInsight && chartSuggestion.chartType === "TABLE" && (
+          <div className={styles.aiPanel}>
+            <p className={styles.center}>
+              {chartSuggestion.reason ||
+                "Không tìm thấy cột số liệu phù hợp để vẽ biểu đồ hoặc phân tích cho kết quả này."}
+            </p>
+          </div>
+        )}
+
+        {/* =========================
             CHART
 
-            QUAN TRỌNG:
-            Chỉ hiện nếu có >= 2 rows.
-
-            1 row:
-            -> không chart
-            -> không chart reason
+            canShowChart() giờ tin tưởng chartType do BE trả (kể cả kết
+            quả 1 dòng vẫn có thể là BAR - xem classifySingleRow()).
            ========================= */}
         {canShowChart(chartSuggestion, result) &&
           chartSuggestion.chartType !== "TABLE" && (
@@ -1501,10 +1571,16 @@ export function ChatPage() {
                 </button>
               )}
 
-              {!result.result.error && result.result.rows.length >= 2 && (
+              {!result.result.error && result.result.rows.length >= 1 && (
                 <button
                   type="button"
                   onClick={() => void toggleChart(result.messageId, result)}
+                  title={
+                    chartOpenId !== result.messageId &&
+                    !likelyHasNumericColumn(result)
+                      ? "Dữ liệu này không có cột số - biểu đồ (nếu có) sẽ là đếm số lượng theo danh mục thay vì so sánh giá trị."
+                      : undefined
+                  }
                 >
                   {chartOpenId === result.messageId
                     ? "▲ Đóng biểu đồ"

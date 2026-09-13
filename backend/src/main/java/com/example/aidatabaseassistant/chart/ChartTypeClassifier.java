@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,8 +44,7 @@ public class ChartTypeClassifier {
             return ChartClassificationResult.table("Không có dữ liệu để vẽ biểu đồ");
         }
         if (rows.size() == 1) {
-            return ChartClassificationResult.table(
-                    "chỉ có 1 dòng dữ liệu, chưa đủ để thể hiện xu hướng hoặc so sánh");
+            return classifySingleRow(columns, rows.get(0), schemaKeyColumns);
         }
 
         List<String> numericColumns = new ArrayList<>();
@@ -94,6 +94,19 @@ public class ChartTypeClassifier {
         }
 
         if (numericColumns.isEmpty()) {
+            // Khong co cot SO nao ca (vi du: chi liet ke ten san pham/email).
+            // Truoc khi bo cuoc ve TABLE, thu fallback: neu cot danh muc
+            // (dimensionColumn) co GIA TRI LAP LAI, tu dong DEM so lan xuat
+            // hien cua tung gia tri de lam "so lieu" - day la con so THAT
+            // (dem dong), khong phai bia, nen van dam bao nguyen tac "AI
+            // khong tu tinh so".
+            ChartClassificationResult categoryCountFallback =
+                    buildCategoryCountFallback(dimensionColumn, rows);
+
+            if (categoryCountFallback != null) {
+                return categoryCountFallback;
+            }
+
             return ChartClassificationResult.table("không tìm thấy cột số liệu (measure) nào để vẽ biểu đồ");
         }
         if (dimensionColumn == null) {
@@ -136,6 +149,71 @@ public class ChartTypeClassifier {
         return new ChartClassificationResult(chartType, alternatives, dimensionColumn, xAxisLabels, series, hint);
     }
 
+    private ChartClassificationResult classifySingleRow(
+            List<String> columns,
+            Map<String, Object> row,
+            Map<String, Boolean> schemaKeyColumns) {
+
+        List<Map<String, Object>> singleRowList = List.of(row);
+
+        List<String> measureColumns = new ArrayList<>();
+        String labelColumn = null;
+
+        for (String column : columns) {
+            if (isNumericColumn(column, singleRowList)) {
+                if (isKeyColumn(column, schemaKeyColumns)) {
+                    // id/fk khong phai so lieu - giong logic nhieu dong.
+                    continue;
+                }
+                measureColumns.add(column);
+            } else if (labelColumn == null) {
+                labelColumn = column;
+            }
+        }
+
+        if (measureColumns.isEmpty()) {
+            return ChartClassificationResult.table(
+                    "chỉ có 1 dòng dữ liệu và không có cột số liệu nào để so sánh");
+        }
+
+        List<String> xAxisLabels;
+        List<ChartSeriesDto> series = new ArrayList<>();
+        String hint;
+        String dimensionColumn;
+
+        if (labelColumn != null) {
+            // Tai su dung extractLabels() de xu ly null/toString() nhat quan
+            // voi phan nhieu-dong ben tren.
+            xAxisLabels = extractLabels(labelColumn, singleRowList);
+
+            for (String measure : measureColumns) {
+                series.add(new ChartSeriesDto(measure, extractNumericValues(measure, singleRowList)));
+            }
+
+            dimensionColumn = labelColumn;
+            hint = "chỉ có 1 dòng dữ liệu nên dùng '" + labelColumn
+                    + "' làm nhãn, so sánh trực tiếp các chỉ số của dòng này";
+        } else {
+            xAxisLabels = new ArrayList<>(measureColumns);
+
+            // Moi cot so la 1 "danh muc" tren truc X, gia tri cua no la 1
+            // phan tu duy nhat trong series - ghep tung phan tu extractNumericValues()
+            // (list 1 phan tu vi chi co 1 dong) lai thanh 1 series chung.
+            List<Number> values = new ArrayList<>();
+            for (String measure : measureColumns) {
+                values.add(extractNumericValues(measure, singleRowList).get(0));
+            }
+            series.add(new ChartSeriesDto("Giá trị", values));
+
+            dimensionColumn = "Chỉ số";
+            hint = "chỉ có 1 dòng dữ liệu tổng hợp nên dùng tên " + measureColumns.size()
+                    + " cột số liệu làm trục X để so sánh các chỉ số với nhau";
+        }
+
+        return new ChartClassificationResult(
+                ChartType.BAR, List.of(), dimensionColumn, xAxisLabels, series, hint);
+    }
+
     private boolean isNumericColumn(String column, List<Map<String, Object>> rows) {
         for (Map<String, Object> row : rows) {
             Object value = row.get(column);
@@ -144,6 +222,50 @@ public class ChartTypeClassifier {
             }
         }
         return false;
+    }
+
+    private ChartClassificationResult buildCategoryCountFallback(
+            String dimensionColumn,
+            List<Map<String, Object>> rows) {
+
+        if (dimensionColumn == null) {
+            return null;
+        }
+
+        List<String> labels = extractLabels(dimensionColumn, rows);
+
+        Map<String, Integer> countByLabel = new LinkedHashMap<>();
+        for (String label : labels) {
+            countByLabel.merge(label, 1, Integer::sum);
+        }
+
+        if (countByLabel.size() == labels.size()) {
+            // Khong co gia tri nao lap lai - dem ra toan so 1, bo qua fallback.
+            return null;
+        }
+
+        List<String> xAxisLabels = new ArrayList<>(countByLabel.keySet());
+
+        List<Number> counts = new ArrayList<>();
+        for (String label : xAxisLabels) {
+            counts.add(countByLabel.get(label));
+        }
+
+        ChartSeriesDto series = new ChartSeriesDto("Số lượng", counts);
+
+        boolean fewCategories = xAxisLabels.size() <= PIE_MAX_CATEGORIES;
+
+        ChartType chartType = fewCategories ? ChartType.PIE : ChartType.BAR;
+        List<ChartType> alternatives = fewCategories
+                ? List.of(ChartType.DONUT, ChartType.BAR)
+                : List.of(ChartType.LINE);
+
+        String hint = "không có cột số liệu nào trong kết quả, nên tự động đếm số lần xuất hiện "
+                + "của mỗi giá trị trong cột '" + dimensionColumn + "' (" + xAxisLabels.size()
+                + " danh mục) để thể hiện phân bố";
+
+        return new ChartClassificationResult(
+                chartType, alternatives, dimensionColumn, xAxisLabels, List.of(series), hint);
     }
 
     private boolean isTimeLikeColumn(String column, List<Map<String, Object>> rows) {
@@ -205,9 +327,6 @@ public class ChartTypeClassifier {
         }
         return isIdLikeColumn(column);
     }
-
-    /**
-     * Nhan dien cot la khoa chinh/khoa ngoai dua tren TEN cot: "id",
 
     /**
      * Nhan dien cot la khoa chinh/khoa ngoai dua tren TEN cot: "id",
