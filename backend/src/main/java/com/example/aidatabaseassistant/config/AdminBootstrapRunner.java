@@ -13,7 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Giai bai toan "trung ga - trung": PATCH /api/admin/users/{id}/role doi hoi
+ * Giai bai toan "ga - trung": PATCH /api/admin/users/{id}/role doi hoi
  * nguoi goi DA la ADMIN (@PreAuthorize("hasRole('ADMIN')") tren
  * AdminController), nen khong co cach nao tu tao ADMIN dau tien qua API.
  *

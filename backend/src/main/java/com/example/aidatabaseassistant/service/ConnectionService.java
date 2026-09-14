@@ -17,6 +17,7 @@ import com.example.aidatabaseassistant.security.SsrfProtection;
 import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.dto.ConnectionTestResult;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
+import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -37,6 +38,7 @@ public class ConnectionService {
     private final TargetDatabaseClient targetDatabaseClient;
     private final ExcelIngestionService excelIngestionService;
     private final ConnectionAccessGuard connectionAccessGuard;
+    private final DatabaseSchemaRepository databaseSchemaRepository;
     @Value("${connection.max-per-user:20}")
     private int maxConnectionsPerUser = 20;
 
@@ -329,6 +331,10 @@ public class ConnectionService {
                     connection.getDatabaseName()
             );
         }
+
+        // Xoa schema da dong bo (neu co) truoc de tranh loi
+        // foreign key constraint khi xoa connection.
+        databaseSchemaRepository.deleteByConnectionId(connectionId);
 
         connectionRepository.delete(connection);
     }

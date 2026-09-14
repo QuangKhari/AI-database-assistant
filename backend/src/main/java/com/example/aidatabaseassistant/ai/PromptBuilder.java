@@ -269,21 +269,21 @@ public class PromptBuilder {
 
         Giữ nguyên giá trị đúng như dữ liệu trong database.
 
-                18. Khi sử dụng GROUP BY và ORDER BY một giá trị tổng hợp,
-                                                                                                 có thể đặt alias cho giá trị tổng hợp và sử dụng alias đó trong ORDER BY.
+    18. Khi sử dụng GROUP BY và ORDER BY một giá trị tổng hợp,
+        có thể đặt alias cho giá trị tổng hợp và sử dụng alias đó trong ORDER BY.
 
-                                                                                                 Tuy nhiên, nếu giá trị tổng hợp CHỈ được dùng để xếp hạng
-                                                                                                 và người dùng không yêu cầu metric đó xuất hiện trong kết quả,
-                                                                                                 KHÔNG thêm giá trị tổng hợp vào SELECT chỉ để tạo alias.
+        Tuy nhiên, nếu giá trị tổng hợp CHỈ được dùng để xếp hạng
+        và người dùng không yêu cầu metric đó xuất hiện trong kết quả,
+        KHÔNG thêm giá trị tổng hợp vào SELECT chỉ để tạo alias.
 
-                                                                                                 Ví dụ:
+        Ví dụ:
 
-                                                                                                 SELECT c.full_name
-                                                                                                 FROM customers c
-                                                                                                 JOIN orders o ON c.customer_id = o.customer_id
-                                                                                                 GROUP BY c.customer_id, c.full_name
-                                                                                                 ORDER BY COUNT(o.order_id) DESC
-                                                                                                 LIMIT 1;
+        SELECT c.full_name
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        GROUP BY c.customer_id, c.full_name
+        ORDER BY COUNT(o.order_id) DESC
+        LIMIT 1;
 
     19. Không tự ý thêm điều kiện WHERE không được yêu cầu.
 
@@ -321,7 +321,7 @@ public class PromptBuilder {
 
     5. Do NOT use SELECT * unless the question actually asks for the full record.
 
-                6. ONLY SELECT columns and metrics that the user actually asks
+    6. ONLY SELECT columns and metrics that the user actually asks
                                              to appear in the result.
 
                                              Do NOT SELECT extra columns merely because they are used for:
@@ -335,7 +335,7 @@ public class PromptBuilder {
                                              grouping, joining, or ranking, do NOT include it in SELECT
                                              unless the user explicitly asks for that value in the result.
 
-                7. If the question asks for a CALCULATED VALUE and expects that value
+    7. If the question asks for a CALCULATED VALUE and expects that value
                                                                         to appear in the result, SELECT that value.
 
                                                                         If the calculated value is ONLY used for filtering or identifying
@@ -369,7 +369,7 @@ public class PromptBuilder {
                                                                           ORDER BY order_count DESC
                                                                           LIMIT 1;
 
-                8. If the question asks for multiple metrics, SELECT ALL requested metrics.
+    8. If the question asks for multiple metrics, SELECT ALL requested metrics.
 
                                                                          EVERY calculated metric MUST have a UNIQUE alias.
 
@@ -399,7 +399,7 @@ public class PromptBuilder {
        - average price -> average_price
        - count of records -> total
 
-                10. If the question asks for:
+    10. If the question asks for:
                                                                         "highest", "lowest", "largest", "smallest",
                                                                         "most", "least", or "top N":
 
@@ -435,7 +435,7 @@ public class PromptBuilder {
 
         Keep them exactly as stored in the database.
 
-                18. When using GROUP BY and ORDER BY an aggregate value, you may use
+    18. When using GROUP BY and ORDER BY an aggregate value, you may use
                                                                                                 an alias for the aggregate in ORDER BY.
 
                                                                                                 However, if the aggregate is used ONLY for ranking and the user
