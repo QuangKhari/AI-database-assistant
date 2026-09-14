@@ -13,4 +13,6 @@ public interface TableEmbeddingRepository extends JpaRepository<TableEmbedding, 
     // Dùng khi retrieval cần load toàn bộ embedding của 1 schema 1 lần
     // (tránh N+1 query khi tính cosine similarity cho từng bảng).
     List<TableEmbedding> findBySchemaId(Long schemaId);
+
+    void deleteBySchemaId(Long schemaId);
 }
