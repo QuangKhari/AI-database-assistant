@@ -19,4 +19,6 @@ public interface BenchmarkQuestionRepository
     );
 
     long countByConnectionId(Long connectionId);
+
+    void deleteByConnectionId(Long connectionId);
 }

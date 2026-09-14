@@ -25,4 +25,6 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
 
     // MỚI: khi FE không lọc theo connectionId (xem toàn bộ hội thoại).
     Page<Conversation> findByUserIdOrderByUpdatedAtDesc(Long userId, Pageable pageable);
+
+    void deleteByConnectionId(Long connectionId);
 }

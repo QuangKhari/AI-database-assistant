@@ -20,6 +20,8 @@ import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
+import com.example.aidatabaseassistant.repository.ConversationRepository;
+import com.example.aidatabaseassistant.repository.BenchmarkQuestionRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -42,6 +44,8 @@ public class ConnectionService {
     private final ConnectionAccessGuard connectionAccessGuard;
     private final DatabaseSchemaRepository databaseSchemaRepository;
     private final TableEmbeddingRepository tableEmbeddingRepository;
+    private final ConversationRepository conversationRepository;
+    private final BenchmarkQuestionRepository benchmarkQuestionRepository;
     @Value("${connection.max-per-user:20}")
     private int maxConnectionsPerUser = 20;
 
@@ -343,8 +347,13 @@ public class ConnectionService {
                 .ifPresent(schema ->
                         tableEmbeddingRepository.deleteBySchemaId(schema.getId())
                 );
-
         databaseSchemaRepository.deleteByConnectionId(connectionId);
+
+        // Xoa conversation (cascade tu dong xoa Message) va benchmark
+        // question (cascade tu dong xoa BenchmarkResult) truoc khi xoa
+        // connection, vi ca 2 bang deu co FK bat buoc toi connection_id.
+        conversationRepository.deleteByConnectionId(connectionId);
+        benchmarkQuestionRepository.deleteByConnectionId(connectionId);
 
         connectionRepository.delete(connection);
     }
