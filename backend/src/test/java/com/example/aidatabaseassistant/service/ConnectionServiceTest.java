@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
+import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
 
 import java.util.List;
 
@@ -59,6 +60,9 @@ class ConnectionServiceTest {
     @Mock
     private DatabaseSchemaRepository databaseSchemaRepository;
 
+    @Mock
+    private TableEmbeddingRepository tableEmbeddingRepository;
+
     private ConnectionService connectionService;
 
     private User owner;
@@ -75,7 +79,8 @@ class ConnectionServiceTest {
                 targetDatabaseClient,
                 excelIngestionService,
                 connectionAccessGuard,
-                databaseSchemaRepository
+                databaseSchemaRepository,
+                tableEmbeddingRepository
         );
 
         ReflectionTestUtils.setField(

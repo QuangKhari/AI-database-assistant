@@ -19,6 +19,7 @@ import com.example.aidatabaseassistant.dto.ConnectionTestResult;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -40,6 +41,7 @@ public class ConnectionService {
     private final ExcelIngestionService excelIngestionService;
     private final ConnectionAccessGuard connectionAccessGuard;
     private final DatabaseSchemaRepository databaseSchemaRepository;
+    private final TableEmbeddingRepository tableEmbeddingRepository;
     @Value("${connection.max-per-user:20}")
     private int maxConnectionsPerUser = 20;
 
@@ -334,8 +336,14 @@ public class ConnectionService {
             );
         }
 
-        // Xoa schema da dong bo (neu co) truoc de tranh loi
-        // foreign key constraint khi xoa connection.
+        // Xoa embedding truoc (FK tro toi database_schemas.id), sau do
+        // moi xoa schema (FK tro toi database_connections.id) de tranh
+        // loi foreign key constraint khi xoa connection theo thu tu.
+        databaseSchemaRepository.findByConnectionId(connectionId)
+                .ifPresent(schema ->
+                        tableEmbeddingRepository.deleteBySchemaId(schema.getId())
+                );
+
         databaseSchemaRepository.deleteByConnectionId(connectionId);
 
         connectionRepository.delete(connection);
