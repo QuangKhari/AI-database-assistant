@@ -36,4 +36,6 @@ public interface DatabaseSchemaRepository
     Optional<DatabaseSchema> findByIdForRag(
             @Param("schemaId") Long schemaId
     );
+
+    void deleteByConnectionId(Long connectionId);
 }
