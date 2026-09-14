@@ -18,6 +18,7 @@ import com.example.aidatabaseassistant.db.TargetDatabaseClient;
 import com.example.aidatabaseassistant.dto.ConnectionTestResult;
 import com.example.aidatabaseassistant.security.ConnectionAccessGuard;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -322,6 +323,7 @@ public class ConnectionService {
         );
     }
 
+    @Transactional
     public void disconnect(String username, Long connectionId) {
         DatabaseConnection connection =
                 getOwnedConnection(username, connectionId);
