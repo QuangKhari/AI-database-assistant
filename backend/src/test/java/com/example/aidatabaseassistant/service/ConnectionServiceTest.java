@@ -24,6 +24,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.example.aidatabaseassistant.repository.DatabaseSchemaRepository;
 import com.example.aidatabaseassistant.repository.TableEmbeddingRepository;
+import com.example.aidatabaseassistant.repository.ConversationRepository;
+import com.example.aidatabaseassistant.repository.BenchmarkQuestionRepository;
 
 import java.util.List;
 
@@ -63,6 +65,12 @@ class ConnectionServiceTest {
     @Mock
     private TableEmbeddingRepository tableEmbeddingRepository;
 
+    @Mock
+    private ConversationRepository conversationRepository;
+
+    @Mock
+    private BenchmarkQuestionRepository benchmarkQuestionRepository;
+
     private ConnectionService connectionService;
 
     private User owner;
@@ -80,7 +88,9 @@ class ConnectionServiceTest {
                 excelIngestionService,
                 connectionAccessGuard,
                 databaseSchemaRepository,
-                tableEmbeddingRepository
+                tableEmbeddingRepository,
+                conversationRepository,
+                benchmarkQuestionRepository
         );
 
         ReflectionTestUtils.setField(
