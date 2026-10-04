@@ -24,8 +24,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService userDetailsService;
@@ -78,33 +77,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 try {
                     String username = jwtUtil.extractUsername(token);
 
-                    UserDetails userDetails =
-                            userDetailsService.loadUserByUsername(username);
+                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
                     if (!userDetails.isAccountNonLocked()) {
                         SecurityContextHolder.clearContext();
                         filterChain.doFilter(request, response);
                         return;
                     }
 
-                    UsernamePasswordAuthenticationToken authToken =
-                            new UsernamePasswordAuthenticationToken(
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                                     userDetails,
                                     null,
                                     userDetails.getAuthorities()
                             );
 
-                    authToken.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authToken);
 
                 } catch (Exception e) {
-                    // TRUOC DAY: nuot loi hoan toan, khong log gi ca -
-                    // khien request bi coi la "chua dang nhap" (anonymous)
-                    // ma khong ai biet ly do that su la gi. Log lai de
-                    // con debug duoc (VD: user bi xoa sau khi token da
-                    // phat hanh, DB loi, role null...).
                     log.warn(
                             "Xac thuc JWT that bai cho request {} {}: {}",
                             request.getMethod(),
@@ -121,12 +111,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
             }
         } else {
-
-            // Khong co cookie "access_token" lan header "Authorization" hop
-            // dinh dang - binh thuong voi cac endpoint public (/api/auth/**),
-            // nhung neu xay ra voi endpoint can dang nhap thi day chinh la
-            // nguyen nhan. Chi log DEBUG vi se rat nhieu voi cac request
-            // public.
             log.debug(
                     "Khong tim thay token (cookie/Authorization) cho request {} {}",
                     request.getMethod(),

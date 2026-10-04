@@ -26,6 +26,14 @@ public class PasswordResetTokenService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     /**
+     * Cho phep noi khac (EmailService) hien thi dung thoi han token trong
+     * noi dung email, khong phai hardcode lai magic number o 2 noi.
+     */
+    public int getTokenExpirationMinutes() {
+        return TOKEN_EXPIRATION_MINUTES;
+    }
+
+    /**
      * Tạo reset token mới cho user.
      *
      * Raw token chỉ được trả về cho caller.

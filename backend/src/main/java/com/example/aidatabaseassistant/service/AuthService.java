@@ -26,6 +26,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final AuthenticationManager authenticationManager;
     private final PasswordResetTokenService passwordResetTokenService;
+    private final EmailService emailService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -76,6 +77,17 @@ public class AuthService {
                 user -> {
                     String rawToken = passwordResetTokenService.createToken(user);
                     log.debug("Password reset token cho user={}: {}", user.getUsername(), rawToken);
+
+                    // EmailService.sendPasswordResetEmail() tu nuot moi loi SMTP
+                    // ben trong no (xem Javadoc cua method do) - o day khong can,
+                    // va cung KHONG duoc, boc them try/catch nao khac lam thay doi
+                    // hanh vi thanh cong/that bai cua nhanh nay.
+                    emailService.sendPasswordResetEmail(
+                            user.getEmail(),
+                            user.getUsername(),
+                            rawToken,
+                            passwordResetTokenService.getTokenExpirationMinutes()
+                    );
                 },
                 () -> log.debug("Yêu cầu forgot-password cho email không tồn tại: {}", email)
         );

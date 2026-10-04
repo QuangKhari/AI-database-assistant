@@ -24,11 +24,9 @@ public class AppConfig {
      * - 429
      * - 5xx
      */
-    private static final Duration CONNECT_TIMEOUT =
-            Duration.ofSeconds(5);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
-    private static final Duration READ_TIMEOUT =
-            Duration.ofSeconds(60);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
 
     /*
      * RestTemplate riêng cho các tính năng AI bổ sung:
@@ -39,16 +37,12 @@ public class AppConfig {
      * Nếu Gemini chậm thì không được phép làm /execute chậm thêm
      * hàng chục giây.
      */
-    private static final Duration OPTIONAL_AI_CONNECT_TIMEOUT =
-            Duration.ofSeconds(3);
+    private static final Duration OPTIONAL_AI_CONNECT_TIMEOUT = Duration.ofSeconds(3);
 
-    private static final Duration OPTIONAL_AI_READ_TIMEOUT =
-            Duration.ofSeconds(8);
+    private static final Duration OPTIONAL_AI_READ_TIMEOUT = Duration.ofSeconds(8);
 
     @Bean
-    public RestTemplate restTemplate(
-            RestTemplateBuilder builder
-    ) {
+    public RestTemplate restTemplate(RestTemplateBuilder builder) {
         return builder
                 .connectTimeout(CONNECT_TIMEOUT)
                 .readTimeout(READ_TIMEOUT)
@@ -56,9 +50,7 @@ public class AppConfig {
     }
 
     @Bean(name = "optionalAiRestTemplate")
-    public RestTemplate optionalAiRestTemplate(
-            RestTemplateBuilder builder
-    ) {
+    public RestTemplate optionalAiRestTemplate(RestTemplateBuilder builder) {
         return builder
                 .connectTimeout(OPTIONAL_AI_CONNECT_TIMEOUT)
                 .readTimeout(OPTIONAL_AI_READ_TIMEOUT)
@@ -67,14 +59,11 @@ public class AppConfig {
 
     @Bean
     public Executor sseTaskExecutor() {
-
-        ThreadPoolTaskExecutor executor =
-                new ThreadPoolTaskExecutor();
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 
         executor.setCorePoolSize(4);
         executor.setMaxPoolSize(8);
         executor.setThreadNamePrefix("sse-query-");
-
         executor.initialize();
 
         return executor;

@@ -30,8 +30,7 @@ public class QueryValidator {
 
     private Statement parse(String sql) {
         try {
-            net.sf.jsqlparser.statement.Statements statements =
-                    CCJSqlParserUtil.parseStatements(sql);
+            net.sf.jsqlparser.statement.Statements statements = CCJSqlParserUtil.parseStatements(sql);
 
             if (statements.getStatements().size() != 1) {
                 throw new IllegalArgumentException(
@@ -156,20 +155,13 @@ public class QueryValidator {
             return;
         }
 
-        Matcher matcher =
-                AS_ALIAS_PATTERN.matcher(sql);
+        Matcher matcher = AS_ALIAS_PATTERN.matcher(sql);
 
-        Map<String, Integer> aliasCounts =
-                new HashMap<>();
+        Map<String, Integer> aliasCounts = new HashMap<>();
 
         while (matcher.find()) {
 
-            String alias =
-                    matcher.group(1)
-                            .trim()
-                            .toLowerCase(
-                                    java.util.Locale.ROOT
-                            );
+            String alias = matcher.group(1).trim().toLowerCase(java.util.Locale.ROOT);
 
             if (SQL_TYPE_KEYWORDS.contains(alias)) {
                 continue;
@@ -182,8 +174,7 @@ public class QueryValidator {
             );
         }
 
-        for (Map.Entry<String, Integer> entry :
-                aliasCounts.entrySet()) {
+        for (Map.Entry<String, Integer> entry : aliasCounts.entrySet()) {
 
             if (entry.getValue() > 1) {
 

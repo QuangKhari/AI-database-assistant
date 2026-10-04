@@ -43,6 +43,9 @@ class AuthServiceTest {
     @Mock
     private PasswordResetTokenService passwordResetTokenService;
 
+    @Mock
+    private EmailService emailService;
+
     private AuthService authService;
 
     @BeforeEach
@@ -52,7 +55,8 @@ class AuthServiceTest {
                 passwordEncoder,
                 jwtUtil,
                 authenticationManager,
-                passwordResetTokenService
+                passwordResetTokenService,
+                emailService
         );
     }
 
@@ -325,6 +329,14 @@ class AuthServiceTest {
 
         verify(passwordResetTokenService)
                 .createToken(user);
+
+        verify(emailService)
+                .sendPasswordResetEmail(
+                        eq("lock_test_user@example.com"),
+                        eq("lock_test_user"),
+                        eq("fake-reset-token"),
+                        anyInt()
+                );
     }
 
     @Test
@@ -339,6 +351,9 @@ class AuthServiceTest {
 
         verify(passwordResetTokenService, never())
                 .createToken(any());
+
+        verify(emailService, never())
+                .sendPasswordResetEmail(any(), any(), any(), anyInt());
     }
 
     // =========================================================

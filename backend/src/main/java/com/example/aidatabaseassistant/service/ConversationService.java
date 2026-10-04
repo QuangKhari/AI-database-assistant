@@ -46,9 +46,7 @@ public class ConversationService {
                 .collect(Collectors.toList());
     }
 
-    public List<ConversationResponse> getConversations(
-            String username,
-            Long connectionId) {
+    public List<ConversationResponse> getConversations(String username, Long connectionId) {
 
         if (connectionId == null) {
             return getConversations(username);
@@ -57,10 +55,7 @@ public class ConversationService {
         User user = connectionAccessGuard.requireUser(username);
 
         return conversationRepository
-                .findByUserIdAndConnectionIdOrderByUpdatedAtDesc(
-                        user.getId(),
-                        connectionId
-                )
+                .findByUserIdAndConnectionIdOrderByUpdatedAtDesc(user.getId(), connectionId)
                 .stream()
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
@@ -81,8 +76,7 @@ public class ConversationService {
                         connectionId,
                         pageable
                 )
-                : conversationRepository
-                .findByUserIdOrderByUpdatedAtDesc(
+                : conversationRepository.findByUserIdOrderByUpdatedAtDesc(
                         user.getId(),
                         pageable
                 );
@@ -90,9 +84,7 @@ public class ConversationService {
         return page.map(this::toConversationResponse);
     }
 
-    public List<MessageResponse> getMessages(
-            String username,
-            Long conversationId) {
+    public List<MessageResponse> getMessages(String username, Long conversationId) {
 
         User user = connectionAccessGuard.requireUser(username);
 
@@ -110,19 +102,15 @@ public class ConversationService {
             );
         }
 
-        List<Message> messages =
-                messageRepository
-                        .findByConversationIdOrderByCreatedAtAsc(
-                                conversationId
-                        );
+        List<Message> messages = messageRepository
+                        .findByConversationIdOrderByCreatedAtAsc(conversationId);
 
         return messages.stream()
                 .map(this::toMessageResponse)
                 .collect(Collectors.toList());
     }
 
-    private ConversationResponse toConversationResponse(
-            Conversation c) {
+    private ConversationResponse toConversationResponse(Conversation c) {
 
         return new ConversationResponse(
                 c.getId(),
@@ -135,8 +123,7 @@ public class ConversationService {
 
     private MessageResponse toMessageResponse(Message m) {
 
-        List<MessageResponse.QueryLogResponse> logs =
-                m.getQueryLogs()
+        List<MessageResponse.QueryLogResponse> logs = m.getQueryLogs()
                         .stream()
                         .map(log -> new MessageResponse.QueryLogResponse(
                                 log.getAttemptNumber(),
@@ -150,8 +137,7 @@ public class ConversationService {
 
         QueryResponse queryResult = null;
 
-        if (m.getQueryResponseJson() != null
-                && !m.getQueryResponseJson().isBlank()) {
+        if (m.getQueryResponseJson() != null && !m.getQueryResponseJson().isBlank()) {
 
             try {
 
@@ -194,20 +180,16 @@ public class ConversationService {
 
         User user = connectionAccessGuard.requireUser(username);
 
-        List<Conversation> conversations =
-                conversationRepository.findByUserId(user.getId());
+        List<Conversation> conversations = conversationRepository.findByUserId(user.getId());
 
         conversationRepository.deleteAll(conversations);
     }
 
-    public void deleteConversation(
-            String username,
-            Long conversationId) {
+    public void deleteConversation(String username, Long conversationId) {
 
         User user = connectionAccessGuard.requireUser(username);
 
-        Conversation conversation =
-                conversationRepository.findById(conversationId)
+        Conversation conversation = conversationRepository.findById(conversationId)
                         .orElseThrow(
                                 () -> new ResourceNotFoundException(
                                         "Không tìm thấy conversation"
@@ -227,14 +209,11 @@ public class ConversationService {
         conversationRepository.delete(conversation);
     }
 
-    public MessageResponse togglePin(
-            String username,
-            Long messageId) {
+    public MessageResponse togglePin(String username, Long messageId) {
 
         User user = connectionAccessGuard.requireUser(username);
 
-        Message message =
-                messageRepository.findByIdWithOwner(messageId)
+        Message message = messageRepository.findByIdWithOwner(messageId)
                         .orElseThrow(
                                 () -> new ResourceNotFoundException(
                                         "Không tìm thấy message"
@@ -256,8 +235,7 @@ public class ConversationService {
             );
         }
 
-        boolean current =
-                Boolean.TRUE.equals(message.getPinned());
+        boolean current = Boolean.TRUE.equals(message.getPinned());
 
         message.setPinned(!current);
 
@@ -286,8 +264,7 @@ public class ConversationService {
 
         User user = connectionAccessGuard.requireUser(username);
 
-        String kw =
-                keyword == null
+        String kw = keyword == null
                         ? ""
                         : keyword.trim();
 

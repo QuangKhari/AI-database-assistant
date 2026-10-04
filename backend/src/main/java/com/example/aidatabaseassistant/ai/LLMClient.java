@@ -88,27 +88,17 @@ public class LLMClient {
 
         HttpHeaders headers = buildHeaders();
 
-        Map<String, Object> body =
-                buildGenerationBody(prompt);
+        Map<String, Object> body = buildGenerationBody(prompt);
 
-        HttpEntity<Map<String, Object>> entity =
-                new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-        log.info(
-                "Gọi Gemini API, độ dài prompt: {} ký tự",
-                prompt.length()
-        );
+        log.info("Gọi Gemini API, độ dài prompt: {} ký tự", prompt.length());
 
-        log.debug(
-                "Prompt gửi Gemini:\n{}",
-                prompt
-        );
+        log.debug("Prompt gửi Gemini:\n{}", prompt);
 
-        long start =
-                System.currentTimeMillis();
+        long start = System.currentTimeMillis();
 
-        ResponseEntity<Map> response =
-                callWithRetry(
+        ResponseEntity<Map> response = callWithRetry(
                         "generateResponse",
                         () -> restTemplate.postForEntity(
                                 apiUrl,
@@ -117,11 +107,9 @@ public class LLMClient {
                         )
                 );
 
-        String answer =
-                extractResponseText(response);
+        String answer = extractResponseText(response);
 
-        long elapsedMs =
-                System.currentTimeMillis() - start;
+        long elapsedMs = System.currentTimeMillis() - start;
 
         log.info(
                 "Gemini API trả lời trong {} ms, độ dài response: {} ký tự",
@@ -129,10 +117,7 @@ public class LLMClient {
                 answer.length()
         );
 
-        log.debug(
-                "Response từ Gemini:\n{}",
-                answer
-        );
+        log.debug("Response từ Gemini:\n{}", answer);
 
         return answer;
     }
@@ -157,38 +142,30 @@ public class LLMClient {
     @SuppressWarnings("unchecked")
     public String generateOptionalResponse(String prompt) {
 
-        HttpHeaders headers =
-                buildHeaders();
+        HttpHeaders headers = buildHeaders();
 
-        Map<String, Object> body =
-                buildGenerationBody(prompt);
+        Map<String, Object> body = buildGenerationBody(prompt);
 
-        HttpEntity<Map<String, Object>> entity =
-                new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
         log.info(
                 "Gọi Gemini Optional AI API, độ dài prompt: {} ký tự",
                 prompt.length()
         );
 
-        long start =
-                System.currentTimeMillis();
+        long start = System.currentTimeMillis();
 
         try {
 
-            ResponseEntity<Map> response =
-                    optionalAiRestTemplate.postForEntity(
+            ResponseEntity<Map> response = optionalAiRestTemplate.postForEntity(
                             apiUrl,
                             entity,
                             Map.class
                     );
 
-            String answer =
-                    extractResponseText(response);
+            String answer = extractResponseText(response);
 
-            long elapsedMs =
-                    System.currentTimeMillis()
-                            - start;
+            long elapsedMs = System.currentTimeMillis() - start;
 
             log.info(
                     "Gemini Optional AI trả lời trong {} ms, độ dài response: {} ký tự",
@@ -200,9 +177,7 @@ public class LLMClient {
 
         } catch (ResourceAccessException e) {
 
-            long elapsedMs =
-                    System.currentTimeMillis()
-                            - start;
+            long elapsedMs = System.currentTimeMillis() - start;
 
             log.warn(
                     "Gemini Optional AI timeout/network sau {} ms: {}",
@@ -214,9 +189,7 @@ public class LLMClient {
 
         } catch (RestClientException e) {
 
-            long elapsedMs =
-                    System.currentTimeMillis()
-                            - start;
+            long elapsedMs = System.currentTimeMillis() - start;
 
             log.warn(
                     "Gemini Optional AI thất bại sau {} ms: {}",
@@ -242,28 +215,16 @@ public class LLMClient {
             );
         }
 
-        HttpHeaders headers =
-                buildHeaders();
+        HttpHeaders headers = buildHeaders();
 
-        Map<String, Object> body =
-                Map.of(
+        Map<String, Object> body = Map.of(
                         "model",
                         "models/" + embeddingModel,
 
                         "content",
-                        Map.of(
-                                "parts",
-                                List.of(
-                                        Map.of(
-                                                "text",
-                                                text
-                                        )
-                                )
-                        )
-                );
+                        Map.of("parts", List.of(Map.of("text", text))));
 
-        HttpEntity<Map<String, Object>> entity =
-                new HttpEntity<>(
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(
                         body,
                         headers
                 );
@@ -274,11 +235,9 @@ public class LLMClient {
                 text.length()
         );
 
-        long start =
-                System.currentTimeMillis();
+        long start = System.currentTimeMillis();
 
-        ResponseEntity<Map> response =
-                callWithRetry(
+        ResponseEntity<Map> response = callWithRetry(
                         "generateEmbedding",
                         () -> restTemplate.postForEntity(
                                 embeddingApiUrl,
@@ -287,8 +246,7 @@ public class LLMClient {
                         )
                 );
 
-        Map<String, Object> responseBody =
-                response.getBody();
+        Map<String, Object> responseBody = response.getBody();
 
         if (responseBody == null) {
             throw new RuntimeException(
@@ -296,9 +254,7 @@ public class LLMClient {
             );
         }
 
-        Map<String, Object> embedding =
-                (Map<String, Object>)
-                        responseBody.get("embedding");
+        Map<String, Object> embedding = (Map<String, Object>) responseBody.get("embedding");
 
         if (embedding == null) {
             throw new RuntimeException(
@@ -306,9 +262,7 @@ public class LLMClient {
             );
         }
 
-        List<Double> values =
-                (List<Double>)
-                        embedding.get("values");
+        List<Double> values = (List<Double>) embedding.get("values");
 
         if (values == null || values.isEmpty()) {
             throw new RuntimeException(
@@ -316,17 +270,13 @@ public class LLMClient {
             );
         }
 
-        float[] vector =
-                new float[values.size()];
+        float[] vector = new float[values.size()];
 
         for (int i = 0; i < values.size(); i++) {
-            vector[i] =
-                    values.get(i).floatValue();
+            vector[i] = values.get(i).floatValue();
         }
 
-        long elapsedMs =
-                System.currentTimeMillis()
-                        - start;
+        long elapsedMs = System.currentTimeMillis() - start;
 
         log.info(
                 "Gemini Embedding hoàn thành trong {} ms, dimension={}",
@@ -345,12 +295,9 @@ public class LLMClient {
 
     private HttpHeaders buildHeaders() {
 
-        HttpHeaders headers =
-                new HttpHeaders();
+        HttpHeaders headers = new HttpHeaders();
 
-        headers.setContentType(
-                MediaType.APPLICATION_JSON
-        );
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
         headers.set(
                 "x-goog-api-key",
@@ -360,48 +307,20 @@ public class LLMClient {
         return headers;
     }
 
-    private Map<String, Object> buildGenerationBody(
-            String prompt
-    ) {
+    private Map<String, Object> buildGenerationBody(String prompt) {
 
-        return Map.of(
-                "contents",
-                List.of(
-                        Map.of(
-                                "parts",
-                                List.of(
-                                        Map.of(
-                                                "text",
-                                                prompt
-                                        )
-                                )
-                        )
-                ),
-
-                "generationConfig",
-                Map.of(
-                        "temperature",
-                        0.0,
-
-                        "topP",
-                        0.8,
-
-                        "topK",
-                        20,
-
-                        "maxOutputTokens",
-                        512
-                )
+        return Map.of("contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of("temperature", 0.0,
+                        "topP", 0.8,
+                        "topK", 20,
+                        "maxOutputTokens", 512)
         );
     }
 
     @SuppressWarnings("unchecked")
-    private String extractResponseText(
-            ResponseEntity<Map> response
-    ) {
+    private String extractResponseText(ResponseEntity<Map> response) {
 
-        Map<String, Object> responseBody =
-                response.getBody();
+        Map<String, Object> responseBody = response.getBody();
 
         if (responseBody == null) {
             throw new RuntimeException(
@@ -409,52 +328,37 @@ public class LLMClient {
             );
         }
 
-        List<Map<String, Object>> candidates =
-                (List<Map<String, Object>>)
-                        responseBody.get(
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseBody.get(
                                 "candidates"
                         );
 
-        if (candidates == null
-                || candidates.isEmpty()) {
+        if (candidates == null || candidates.isEmpty()) {
 
             throw new RuntimeException(
                     "Gemini không có candidate"
             );
         }
 
-        Map<String, Object> content =
-                (Map<String, Object>)
-                        candidates.get(0)
-                                .get("content");
+        Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
 
         if (content == null) {
-            throw new RuntimeException(
-                    "Gemini không trả về content"
-            );
+            throw new RuntimeException("Gemini không trả về content");
         }
 
-        List<Map<String, Object>> parts =
-                (List<Map<String, Object>>)
-                        content.get("parts");
+        List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
 
-        if (parts == null
-                || parts.isEmpty()) {
+        if (parts == null || parts.isEmpty()) {
 
             throw new RuntimeException(
                     "Gemini không trả về nội dung"
             );
         }
 
-        Object text =
-                parts.get(0).get("text");
+        Object text = parts.get(0).get("text");
 
-        if (!(text instanceof String)
-                || ((String) text).isBlank()) {
+        if (!(text instanceof String) || ((String) text).isBlank()) {
 
-            throw new RuntimeException(
-                    "Gemini không trả về nội dung hợp lệ"
-            );
+            throw new RuntimeException("Gemini không trả về nội dung hợp lệ");
         }
 
         return (String) text;
@@ -468,8 +372,7 @@ public class LLMClient {
             Supplier<T> call
     ) {
 
-        RestClientException lastError =
-                null;
+        RestClientException lastError = null;
 
         /*
          * attempt:
@@ -480,11 +383,7 @@ public class LLMClient {
          *
          * Tổng cộng tối đa 3 HTTP calls.
          */
-        for (
-                int attempt = 0;
-                attempt <= MAX_LLM_RETRIES;
-                attempt++
-        ) {
+        for (int attempt = 0; attempt <= MAX_LLM_RETRIES; attempt++) {
 
             try {
 
@@ -538,9 +437,7 @@ public class LLMClient {
             }
 
             if (attempt < MAX_LLM_RETRIES) {
-                sleepQuietly(
-                        BACKOFF_MS[attempt]
-                );
+                sleepQuietly(BACKOFF_MS[attempt]);
             }
         }
 
@@ -550,10 +447,7 @@ public class LLMClient {
                 MAX_LLM_RETRIES + 1
         );
 
-        throw new RuntimeException(
-                "Không thể kết nối tới dịch vụ AI, vui lòng thử lại sau ít phút.",
-                lastError
-        );
+        throw new RuntimeException("Không thể kết nối tới dịch vụ AI, vui lòng thử lại sau ít phút.", lastError);
     }
 
     private void sleepQuietly(long millis) {

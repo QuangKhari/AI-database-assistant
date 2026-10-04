@@ -76,10 +76,7 @@ public class PromptBuilder {
     // GENERATION PROMPT
     // =========================================================
 
-    public String buildGenerationPrompt(
-            String question,
-            DatabaseSchema schema
-    ) {
+    public String buildGenerationPrompt(String question, DatabaseSchema schema) {
         StringBuilder sb = new StringBuilder();
 
         String dialectLabel = resolveDialectLabel(schema);
@@ -121,10 +118,7 @@ public class PromptBuilder {
      * - dialect
      * - ngôn ngữ câu hỏi
      */
-    private String header(
-            String dialectLabel,
-            boolean english
-    ) {
+    private String header(String dialectLabel, boolean english) {
         return english
                 ? "You are a " + dialectLabel + " and Text-to-SQL expert.\n"
                 : "Bạn là chuyên gia " + dialectLabel + " và Text-to-SQL.\n";
@@ -322,73 +316,72 @@ public class PromptBuilder {
     5. Do NOT use SELECT * unless the question actually asks for the full record.
 
     6. ONLY SELECT columns and metrics that the user actually asks
-                                             to appear in the result.
+          to appear in the result.
 
-                                             Do NOT SELECT extra columns merely because they are used for:
-                                             - ORDER BY
-                                             - GROUP BY
-                                             - WHERE
-                                             - JOIN
-                                             - filtering or ranking
+          Do NOT SELECT extra columns merely because they are used for:
+          - ORDER BY
+          - GROUP BY
+          - WHERE
+          - JOIN
+          - filtering or ranking
 
-                                             If a column is only used for calculation, filtering, sorting,
-                                             grouping, joining, or ranking, do NOT include it in SELECT
-                                             unless the user explicitly asks for that value in the result.
+          If a column is only used for calculation, filtering, sorting,
+          grouping, joining, or ranking, do NOT include it in SELECT
+          unless the user explicitly asks for that value in the result.
 
     7. If the question asks for a CALCULATED VALUE and expects that value
-                                                                        to appear in the result, SELECT that value.
+          to appear in the result, SELECT that value.
 
-                                                                        If the calculated value is ONLY used for filtering or identifying
-                                                                        an entity (unrelated to ranking/comparing that value), it does
-                                                                        NOT need to be selected.
+          If the calculated value is ONLY used for filtering or identifying
+          an entity (unrelated to ranking/comparing that value), it does
+          NOT need to be selected.
 
-                                                                        IMPORTANT: questions shaped like "top N ... highest/lowest/most/
-                                                                        least" are ALWAYS considered to be asking ABOUT that value (price,
-                                                                        revenue, quantity, order count...), so the ranking value MUST be
-                                                                        SELECTed even if the question does not repeat the column name.
-                                                                        Omitting it leaves the result with no numeric column to chart or
-                                                                        analyze - always prefer SELECTing the ranking value unless it is
-                                                                        clearly certain the user only wants the entity's name/identity.
+          IMPORTANT: questions shaped like "top N ... highest/lowest/most/
+          least" are ALWAYS considered to be asking ABOUT that value (price,
+          revenue, quantity, order count...), so the ranking value MUST be
+          SELECTed even if the question does not repeat the column name.
+          Omitting it leaves the result with no numeric column to chart or
+          analyze - always prefer SELECTing the ranking value unless it is
+          clearly certain the user only wants the entity's name/identity.
 
-                                                                        Examples:
-                                                                        - "total revenue" -> SUM(...) AS total_revenue
-                                                                        - "revenue for each customer" ->
-                                                                          SELECT customer name + SUM(...) AS total_revenue
-                                                                        - "top 5 products by revenue" ->
-                                                                          SELECT product name + SUM(...) AS total_revenue
-                                                                        - "Which product has the highest price?" ->
-                                                                          SELECT product_name, unit_price
-                                                                          FROM products
-                                                                          ORDER BY unit_price DESC
-                                                                          LIMIT 1;
-                                                                        - "Which customer has placed the most orders?" ->
-                                                                          SELECT c.full_name, COUNT(o.order_id) AS order_count
-                                                                          FROM customers c
-                                                                          JOIN orders o ON c.customer_id = o.customer_id
-                                                                          GROUP BY c.customer_id, c.full_name
-                                                                          ORDER BY order_count DESC
-                                                                          LIMIT 1;
+          Examples:
+          - "total revenue" -> SUM(...) AS total_revenue
+          - "revenue for each customer" ->
+            SELECT customer name + SUM(...) AS total_revenue
+          - "top 5 products by revenue" ->
+            SELECT product name + SUM(...) AS total_revenue
+          - "Which product has the highest price?" ->
+            SELECT product_name, unit_price
+            FROM products
+            ORDER BY unit_price DESC
+            LIMIT 1;
+          - "Which customer has placed the most orders?" ->
+            SELECT c.full_name, COUNT(o.order_id) AS order_count
+            FROM customers c
+            JOIN orders o ON c.customer_id = o.customer_id
+            GROUP BY c.customer_id, c.full_name
+            ORDER BY order_count DESC
+            LIMIT 1;
 
     8. If the question asks for multiple metrics, SELECT ALL requested metrics.
 
-                                                                         EVERY calculated metric MUST have a UNIQUE alias.
+        EVERY calculated metric MUST have a UNIQUE alias.
 
-                                                                         NEVER use the same alias for two different expressions or metrics
-                                                                         in the same SELECT statement.
+        NEVER use the same alias for two different expressions or metrics
+        
+        WRONG:
 
-                                                                         WRONG:
+        SELECT
+            SUM(amount) AS total,
+            COUNT(*) AS total
+        FROM orders;
 
-                                                                         SELECT
-                                                                             SUM(amount) AS total,
-                                                                             COUNT(*) AS total
-                                                                         FROM orders;
+        CORRECT:
 
-                                                                         CORRECT:
-
-                                                                         SELECT
-                                                                             SUM(amount) AS total_revenue,
-                                                                             COUNT(*) AS total_orders
-                                                                         FROM orders;
+        SELECT
+            SUM(amount) AS total_revenue,
+            COUNT(*) AS total_orders
+        FROM orders;
 
     9. Use meaningful and unique aliases for calculated metrics.
 
@@ -400,16 +393,16 @@ public class PromptBuilder {
        - count of records -> total
 
     10. If the question asks for:
-                                                                        "highest", "lowest", "largest", "smallest",
-                                                                        "most", "least", or "top N":
+       "highest", "lowest", "largest", "smallest",
+       "most", "least", or "top N":
 
-                                                                        - MUST SELECT the requested entity.
-                                                                        - SELECT the ranking value ONLY if the user explicitly asks
-                                                                          for that value to appear in the result.
-                                                                        - A value used only for ORDER BY, WHERE, HAVING, or ranking
-                                                                          does NOT need to appear in SELECT.
-                                                                        - ORDER BY the correct ranking value.
-                                                                        - Use LIMIT when a specific number is requested.
+       - MUST SELECT the requested entity.
+       - SELECT the ranking value ONLY if the user explicitly asks
+         for that value to appear in the result.
+       - A value used only for ORDER BY, WHERE, HAVING, or ranking
+         does NOT need to appear in SELECT.
+       - ORDER BY the correct ranking value.
+       - Use LIMIT when a specific number is requested.
 
     11. Use the exact table and column names from the schema.
 
@@ -436,20 +429,20 @@ public class PromptBuilder {
         Keep them exactly as stored in the database.
 
     18. When using GROUP BY and ORDER BY an aggregate value, you may use
-                                                                                                an alias for the aggregate in ORDER BY.
+        an alias for the aggregate in ORDER BY.
 
-                                                                                                However, if the aggregate is used ONLY for ranking and the user
-                                                                                                does not ask for that metric in the result, do NOT add that
-                                                                                                aggregate to SELECT just to create an alias.
+        However, if the aggregate is used ONLY for ranking and the user
+        does not ask for that metric in the result, do NOT add that
+        aggregate to SELECT just to create an alias.
 
-                                                                                                Example:
+        Example:
 
-                                                                                                SELECT c.full_name
-                                                                                                FROM customers c
-                                                                                                JOIN orders o ON c.customer_id = o.customer_id
-                                                                                                GROUP BY c.customer_id, c.full_name
-                                                                                                ORDER BY COUNT(o.order_id) DESC
-                                                                                                LIMIT 1;
+        SELECT c.full_name
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        GROUP BY c.customer_id, c.full_name
+        ORDER BY COUNT(o.order_id) DESC
+        LIMIT 1;
 
     19. Do not add WHERE conditions that were not requested.
 
@@ -1078,24 +1071,18 @@ public class PromptBuilder {
             StringBuilder sb,
             DatabaseSchema schema
     ) {
-        if (schema == null
-                || schema.getTables() == null
-                || schema.getTables().isEmpty()) {
-
+        if (schema == null || schema.getTables() == null || schema.getTables().isEmpty()) {
             sb.append("(Không có schema)\n");
             return;
         }
 
         for (TableMetadata table : schema.getTables()) {
 
-            sb.append("TABLE ")
-                    .append(table.getName());
+            sb.append("TABLE ").append(table.getName());
 
-            if (table.getDescription() != null
-                    && !table.getDescription().isBlank()) {
+            if (table.getDescription() != null && !table.getDescription().isBlank()) {
 
-                sb.append(" // ")
-                        .append(table.getDescription());
+                sb.append(" // ").append(table.getDescription());
             }
 
             sb.append("\n");
@@ -1144,10 +1131,7 @@ public class PromptBuilder {
     // SUGGESTED QUESTIONS
     // =========================================================
 
-    public String buildSuggestedQuestionsPrompt(
-            DatabaseSchema schema,
-            int maxQuestions
-    ) {
+    public String buildSuggestedQuestionsPrompt(DatabaseSchema schema, int maxQuestions) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("""
@@ -1221,11 +1205,8 @@ public class PromptBuilder {
          * Lịch sử phải được đưa vào trước rules/schema để Gemini
          * hiểu context nhưng vẫn nhận rules đầy đủ.
          */
-        if (conversationHistory != null
-                && !conversationHistory.isBlank()) {
-
-            sb.append(
-                    english
+        if (conversationHistory != null && !conversationHistory.isBlank()) {
+            sb.append(english
                             ? """
 
                             RECENT CONVERSATION HISTORY:
@@ -1250,8 +1231,7 @@ public class PromptBuilder {
 
             sb.append(conversationHistory);
 
-            sb.append(
-                    english
+            sb.append(english
                             ? """
 
                             IMPORTANT:
@@ -1278,8 +1258,7 @@ public class PromptBuilder {
             );
         }
 
-        sb.append(
-                english
+        sb.append(english
                         ? generationRulesEn()
                         : generationRulesVi()
         );

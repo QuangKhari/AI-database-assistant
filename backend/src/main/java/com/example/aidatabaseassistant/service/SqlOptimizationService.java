@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Tinh nang SQL Optimization (Muc 3 - tai lieu mo rong): phan tich EXPLAIN
+ * Tinh nang SQL Optimization (Muc 3 ): phan tich EXPLAIN
  * that de phat hien Full Table Scan / filesort / bang tam va goi y
  * CREATE INDEX. TOAN BO phat hien do SqlOptimizationAnalyzer tinh bang
  * thuat toan thuan tu EXPLAIN + index THAT cua MySQL - Gemini CHI duoc

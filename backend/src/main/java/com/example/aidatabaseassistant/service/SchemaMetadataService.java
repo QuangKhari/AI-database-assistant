@@ -70,16 +70,12 @@ public class SchemaMetadataService {
             Long connectionId
     ) {
 
-        DatabaseConnection connection =
-                connectionAccessGuard.requireOwnedConnection(
+        DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(
                         username,
                         connectionId
                 );
 
-        DatabaseSchema schema =
-                schemaLoaderService.loadCompleteSchema(
-                        connectionId
-                );
+        DatabaseSchema schema = schemaLoaderService.loadCompleteSchema(connectionId);
 
         schema.setConnection(connection);
 

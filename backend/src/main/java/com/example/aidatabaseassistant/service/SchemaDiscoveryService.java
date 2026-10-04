@@ -92,10 +92,7 @@ public class SchemaDiscoveryService {
     //RESOLVE KEY COLUMN MAP
     // =========================================================
     @Transactional(readOnly = true)
-    public Map<String, Boolean> resolveKeyColumnMap(
-            String username,
-            Long connectionId
-    ) {
+    public Map<String, Boolean> resolveKeyColumnMap(String username, Long connectionId) {
 
         if (connectionId == null) {
             return Map.of();
@@ -113,30 +110,21 @@ public class SchemaDiscoveryService {
     // =========================================================
     //BUILD KEY COLUMN MAP
     // =========================================================
-    public static Map<String, Boolean> buildKeyColumnMap(
-            DatabaseSchema schema
-    ) {
+    public static Map<String, Boolean> buildKeyColumnMap(DatabaseSchema schema) {
 
-        if (schema == null
-                || schema.getTables() == null) {
-
+        if (schema == null || schema.getTables() == null) {
             return Map.of();
         }
 
-        Map<String, Boolean> keyColumns =
-                new HashMap<>();
+        Map<String, Boolean> keyColumns = new HashMap<>();
 
-        for (TableMetadata table :
-                schema.getTables()) {
+        for (TableMetadata table : schema.getTables()) {
 
-            if (table == null
-                    || table.getColumns() == null) {
-
+            if (table == null || table.getColumns() == null) {
                 continue;
             }
 
-            for (ColumnMetadata column :
-                    table.getColumns()) {
+            for (ColumnMetadata column : table.getColumns()) {
 
                 if (column == null
                         || column.getName() == null
@@ -145,14 +133,8 @@ public class SchemaDiscoveryService {
                     continue;
                 }
 
-                boolean isKey =
-                        Boolean.TRUE.equals(
-                                column.getPrimaryKey()
-                        )
-                                ||
-                                Boolean.TRUE.equals(
-                                        column.getForeignKey()
-                                );
+                boolean isKey = Boolean.TRUE.equals(column.getPrimaryKey())
+                                || Boolean.TRUE.equals(column.getForeignKey());
 
                 /*
                  * Nếu cùng một column name xuất hiện
@@ -166,13 +148,8 @@ public class SchemaDiscoveryService {
                  *
                  * An toàn hơn cho chart classification.
                  */
-                keyColumns.merge(
-                        column.getName()
-                                .toLowerCase(Locale.ROOT),
-                        isKey,
-                        (existing, incoming) ->
-                                existing || incoming
-                );
+                keyColumns.merge(column.getName().toLowerCase(Locale.ROOT),
+                        isKey, (existing, incoming) -> existing || incoming);
             }
         }
 
@@ -188,10 +165,7 @@ public class SchemaDiscoveryService {
             cacheManager = "localCacheManager",
             key = "#connectionId"
     )
-    public DatabaseSchema discoverSchema(
-            String username,
-            Long connectionId
-    ) {
+    public DatabaseSchema discoverSchema(String username, Long connectionId) {
 
         /*
          * =====================================================
@@ -201,8 +175,7 @@ public class SchemaDiscoveryService {
          * Transaction COMMIT và Hikari connection được release
          * ngay khi discoverAndPersistSchema() return.
          */
-        DatabaseSchema savedSchema =
-                discoverAndPersistSchema(username, connectionId);
+        DatabaseSchema savedSchema = discoverAndPersistSchema(username, connectionId);
 
         /*
          * =====================================================
@@ -226,9 +199,7 @@ public class SchemaDiscoveryService {
          */
         try {
 
-            schemaEmbeddingService.ensureEmbeddings(
-                    savedSchema
-            );
+            schemaEmbeddingService.ensureEmbeddings(savedSchema);
 
         } catch (Exception e) {
 
@@ -245,8 +216,7 @@ public class SchemaDiscoveryService {
             );
 
             log.debug(
-                    "Chi tiết lỗi khi tạo schema embeddings",
-                    e
+                    "Chi tiết lỗi khi tạo schema embeddings", e
             );
         }
 
@@ -259,18 +229,14 @@ public class SchemaDiscoveryService {
      * ngắn, dùng TransactionTemplate để transaction này chắc chắn kết
      * thúc trước khi discoverSchema() gọi ensureEmbeddings().
      */
-    private DatabaseSchema discoverAndPersistSchema(
-            String username,
-            Long connectionId
+    private DatabaseSchema discoverAndPersistSchema(String username, Long connectionId
     ) {
 
-        TransactionTemplate transactionTemplate =
-                new TransactionTemplate(transactionManager);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 
         return transactionTemplate.execute(status -> {
 
-            DatabaseConnection connection =
-                    connectionAccessGuard.requireOwnedConnection(
+            DatabaseConnection connection = connectionAccessGuard.requireOwnedConnection(
                             username,
                             connectionId
                     );
@@ -282,28 +248,19 @@ public class SchemaDiscoveryService {
                 );
             }
 
-            String rawPassword =
-                    encryptionUtil.decrypt(
-                            connection.getEncryptedPassword()
-                    );
+            String rawPassword = encryptionUtil.decrypt(connection.getEncryptedPassword());
 
 
             // -----------------------------------------------------
             // Load existing schema
             // -----------------------------------------------------
 
-            DatabaseSchema schema =
-                    schemaRepository
+            DatabaseSchema schema = schemaRepository
                             .findByConnectionId(connectionId)
-                            .orElse(
-                                    DatabaseSchema.builder()
+                            .orElse(DatabaseSchema.builder()
                                             .connection(connection)
-                                            .databaseName(
-                                                    connection.getDatabaseName()
-                                            )
-                                            .dbType(
-                                                    connection.getDbType()
-                                            )
+                                            .databaseName(connection.getDatabaseName())
+                                            .dbType(connection.getDbType())
                                             .build()
                             );
 
@@ -313,19 +270,15 @@ public class SchemaDiscoveryService {
             // =====================================================
             //BACKUP APPLICATION METADATA
             // =====================================================
-            Map<String, String> existingTableDescriptions =
-                    new HashMap<>();
+            Map<String, String> existingTableDescriptions = new HashMap<>();
 
-            Map<String, String> existingColumnDescriptions =
-                    new HashMap<>();
+            Map<String, String> existingColumnDescriptions = new HashMap<>();
 
-            List<TableMetadata> existingTables =
-                    schema.getTables();
+            List<TableMetadata> existingTables = schema.getTables();
 
             if (existingTables != null) {
 
-                for (TableMetadata existingTable :
-                        existingTables) {
+                for (TableMetadata existingTable : existingTables) {
 
                     if (existingTable == null
                             || existingTable.getName() == null
@@ -339,15 +292,9 @@ public class SchemaDiscoveryService {
                     // Backup table description
                     // -------------------------------------------------
 
-                    if (existingTable.getDescription() != null
-                            && !existingTable
-                            .getDescription()
-                            .isBlank()) {
+                    if (existingTable.getDescription() != null && !existingTable.getDescription().isBlank()) {
 
-                        existingTableDescriptions.put(
-                                normalizeName(
-                                        existingTable.getName()
-                                ),
+                        existingTableDescriptions.put(normalizeName(existingTable.getName()),
                                 existingTable.getDescription()
                         );
                     }
@@ -361,8 +308,7 @@ public class SchemaDiscoveryService {
                         continue;
                     }
 
-                    for (ColumnMetadata existingColumn :
-                            existingTable.getColumns()) {
+                    for (ColumnMetadata existingColumn : existingTable.getColumns()) {
 
                         if (existingColumn == null
                                 || existingColumn.getName() == null
@@ -371,13 +317,9 @@ public class SchemaDiscoveryService {
                             continue;
                         }
 
-                        if (existingColumn.getDescription() != null
-                                && !existingColumn
-                                .getDescription()
-                                .isBlank()) {
+                        if (existingColumn.getDescription() != null && !existingColumn.getDescription().isBlank()) {
 
-                            existingColumnDescriptions.put(
-                                    buildColumnKey(
+                            existingColumnDescriptions.put(buildColumnKey(
                                             existingTable.getName(),
                                             existingColumn.getName()
                                     ),
@@ -393,8 +335,7 @@ public class SchemaDiscoveryService {
             //CLEAR OLD TABLE METADATA
             // =====================================================
 
-            List<TableMetadata> tables =
-                    schema.getTables();
+            List<TableMetadata> tables = schema.getTables();
 
             if (tables == null) {
 
@@ -410,8 +351,7 @@ public class SchemaDiscoveryService {
             // OPEN TARGET DATABASE CONNECTION
             // =====================================================
 
-            try (Connection conn =
-                         targetDatabaseClient.openConnection(
+            try (Connection conn = targetDatabaseClient.openConnection(
                                  connection.getDbType(),
                                  connection.getHost(),
                                  connection.getPort(),
@@ -421,8 +361,7 @@ public class SchemaDiscoveryService {
                                  connection.isSslEnabled()
                          )) {
 
-                DatabaseMetaData metaData =
-                        conn.getMetaData();
+                DatabaseMetaData metaData = conn.getMetaData();
 
 
                 // =================================================
@@ -448,19 +387,16 @@ public class SchemaDiscoveryService {
                 //     schema  = null
                 // =================================================
 
-                String catalog =
-                        getCatalog(connection, metaData);
+                String catalog = getCatalog(connection, metaData);
 
-                String schemaPattern =
-                        getSchemaPattern(connection);
+                String schemaPattern = getSchemaPattern(connection);
 
 
                 // =================================================
                 //DISCOVER TABLES
                 // =================================================
 
-                try (ResultSet tableRs =
-                             metaData.getTables(
+                try (ResultSet tableRs = metaData.getTables(
                                      catalog,
                                      schemaPattern,
                                      "%",
@@ -469,13 +405,11 @@ public class SchemaDiscoveryService {
 
                     while (tableRs.next()) {
 
-                        String tableName =
-                                tableRs.getString(
+                        String tableName = tableRs.getString(
                                         "TABLE_NAME"
                                 );
 
-                        if (tableName == null
-                                || tableName.isBlank()) {
+                        if (tableName == null || tableName.isBlank()) {
 
                             continue;
                         }
@@ -485,18 +419,14 @@ public class SchemaDiscoveryService {
                         // Description từ database
                         // -----------------------------------------
 
-                        String databaseDescription =
-                                tableRs.getString(
-                                        "REMARKS"
-                                );
+                        String databaseDescription = tableRs.getString("REMARKS");
 
 
                         // -----------------------------------------
                         // Ưu tiên description application
                         // -----------------------------------------
 
-                        String description =
-                                getPreservedDescription(
+                        String description = getPreservedDescription(
                                         existingTableDescriptions,
                                         normalizeName(tableName),
                                         databaseDescription
@@ -507,8 +437,7 @@ public class SchemaDiscoveryService {
                         // Tạo TableMetadata
                         // -----------------------------------------
 
-                        TableMetadata table =
-                                TableMetadata.builder()
+                        TableMetadata table = TableMetadata.builder()
                                         .schema(schema)
                                         .name(tableName)
                                         .description(description)
@@ -519,8 +448,7 @@ public class SchemaDiscoveryService {
                         // Discover columns + PK + FK
                         // -----------------------------------------
 
-                        table.setColumns(
-                                discoverColumns(
+                        table.setColumns(discoverColumns(
                                         metaData,
                                         connection,
                                         tableName,
@@ -539,10 +467,7 @@ public class SchemaDiscoveryService {
                 //UPDATE SYNC TIME
                 // =================================================
 
-                schema.setLastSyncedAt(
-                        LocalDateTime.now()
-                );
-
+                schema.setLastSyncedAt(LocalDateTime.now());
 
                 // =================================================
                 //SAVE SCHEMA
@@ -558,8 +483,7 @@ public class SchemaDiscoveryService {
                 // thay vì table_id.
                 // =================================================
 
-                DatabaseSchema savedSchema =
-                        schemaRepository.save(schema);
+                DatabaseSchema savedSchema = schemaRepository.save(schema);
 
                 return savedSchema;
 
@@ -567,8 +491,7 @@ public class SchemaDiscoveryService {
 
                 throw new RuntimeException(
                         "Không thể đọc schema: "
-                                + e.getMessage(),
-                        e
+                                + e.getMessage(), e
                 );
             }
         });
@@ -606,30 +529,24 @@ public class SchemaDiscoveryService {
             Map<String, String> existingColumnDescriptions
     ) throws SQLException {
 
-        List<ColumnMetadata> columns =
-                new ArrayList<>();
-
+        List<ColumnMetadata> columns = new ArrayList<>();
 
         // -----------------------------------------------------
         // Xác định catalog/schema
         // -----------------------------------------------------
 
-        String catalog =
-                getCatalog(connection, metaData);
+        String catalog = getCatalog(connection, metaData);
 
-        String schemaPattern =
-                getSchemaPattern(connection);
+        String schemaPattern = getSchemaPattern(connection);
 
 
         // =====================================================
         //PRIMARY KEYS
         // =====================================================
 
-        Set<String> primaryKeys =
-                new HashSet<>();
+        Set<String> primaryKeys = new HashSet<>();
 
-        try (ResultSet pkRs =
-                     metaData.getPrimaryKeys(
+        try (ResultSet pkRs = metaData.getPrimaryKeys(
                              catalog,
                              schemaPattern,
                              tableName
@@ -637,16 +554,11 @@ public class SchemaDiscoveryService {
 
             while (pkRs.next()) {
 
-                String columnName =
-                        pkRs.getString(
-                                "COLUMN_NAME"
-                        );
+                String columnName = pkRs.getString("COLUMN_NAME");
 
                 if (columnName != null) {
 
-                    primaryKeys.add(
-                            columnName
-                    );
+                    primaryKeys.add(columnName);
                 }
             }
         }
@@ -656,11 +568,9 @@ public class SchemaDiscoveryService {
         //FOREIGN KEYS
         // =====================================================
 
-        Map<String, String[]> foreignKeys =
-                new HashMap<>();
+        Map<String, String[]> foreignKeys = new HashMap<>();
 
-        try (ResultSet fkRs =
-                     metaData.getImportedKeys(
+        try (ResultSet fkRs = metaData.getImportedKeys(
                              catalog,
                              schemaPattern,
                              tableName
@@ -668,20 +578,11 @@ public class SchemaDiscoveryService {
 
             while (fkRs.next()) {
 
-                String fkColumn =
-                        fkRs.getString(
-                                "FKCOLUMN_NAME"
-                        );
+                String fkColumn = fkRs.getString("FKCOLUMN_NAME");
 
-                String refTable =
-                        fkRs.getString(
-                                "PKTABLE_NAME"
-                        );
+                String refTable = fkRs.getString("PKTABLE_NAME");
 
-                String refColumn =
-                        fkRs.getString(
-                                "PKCOLUMN_NAME"
-                        );
+                String refColumn = fkRs.getString("PKCOLUMN_NAME");
 
                 if (fkColumn == null) {
                     continue;
@@ -702,8 +603,7 @@ public class SchemaDiscoveryService {
         //COLUMNS
         // =====================================================
 
-        try (ResultSet colRs =
-                     metaData.getColumns(
+        try (ResultSet colRs = metaData.getColumns(
                              catalog,
                              schemaPattern,
                              tableName,
@@ -712,13 +612,9 @@ public class SchemaDiscoveryService {
 
             while (colRs.next()) {
 
-                String columnName =
-                        colRs.getString(
-                                "COLUMN_NAME"
-                        );
+                String columnName = colRs.getString("COLUMN_NAME");
 
-                if (columnName == null
-                        || columnName.isBlank()) {
+                if (columnName == null || columnName.isBlank()) {
 
                     continue;
                 }
@@ -728,28 +624,21 @@ public class SchemaDiscoveryService {
                 // Foreign key target
                 // ---------------------------------------------
 
-                String[] fkTarget =
-                        foreignKeys.get(
-                                columnName
-                        );
+                String[] fkTarget = foreignKeys.get(columnName);
 
 
                 // ---------------------------------------------
                 // Description từ database
                 // ---------------------------------------------
 
-                String databaseDescription =
-                        colRs.getString(
-                                "REMARKS"
-                        );
+                String databaseDescription = colRs.getString("REMARKS");
 
 
                 // ---------------------------------------------
                 // Description application ưu tiên hơn
                 // ---------------------------------------------
 
-                String description =
-                        getPreservedDescription(
+                String description = getPreservedDescription(
                                 existingColumnDescriptions,
                                 buildColumnKey(
                                         tableName,
@@ -763,44 +652,23 @@ public class SchemaDiscoveryService {
                 // Build ColumnMetadata
                 // ---------------------------------------------
 
-                ColumnMetadata column =
-                        ColumnMetadata.builder()
+                ColumnMetadata column = ColumnMetadata.builder()
                                 .table(table)
                                 .name(columnName)
-                                .dataType(
-                                        colRs.getString(
-                                                "TYPE_NAME"
-                                        )
-                                )
-                                .nullable(
-                                        colRs.getInt(
-                                                "NULLABLE"
-                                        )
-                                                ==
-                                                DatabaseMetaData
-                                                        .columnNullable
-                                )
-                                .primaryKey(
-                                        primaryKeys.contains(
-                                                columnName
-                                        )
-                                )
-                                .foreignKey(
-                                        fkTarget != null
-                                )
-                                .referencedTable(
-                                        fkTarget != null
+                                .dataType(colRs.getString("TYPE_NAME"))
+                                .nullable(colRs.getInt("NULLABLE")
+                                                == DatabaseMetaData.columnNullable)
+                                .primaryKey(primaryKeys.contains(columnName))
+                                .foreignKey(fkTarget != null)
+                                .referencedTable(fkTarget != null
                                                 ? fkTarget[0]
                                                 : null
                                 )
-                                .referencedColumn(
-                                        fkTarget != null
+                                .referencedColumn(fkTarget != null
                                                 ? fkTarget[1]
                                                 : null
                                 )
-                                .description(
-                                        description
-                                )
+                                .description(description)
                                 .build();
 
 
@@ -829,17 +697,14 @@ public class SchemaDiscoveryService {
             String databaseDescription
     ) {
 
-        String existingDescription =
-                existingDescriptions.get(key);
+        String existingDescription = existingDescriptions.get(key);
 
-        if (existingDescription != null
-                && !existingDescription.isBlank()) {
+        if (existingDescription != null && !existingDescription.isBlank()) {
 
             return existingDescription;
         }
 
-        if (databaseDescription != null
-                && !databaseDescription.isBlank()) {
+        if (databaseDescription != null && !databaseDescription.isBlank()) {
 
             return databaseDescription;
         }
@@ -861,10 +726,7 @@ public class SchemaDiscoveryService {
      *
      *     users.email
      */
-    private String buildColumnKey(
-            String tableName,
-            String columnName
-    ) {
+    private String buildColumnKey(String tableName, String columnName) {
 
         return normalizeName(tableName)
                 + "."
@@ -886,34 +748,23 @@ public class SchemaDiscoveryService {
      * Locale.ROOT giúp kết quả ổn định
      * trên mọi môi trường.
      */
-    private String normalizeName(
-            String name
-    ) {
+    private String normalizeName(String name) {
 
-        return name
-                .trim()
-                .toLowerCase(Locale.ROOT);
+        return name.trim().toLowerCase(Locale.ROOT);
     }
 
 
     // =========================================================
     //GET JDBC CATALOG
     // =========================================================
-    private String getCatalog(
-            DatabaseConnection connection,
-            DatabaseMetaData metaData
-    ) throws SQLException {
+    private String getCatalog(DatabaseConnection connection, DatabaseMetaData metaData) throws SQLException {
 
-        if ("mysql".equalsIgnoreCase(
-                connection.getDbType()
-        )) {
+        if ("mysql".equalsIgnoreCase(connection.getDbType())) {
 
             return connection.getDatabaseName();
         }
 
-        if ("excel".equalsIgnoreCase(
-                connection.getDbType()
-        )) {
+        if ("excel".equalsIgnoreCase(connection.getDbType())) {
 
             return metaData.getConnection().getCatalog();
         }
@@ -926,17 +777,10 @@ public class SchemaDiscoveryService {
     //GET JDBC SCHEMA PATTERN
     // =========================================================
 
-    private String getSchemaPattern(
-            DatabaseConnection connection
-    ) {
+    private String getSchemaPattern(DatabaseConnection connection) {
 
-        if ("postgres".equalsIgnoreCase(
-                connection.getDbType()
-        )
-                ||
-                "postgresql".equalsIgnoreCase(
-                        connection.getDbType()
-                )) {
+        if ("postgres".equalsIgnoreCase(connection.getDbType())
+                || "postgresql".equalsIgnoreCase(connection.getDbType())) {
 
             return "public";
         }

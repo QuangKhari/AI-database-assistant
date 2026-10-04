@@ -176,6 +176,11 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Gui email that cho tinh nang quen mat khau -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
 
         <!-- ==================== Test ==================== -->
 

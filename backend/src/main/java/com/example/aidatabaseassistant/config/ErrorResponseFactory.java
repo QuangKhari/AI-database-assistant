@@ -11,8 +11,7 @@ import java.util.Map;
 
 public final class ErrorResponseFactory {
 
-    private static final DateTimeFormatter TIMESTAMP_FORMATTER =
-            DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private ErrorResponseFactory() {
     }
@@ -29,11 +28,7 @@ public final class ErrorResponseFactory {
         // Serialize timestamp thành String để response có thể được
         // xử lý bởi cả Spring Boot ObjectMapper và ObjectMapper mặc định
         // trong integration/unit tests.
-        body.put(
-                "timestamp",
-                LocalDateTime.now().format(TIMESTAMP_FORMATTER)
-        );
-
+        body.put("timestamp", LocalDateTime.now().format(TIMESTAMP_FORMATTER));
         body.put("status", status.value());
         body.put("code", code);
         body.put("message", message);

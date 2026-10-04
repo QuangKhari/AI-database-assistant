@@ -109,9 +109,8 @@ public class ConnectionService {
      * đã "lưu thành công" nhưng dùng không được.
      */
     private void validateDbType(String dbType) {
-        if (dbType == null
-                || SUPPORTED_MANUAL_DB_TYPES.stream()
-                .noneMatch(dbType::equalsIgnoreCase)) {
+        if (dbType == null || SUPPORTED_MANUAL_DB_TYPES.stream()
+                                .noneMatch(dbType::equalsIgnoreCase)) {
 
             throw new IllegalArgumentException(
                     "Loại database chưa được hỗ trợ: " + dbType
@@ -331,8 +330,7 @@ public class ConnectionService {
 
     @Transactional
     public void disconnect(String username, Long connectionId) {
-        DatabaseConnection connection =
-                getOwnedConnection(username, connectionId);
+        DatabaseConnection connection = getOwnedConnection(username, connectionId);
 
         if ("excel".equalsIgnoreCase(connection.getDbType())) {
             excelIngestionService.deleteDuckDbFile(
@@ -344,8 +342,7 @@ public class ConnectionService {
         // moi xoa schema (FK tro toi database_connections.id) de tranh
         // loi foreign key constraint khi xoa connection theo thu tu.
         databaseSchemaRepository.findByConnectionId(connectionId)
-                .ifPresent(schema ->
-                        tableEmbeddingRepository.deleteBySchemaId(schema.getId())
+                .ifPresent(schema -> tableEmbeddingRepository.deleteBySchemaId(schema.getId())
                 );
         databaseSchemaRepository.deleteByConnectionId(connectionId);
 

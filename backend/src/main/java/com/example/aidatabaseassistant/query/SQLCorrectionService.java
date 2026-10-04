@@ -90,11 +90,7 @@ public class SQLCorrectionService {
          * Nếu RAG (Top-K + FK expansion) bỏ sót 1 bảng cần thiết cho
          * câu hỏi, AI sẽ sinh SQL sai / tham chiếu nhầm bảng.
          *
-         * Trước đây: mọi lần selfCorrect() đều dùng lại đúng
-         * filteredSchema ban đầu -> AI không có thêm thông tin gì mới
-         * để tự sửa -> lặp lại lỗi tương tự cho tới khi hết MAX_RETRIES.
-         *
-         * Bây giờ: ngay khi 1 lần thử thất bại, chuyển sang fullSchema
+         * ngay khi 1 lần thử thất bại, chuyển sang fullSchema
          * cho các lần selfCorrect còn lại, để AI có đủ ngữ cảnh tự sửa.
          *
          * Việc mở rộng chỉ xảy ra SAU KHI THẤT BẠI, nên không ảnh hưởng
@@ -104,12 +100,7 @@ public class SQLCorrectionService {
 
         try {
 
-            currentSql =
-                    generate(
-                            question,
-                            schemaForGeneration,
-                            conversationHistory
-                    );
+            currentSql = generate(question, schemaForGeneration, conversationHistory);
 
         } catch (ReadOnlyViolationException e) {
 
@@ -118,26 +109,14 @@ public class SQLCorrectionService {
             attemptResult.success = false;
             attemptResult.sql = null;
 
-            attemptResult.finalResult =
-                    new QueryResultDto(
-                            List.of(),
-                            List.of(),
-                            0,
-                            0,
-                            lastError
-                    );
+            attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
             return attemptResult;
         }
 
-        for (int attempt = 1;
-             attempt <= MAX_RETRIES;
-             attempt++) {
-
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             AttemptLog log = new AttemptLog();
-
             log.sql = currentSql;
-
             try {
 
                 /*
@@ -148,17 +127,9 @@ public class SQLCorrectionService {
                  * filteredSchema/schemaForGeneration chỉ dùng cho AI/RAG,
                  * không dùng để quyết định bảng nào được phép truy cập.
                  */
-                queryValidator.validate(
-                        currentSql,
-                        fullSchema
-                );
+                queryValidator.validate(currentSql, fullSchema);
 
-                QueryResultDto queryResult =
-                        executeQuery(
-                                connection,
-                                rawPassword,
-                                currentSql
-                        );
+                QueryResultDto queryResult = executeQuery(connection, rawPassword, currentSql);
 
                 log.result = queryResult;
 
@@ -175,8 +146,7 @@ public class SQLCorrectionService {
                     return attemptResult;
                 }
 
-                lastError =
-                        queryResult.getError();
+                lastError = queryResult.getError();
 
             } catch (ReadOnlyViolationException e) {
 
@@ -187,14 +157,7 @@ public class SQLCorrectionService {
                  */
                 lastError = e.getMessage();
 
-                log.result =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                log.result = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
                 log.success = false;
 
@@ -203,14 +166,7 @@ public class SQLCorrectionService {
                 attemptResult.success = false;
                 attemptResult.sql = currentSql;
 
-                attemptResult.finalResult =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
                 return attemptResult;
 
@@ -218,14 +174,7 @@ public class SQLCorrectionService {
 
                 lastError = e.getMessage();
 
-                log.result =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                log.result = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
             }
 
             log.success = false;
@@ -242,8 +191,7 @@ public class SQLCorrectionService {
              * (RAG không kích hoạt thì 2 schema này đã là cùng
              * 1 object -> không cần làm gì thêm).
              */
-            if (schemaForGeneration == filteredSchema
-                    && filteredSchema != fullSchema) {
+            if (schemaForGeneration == filteredSchema && filteredSchema != fullSchema) {
 
                 schemaForGeneration = fullSchema;
             }
@@ -258,28 +206,14 @@ public class SQLCorrectionService {
              */
             if (attempt < MAX_RETRIES) {
 
-                currentSql =
-                        selfCorrect(
-                                currentSql,
-                                lastError,
-                                schemaForGeneration,
-                                conversationHistory
-                        );
+                currentSql = selfCorrect(currentSql, lastError, schemaForGeneration, conversationHistory);
             }
         }
 
         attemptResult.success = false;
         attemptResult.sql = currentSql;
 
-        attemptResult.finalResult =
-                new QueryResultDto(
-                        List.of(),
-                        List.of(),
-                        0,
-                        0,
-                        lastError
-                );
-
+        attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
         return attemptResult;
     }
 
@@ -311,9 +245,7 @@ public class SQLCorrectionService {
          *
          * Backend vẫn validate bằng FULL schema trước khi execute.
          */
-        for (int attempt = 1;
-             attempt <= MAX_RETRIES;
-             attempt++) {
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 
             AttemptLog attemptLog = new AttemptLog();
 
@@ -327,17 +259,9 @@ public class SQLCorrectionService {
                  *
                  * Không dùng filteredSchema làm whitelist.
                  */
-                queryValidator.validate(
-                        currentSql,
-                        fullSchema
-                );
+                queryValidator.validate(currentSql, fullSchema);
 
-                QueryResultDto queryResult =
-                        executeQuery(
-                                connection,
-                                rawPassword,
-                                currentSql
-                        );
+                QueryResultDto queryResult = executeQuery(connection, rawPassword, currentSql);
 
                 attemptLog.result = queryResult;
 
@@ -364,14 +288,7 @@ public class SQLCorrectionService {
                  */
                 lastError = e.getMessage();
 
-                attemptLog.result =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                attemptLog.result = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
                 attemptLog.success = false;
 
@@ -379,14 +296,7 @@ public class SQLCorrectionService {
 
                 attemptResult.success = false;
                 attemptResult.sql = currentSql;
-                attemptResult.finalResult =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
                 return attemptResult;
 
@@ -394,14 +304,7 @@ public class SQLCorrectionService {
 
                 lastError = e.getMessage();
 
-                attemptLog.result =
-                        new QueryResultDto(
-                                List.of(),
-                                List.of(),
-                                0,
-                                0,
-                                lastError
-                        );
+                attemptLog.result = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
             }
 
             attemptLog.success = false;
@@ -416,27 +319,14 @@ public class SQLCorrectionService {
              */
             if (attempt < MAX_RETRIES) {
 
-                currentSql =
-                        selfCorrect(
-                                currentSql,
-                                lastError,
-                                fullSchema,
-                                conversationHistory
-                        );
+                currentSql = selfCorrect(currentSql, lastError, fullSchema, conversationHistory);
             }
         }
 
         attemptResult.success = false;
         attemptResult.sql = currentSql;
 
-        attemptResult.finalResult =
-                new QueryResultDto(
-                        List.of(),
-                        List.of(),
-                        0,
-                        0,
-                        lastError
-                );
+        attemptResult.finalResult = new QueryResultDto(List.of(), List.of(), 0, 0, lastError);
 
         return attemptResult;
     }
@@ -465,24 +355,16 @@ public class SQLCorrectionService {
 
     @Getter
     public static class AttemptResult {
-
         boolean success;
-
         String sql;
-
         QueryResultDto finalResult;
-
-        List<AttemptLog> attemptLogs =
-                new ArrayList<>();
+        List<AttemptLog> attemptLogs = new ArrayList<>();
     }
 
     @Getter
     public static class AttemptLog {
-
         String sql;
-
         boolean success;
-
         QueryResultDto result;
     }
 }
