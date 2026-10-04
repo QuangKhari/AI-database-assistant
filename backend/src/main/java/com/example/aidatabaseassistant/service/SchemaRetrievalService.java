@@ -188,10 +188,7 @@ public class SchemaRetrievalService {
 
         try {
 
-            ragSchema =
-                    loadSchemaForRag(
-                            fullSchema.getId()
-                    );
+            ragSchema = loadSchemaForRag(fullSchema.getId());
 
         } catch (Exception e) {
 
@@ -232,10 +229,7 @@ public class SchemaRetrievalService {
          */
         try {
 
-            schemaEmbeddingService.ensureEmbeddings(
-                    ragSchema
-            );
-
+            schemaEmbeddingService.ensureEmbeddings(ragSchema);
         } catch (Exception e) {
 
             /*
@@ -265,9 +259,7 @@ public class SchemaRetrievalService {
 
         try {
 
-            questionVector =
-                    llmClient.generateEmbedding(question);
-
+            questionVector = llmClient.generateEmbedding(question);
         } catch (Exception e) {
 
             /*
@@ -317,8 +309,7 @@ public class SchemaRetrievalService {
          *
          *     query toàn bộ embedding của schema 1 lần.
          */
-        Map<String, float[]> embeddingsByName =
-                schemaEmbeddingService.getEmbeddingsByTableName(
+        Map<String, float[]> embeddingsByName = schemaEmbeddingService.getEmbeddingsByTableName(
                         ragSchema.getId()
                 );
 

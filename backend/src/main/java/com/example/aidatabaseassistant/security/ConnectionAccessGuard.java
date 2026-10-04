@@ -11,14 +11,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Guard DUY NHAT kiem tra "connection nay co ton tai va co thuoc ve user
- * dang goi request khong" (Phan 5.2 ke hoach: Authentication -> Resource
- * Ownership -> QueryExecutionGuard -> SQL Validator -> ...).
- *
- * Truoc day 9 service tu viet lai giong het 3 buoc nay (tim user -> tim
- * connection -> so sanh chu so huu), va TAT CA deu nem IllegalArgumentException
- * (400) cho ca truong hop "khong tim thay" (dang le 404) LAN "khong co quyen"
- * (dang le 403). Gop ve 1 noi + dung dung exception type de
- * GlobalExceptionHandler tra ve dung ma HTTP (Phan 3).
+ * dang goi request khong"
  *
  * connectionId luon la du lieu do client/Frontend gui len (path variable) -
  * KHONG duoc tin tuong, phai luon di qua guard nay truoc khi dung.

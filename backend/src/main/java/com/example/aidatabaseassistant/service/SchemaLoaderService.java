@@ -30,20 +30,16 @@ public class SchemaLoaderService {
     @Transactional(readOnly = true)
     public DatabaseSchema loadCompleteSchema(Long connectionId) {
 
-        DatabaseSchema schema =
-                schemaRepository
+        DatabaseSchema schema = schemaRepository
                         .findByConnectionId(connectionId)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
+                        .orElseThrow(() -> new IllegalArgumentException(
                                         "Chưa discover schema cho connection này"
                                 ));
 
         schema.getConnection().getId();
         schema.getConnection().getDatabaseName();
 
-        tableMetadataRepository.findBySchemaIdWithColumns(
-                schema.getId()
-        );
+        tableMetadataRepository.findBySchemaIdWithColumns(schema.getId());
 
         return schema;
     }

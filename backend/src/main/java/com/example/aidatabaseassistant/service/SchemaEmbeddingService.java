@@ -63,8 +63,6 @@ public class SchemaEmbeddingService {
         }
 
         /*
-         * Biến này phải được khai báo trước try.
-         *
          * Nếu trong quá trình generate embedding xảy ra exception
          * sau khi một hoặc nhiều embedding đã được save,
          * finally vẫn có thể invalidate cache.
@@ -80,16 +78,12 @@ public class SchemaEmbeddingService {
              *
              * Chỉ query DB một lần.
              */
-            List<TableEmbedding> existingEmbeddings =
-                    tableEmbeddingRepository.findBySchemaId(
-                            schema.getId()
-                    );
+            List<TableEmbedding> existingEmbeddings = tableEmbeddingRepository.findBySchemaId(schema.getId());
 
             /*
              * Map theo tên bảng để lookup O(1).
              */
-            Map<String, TableEmbedding> existingByName =
-                    existingEmbeddings.stream()
+            Map<String, TableEmbedding> existingByName = existingEmbeddings.stream()
                             .collect(Collectors.toMap(
                                     e -> normalizeName(e.getTableName()),
                                     e -> e,
@@ -101,13 +95,9 @@ public class SchemaEmbeddingService {
              *
              * Dùng để phát hiện embedding stale.
              */
-            Set<String> currentTableNames =
-                    schema.getTables().stream()
+            Set<String> currentTableNames = schema.getTables().stream()
                             .map(TableMetadata::getName)
-                            .filter(name ->
-                                    name != null
-                                            && !name.isBlank()
-                            )
+                            .filter(name -> name != null && !name.isBlank())
                             .map(this::normalizeName)
                             .collect(Collectors.toSet());
 
@@ -136,24 +126,17 @@ public class SchemaEmbeddingService {
                  * - FK
                  * - referenced table/column
                  */
-                String content =
-                        buildEmbeddingText(table);
+                String content = buildEmbeddingText(table);
 
                 /*
                  * Hash nội dung schema.
                  */
-                String hash =
-                        sha256(content);
+                String hash = sha256(content);
 
                 /*
                  * Tìm embedding cũ.
                  */
-                TableEmbedding existing =
-                        existingByName.get(
-                                normalizeName(
-                                        table.getName()
-                                )
-                        );
+                TableEmbedding existing = existingByName.get(normalizeName(table.getName()));
 
                 /*
                  * =================================================
@@ -189,46 +172,34 @@ public class SchemaEmbeddingService {
                  * Vì vậy connection DB không bị giữ trong lúc
                  * chờ HTTP/retry.
                  */
-                float[] vector =
-                        llmClient.generateEmbedding(content);
+                float[] vector = llmClient.generateEmbedding(content);
 
                 /*
                  * =================================================
                  * 5. UPDATE / CREATE EMBEDDING
                  * =================================================
                  */
-                TableEmbedding embedding =
-                        existing != null
+                TableEmbedding embedding = existing != null
                                 ? existing
                                 : TableEmbedding.builder()
                                 .schema(schema)
                                 .tableName(table.getName())
                                 .build();
 
-                embedding.setVectorJson(
-                        toJson(vector)
-                );
+                embedding.setVectorJson(toJson(vector));
 
-                embedding.setContentHash(
-                        hash
-                );
+                embedding.setContentHash(hash);
 
-                embedding.setModelName(
-                        embeddingModel
-                );
+                embedding.setModelName(embeddingModel);
 
-                embedding.setUpdatedAt(
-                        LocalDateTime.now()
-                );
+                embedding.setUpdatedAt(LocalDateTime.now());
 
                 /*
                  * save() của Spring Data tự quản lý transaction
                  * cho thao tác persistence này nếu không có outer
                  * transaction.
                  */
-                tableEmbeddingRepository.save(
-                        embedding
-                );
+                tableEmbeddingRepository.save(embedding);
 
                 changed = true;
             }
@@ -238,23 +209,18 @@ public class SchemaEmbeddingService {
              * 6. XÓA EMBEDDING STALE
              * =====================================================
              */
-            List<TableEmbedding> stale =
-                    existingEmbeddings.stream()
+            List<TableEmbedding> stale = existingEmbeddings.stream()
                             .filter(e ->
                                     e.getTableName() != null
                                             && !currentTableNames.contains(
-                                            normalizeName(
-                                                    e.getTableName()
-                                            )
+                                            normalizeName(e.getTableName())
                                     )
                             )
                             .toList();
 
             if (!stale.isEmpty()) {
 
-                tableEmbeddingRepository.deleteAll(
-                        stale
-                );
+                tableEmbeddingRepository.deleteAll(stale);
 
                 changed = true;
             }
@@ -282,9 +248,7 @@ public class SchemaEmbeddingService {
              * Nó vẫn được throw lên SchemaRetrievalService.
              */
             if (changed) {
-                evictTableEmbeddingsCache(
-                        schema.getId()
-                );
+                evictTableEmbeddingsCache(schema.getId());
             }
         }
     }
@@ -306,41 +270,30 @@ public class SchemaEmbeddingService {
     public Map<String, float[]> getEmbeddingsByTableName(
             Long schemaId) {
 
-        Map<String, float[]> result =
-                new HashMap<>();
+        Map<String, float[]> result = new HashMap<>();
 
-        for (TableEmbedding embedding :
-                tableEmbeddingRepository.findBySchemaId(schemaId)) {
+        for (TableEmbedding embedding : tableEmbeddingRepository.findBySchemaId(schemaId)) {
 
             if (embedding == null) {
                 continue;
             }
 
-            String tableName =
-                    embedding.getTableName();
+            String tableName = embedding.getTableName();
 
-            if (tableName == null
-                    || tableName.isBlank()) {
-
+            if (tableName == null || tableName.isBlank()) {
                 continue;
             }
 
-            String normalizedName =
-                    normalizeName(tableName);
+            String normalizedName = normalizeName(tableName);
 
-            float[] vector =
-                    fromJson(
-                            embedding.getVectorJson()
-                    );
+            float[] vector = fromJson(embedding.getVectorJson());
 
             /*
              * vector có thể null nếu JSON lỗi.
              *
              * Retrieval sẽ tự bỏ qua vector invalid.
              */
-            result.put(
-                    normalizedName,
-                    vector
+            result.put(normalizedName, vector
             );
         }
 
@@ -349,9 +302,7 @@ public class SchemaEmbeddingService {
 
     private float[] fromJson(String json) {
 
-        if (json == null
-                || json.isBlank()) {
-
+        if (json == null || json.isBlank()) {
             return null;
         }
 
@@ -365,13 +316,9 @@ public class SchemaEmbeddingService {
         }
     }
 
-    private void evictTableEmbeddingsCache(
-            Long schemaId) {
+    private void evictTableEmbeddingsCache(Long schemaId) {
 
-        Cache cache =
-                sharedCacheManager.getCache(
-                        CacheConfig.TABLE_EMBEDDINGS_CACHE
-                );
+        Cache cache = sharedCacheManager.getCache(CacheConfig.TABLE_EMBEDDINGS_CACHE);
 
         if (cache != null) {
             cache.evict(schemaId);
@@ -381,26 +328,21 @@ public class SchemaEmbeddingService {
     /**
      * Tạo semantic representation cho table.
      */
-    private String buildEmbeddingText(
-            TableMetadata table) {
+    private String buildEmbeddingText(TableMetadata table) {
 
-        StringBuilder sb =
-                new StringBuilder();
+        StringBuilder sb = new StringBuilder();
 
-        sb.append("Bảng: ")
-                .append(table.getName());
+        sb.append("Bảng: ").append(table.getName());
 
         if (table.getDescription() != null
                 && !table.getDescription().isBlank()) {
 
-            sb.append(" - ")
-                    .append(table.getDescription());
+            sb.append(" - ").append(table.getDescription());
         }
 
         sb.append(". Cột: ");
 
-        for (ColumnMetadata column :
-                table.getColumns()) {
+        for (ColumnMetadata column : table.getColumns()) {
 
             sb.append(column.getName())
                     .append("(")
@@ -410,34 +352,24 @@ public class SchemaEmbeddingService {
             /*
              * Primary key
              */
-            if (Boolean.TRUE.equals(
-                    column.getPrimaryKey())) {
-
+            if (Boolean.TRUE.equals(column.getPrimaryKey())) {
                 sb.append(" [PRIMARY KEY]");
             }
 
             /*
              * Foreign key
              */
-            if (Boolean.TRUE.equals(
-                    column.getForeignKey())) {
-
+            if (Boolean.TRUE.equals(column.getForeignKey())) {
                 sb.append(" [FOREIGN KEY");
 
                 if (column.getReferencedTable() != null) {
 
-                    sb.append(" -> ")
-                            .append(
-                                    column.getReferencedTable()
-                            );
+                    sb.append(" -> ").append(column.getReferencedTable());
                 }
 
                 if (column.getReferencedColumn() != null) {
 
-                    sb.append(".")
-                            .append(
-                                    column.getReferencedColumn()
-                            );
+                    sb.append(".").append(column.getReferencedColumn());
                 }
 
                 sb.append("]");
@@ -449,10 +381,7 @@ public class SchemaEmbeddingService {
             if (column.getDescription() != null
                     && !column.getDescription().isBlank()) {
 
-                sb.append(": ")
-                        .append(
-                                column.getDescription()
-                        );
+                sb.append(": ").append(column.getDescription());
             }
 
             sb.append(", ");
@@ -465,17 +394,9 @@ public class SchemaEmbeddingService {
 
         try {
 
-            MessageDigest digest =
-                    MessageDigest.getInstance(
-                            "SHA-256"
-                    );
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
-            byte[] hash =
-                    digest.digest(
-                            input.getBytes(
-                                    StandardCharsets.UTF_8
-                            )
-                    );
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
 
             return java.util.HexFormat
                     .of()
@@ -484,8 +405,7 @@ public class SchemaEmbeddingService {
         } catch (Exception e) {
 
             throw new RuntimeException(
-                    "Không thể tạo SHA-256 hash",
-                    e
+                    "Không thể tạo SHA-256 hash", e
             );
         }
     }
@@ -493,26 +413,17 @@ public class SchemaEmbeddingService {
     private String toJson(float[] vector) {
 
         try {
-
-            return objectMapper.writeValueAsString(
-                    vector
-            );
-
+            return objectMapper.writeValueAsString(vector);
         } catch (Exception e) {
 
             throw new RuntimeException(
-                    "Không thể serialize embedding vector",
-                    e
+                    "Không thể serialize embedding vector", e
             );
         }
     }
 
     private String normalizeName(String name) {
 
-        return name
-                .trim()
-                .toLowerCase(
-                        java.util.Locale.ROOT
-                );
+        return name.trim().toLowerCase(java.util.Locale.ROOT);
     }
 }

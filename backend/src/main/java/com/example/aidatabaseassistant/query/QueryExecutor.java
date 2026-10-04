@@ -27,10 +27,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class QueryExecutor {
 
-    // TRUOC DAY: tu goi ssrfProtection.validateHost() + tu build JDBC URL +
-    // tu goi DriverManager.getConnection() ngay trong class nay (trung lap
-    // voi ConnectionService/SchemaDiscoveryService). BAY GIO: gom qua
-    // TargetDatabaseClient - noi DUY NHAT mo ket noi JDBC toi DB cua user.
+    //gom qua TargetDatabaseClient - noi DUY NHAT mo ket noi JDBC toi DB cua user.
     private final TargetDatabaseClient targetDatabaseClient;
     private static final int MAX_ROWS = 500;
 

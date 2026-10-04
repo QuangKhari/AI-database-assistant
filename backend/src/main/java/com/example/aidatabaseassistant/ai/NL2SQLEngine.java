@@ -67,14 +67,9 @@ public class NL2SQLEngine {
          * Nếu không phải thao tác ghi,
          * mới gửi câu hỏi cho AI để sinh SELECT.
          */
-        String prompt = promptBuilder.buildGenerationPrompt(
-                question,
-                schema
-        );
+        String prompt = promptBuilder.buildGenerationPrompt(question, schema);
 
-        return extractSql(
-                llmClient.generateResponse(prompt)
-        );
+        return extractSql(llmClient.generateResponse(prompt));
     }
 
     public String generateSQL(String question, DatabaseSchema schema, String conversationHistory) {
@@ -117,25 +112,14 @@ public class NL2SQLEngine {
 
         if (conversationHistory == null || conversationHistory.isBlank()) {
 
-            prompt = promptBuilder.buildCorrectionPrompt(
-                    previousSql,
-                    errorMessage,
-                    schema
-            );
+            prompt = promptBuilder.buildCorrectionPrompt(previousSql, errorMessage, schema);
 
         } else {
 
-            prompt = promptBuilder.buildCorrectionPrompt(
-                    previousSql,
-                    errorMessage,
-                    schema,
-                    conversationHistory
-            );
+            prompt = promptBuilder.buildCorrectionPrompt(previousSql, errorMessage, schema, conversationHistory);
         }
 
-        return extractSql(
-                llmClient.generateResponse(prompt)
-        );
+        return extractSql(llmClient.generateResponse(prompt));
     }
 
     /**
@@ -158,6 +142,7 @@ public class NL2SQLEngine {
      * xuống DB, gợi ý biểu đồ, data insight, tóm tắt bằng Gemini...).
      */
     public boolean isWriteOperationQuestion(String question) {
+
         return containsWriteOperation(question);
     }
 
